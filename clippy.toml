@@ -1,0 +1,56 @@
+# =============================================================================
+# 7aychain Clippy Configuration
+# =============================================================================
+# Security-focused linting configuration for blockchain development.
+# Enforces strict standards for production-grade code.
+# =============================================================================
+
+# Cognitive complexity threshold - keep functions understandable
+cognitive-complexity-threshold = 25
+
+# Maximum number of function arguments
+too-many-arguments-threshold = 10
+
+# Type complexity threshold
+type-complexity-threshold = 250
+
+# Maximum lines per function
+too-many-lines-threshold = 150
+
+# Minimum size for large stack arrays warning
+array-size-threshold = 512000
+
+# Minimum enum variant size difference for large_enum_variant
+enum-variant-size-threshold = 200
+
+# Maximum nesting for blocks
+excessive-nesting-threshold = 5
+
+# Documentation requirements
+missing-docs-in-crate-items = true
+
+# Allowed names that would otherwise trigger lints
+allowed-idents-below-min-chars = ["i", "j", "k", "n", "x", "y", "z", "id", "ok", "T"]
+
+# Disallowed names in production code
+disallowed-names = ["foo", "bar", "baz", "quux", "temp", "tmp"]
+
+# Standard library types that are disallowed
+# (prefer no_std alternatives in runtime code)
+disallowed-types = []
+
+# Macros that are disallowed in production
+disallowed-macros = [
+    { path = "std::println", reason = "Use log macros instead" },
+    { path = "std::print", reason = "Use log macros instead" },
+    { path = "std::dbg", reason = "Debug macro not allowed in production" },
+]
+
+# Methods that are disallowed
+disallowed-methods = []
+
+# Maximum size for pass-by-value threshold
+pass-by-value-size-limit = 256
+
+# Single character binding names minimum length
+min-ident-chars-threshold = 2

@@ -1,0 +1,19 @@
+# =============================================================================
+# 7aychain Rust Toolchain Configuration
+# =============================================================================
+# Pins Rust version for reproducible builds across all environments.
+# Following Substrate/Polkadot SDK conventions for stability.
+# =============================================================================
+
+[toolchain]
+channel = "stable"
+components = [
+    "rustfmt",
+    "clippy",
+    "rust-src",
+    "rust-analyzer",
+]
+targets = [
+    "wasm32-unknown-unknown",
+]
+profile = "default"

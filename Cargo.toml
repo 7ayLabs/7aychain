@@ -1,0 +1,134 @@
+# =============================================================================
+# 7aychain - Substrate-based Proof of Presence Protocol Implementation
+# =============================================================================
+# SPDX-License-Identifier: BUSL-1.1
+# Copyright (c) 2026 7ayLabs. All rights reserved.
+# =============================================================================
+
+[workspace]
+resolver = "2"
+members = [
+    "primitives",
+]
+
+[workspace.package]
+version = "0.1.0"
+authors = ["7ayLabs <dev@7aylabs.com>"]
+edition = "2021"
+license = "BUSL-1.1"
+repository = "https://github.com/7ayLabs/7aychain"
+homepage = "https://7aylabs.com"
+documentation = "https://docs.7aylabs.com"
+readme = "README.md"
+keywords = ["blockchain", "substrate", "proof-of-presence", "7ay", "pop"]
+categories = ["cryptography", "blockchain"]
+
+[workspace.dependencies]
+# =============================================================================
+# Internal Crates
+# =============================================================================
+seveny-primitives = { path = "primitives", default-features = false }
+
+# =============================================================================
+# Codec & Serialization
+# =============================================================================
+parity-scale-codec = { version = "3.6", default-features = false, features = ["derive"] }
+scale-info = { version = "2.10", default-features = false, features = ["derive"] }
+
+# =============================================================================
+# Substrate Primitives (polkadot-stable2409)
+# =============================================================================
+sp-core = { version = "31.0.0", default-features = false }
+sp-runtime = { version = "34.0.0", default-features = false }
+sp-std = { version = "14.0.0", default-features = false }
+sp-io = { version = "33.0.0", default-features = false }
+sp-api = { version = "29.0.0", default-features = false }
+sp-arithmetic = { version = "26.0.0", default-features = false }
+
+# =============================================================================
+# FRAME Dependencies
+# =============================================================================
+frame-support = { version = "31.0.0", default-features = false }
+frame-system = { version = "31.0.0", default-features = false }
+frame-benchmarking = { version = "31.0.0", default-features = false }
+
+# =============================================================================
+# Cryptography
+# =============================================================================
+blake2 = { version = "0.10", default-features = false }
+sha2 = { version = "0.10", default-features = false }
+
+# =============================================================================
+# Development & Testing
+# =============================================================================
+criterion = { version = "0.5" }
+
+[workspace.lints.rust]
+# Forbid unsafe code globally - security first
+unsafe_code = "forbid"
+# Deny missing documentation for public items
+missing_docs = "warn"
+# Ensure proper use of results
+unused_results = "warn"
+# Prevent accidental debug code in production
+unreachable_pub = "warn"
+
+[workspace.lints.clippy]
+# =============================================================================
+# Security-Critical Lints (Deny)
+# =============================================================================
+# Prevent panics in production code
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+# Prevent information leaks
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+# Prevent unsafe patterns
+cast_possible_truncation = "deny"
+cast_sign_loss = "deny"
+cast_possible_wrap = "deny"
+integer_division = "warn"
+
+# =============================================================================
+# Code Quality Lints (Warn)
+# =============================================================================
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+# Allow certain pedantic lints that are too strict
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+too_many_lines = "allow"
+
+# =============================================================================
+# Complexity Lints
+# =============================================================================
+cognitive_complexity = "warn"
+too_many_arguments = "warn"
+
+[profile.release]
+# Optimize for size and speed balance
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+
+[profile.dev]
+# Fast compilation for development
+opt-level = 0
+debug = true
+
+[profile.test]
+# Enable optimizations for faster tests
+opt-level = 2
+debug = true
+
+[profile.bench]
+# Maximum optimization for benchmarks
+opt-level = 3
+lto = "fat"
+codegen-units = 1

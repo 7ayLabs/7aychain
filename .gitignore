@@ -1,0 +1,121 @@
+/target/
+**/*.rs.bk
+Cargo.lock
+
+#IDE
+.vscode/
+*.code-workspace
+
+# JetBrains IDEs (IntelliJ, CLion, RustRover)
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Vim
+*.swp
+*.swo
+*~
+.*.sw?
+
+# Emacs
+*~
+\#*\#
+.#*
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+
+# Chain data
+/data/
+/chains/
+*.db
+*.log
+
+# Runtime WASM
+/runtime/target/
+*.wasm
+*.compact.wasm
+
+# Benchmarking output
+/weights/
+*.weight
+
+# Key files (NEVER commit)
+*.key
+*.pem
+*.p12
+*.pfx
+keystore/
+secrets/
+
+# Coverage reports
+/coverage/
+*.lcov
+*.gcov
+*.gcda
+*.gcno
+tarpaulin-report.html
+cobertura.xml
+
+# Benchmark results
+/benchmark-results/
+*.bench
+
+# Profiling
+*.profdata
+*.profraw
+perf.data
+flamegraph.svg
+
+# Documentation build
+/doc/
+/docs/build/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Local configuration
+*.local
+config.local.toml
+secrets.toml
+
+
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+# Node modules (for any JS tooling)
+node_modules/
+package-lock.json
+yarn.lock
+
+/tmp/
+/temp/
+*.tmp
+*.temp
+*.bak
+*.backup
+.claude/

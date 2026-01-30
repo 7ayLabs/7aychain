@@ -1,0 +1,51 @@
+# =============================================================================
+# 7aychain Code Formatting Configuration
+# =============================================================================
+# Professional formatting rules following Rust ecosystem conventions.
+# Consistent with Parity/Substrate style guidelines.
+# =============================================================================
+
+# Edition
+edition = "2021"
+
+# Line width
+max_width = 100
+comment_width = 80
+wrap_comments = true
+
+# Imports
+imports_granularity = "Crate"
+group_imports = "StdExternalCrate"
+reorder_imports = true
+reorder_modules = true
+
+# Formatting style
+use_small_heuristics = "Default"
+fn_params_layout = "Tall"
+struct_lit_single_line = true
+newline_style = "Unix"
+use_field_init_shorthand = true
+
+# Match arms
+match_arm_blocks = true
+match_block_trailing_comma = true
+
+# Control flow
+control_brace_style = "AlwaysSameLine"
+brace_style = "SameLineWhere"
+
+# Documentation
+doc_comment_code_block_width = 80
+format_code_in_doc_comments = true
+normalize_comments = true
+normalize_doc_attributes = true
+
+# Macros
+format_macro_matchers = true
+format_macro_bodies = true
+
+# Miscellaneous
+trailing_comma = "Vertical"
+trailing_semicolon = true
+use_try_shorthand = true
+force_multiline_blocks = false
