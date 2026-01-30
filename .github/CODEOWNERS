@@ -1,0 +1,36 @@
+# 7aychain Code Owners
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owners for everything
+* @7ayLabs/core-team
+
+# Primitives and core types
+/primitives/ @7ayLabs/core-team
+
+# Security-critical paths require security team review
+/primitives/src/crypto.rs @7ayLabs/security-team
+/primitives/src/traits.rs @7ayLabs/security-team
+/pallets/*/src/invariants.rs @7ayLabs/security-team
+
+# Pallets
+/pallets/presence/ @7ayLabs/protocol-team
+/pallets/epoch/ @7ayLabs/protocol-team
+/pallets/validator/ @7ayLabs/protocol-team
+/pallets/dispute/ @7ayLabs/protocol-team
+
+# Runtime changes
+/runtime/ @7ayLabs/runtime-team
+
+# Node implementation
+/node/ @7ayLabs/node-team
+
+# CI/CD and DevOps
+/.github/ @7ayLabs/devops-team
+/docker/ @7ayLabs/devops-team
+/scripts/ @7ayLabs/devops-team
+
+# Documentation
+/docs/ @7ayLabs/docs-team
+README.md @7ayLabs/docs-team
+CONTRIBUTING.md @7ayLabs/docs-team
+SECURITY.md @7ayLabs/security-team
