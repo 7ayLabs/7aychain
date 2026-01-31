@@ -64,7 +64,8 @@ pub const AUTONOMOUS_PATTERN_THRESHOLD: u32 = 3;
 #[inline]
 pub const fn max_subnodes(throughput_pct: u32) -> u32 {
     let scaled = throughput_pct.saturating_mul(10);
-    let result = scaled.saturating_add(OCTOPUS_SUBNODE_DIVISOR.saturating_sub(1)) / OCTOPUS_SUBNODE_DIVISOR;
+    let result =
+        scaled.saturating_add(OCTOPUS_SUBNODE_DIVISOR.saturating_sub(1)) / OCTOPUS_SUBNODE_DIVISOR;
     if result > OCTOPUS_MAX_SUBNODES {
         OCTOPUS_MAX_SUBNODES
     } else if result == 0 {
@@ -116,6 +117,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::assertions_on_constants)]
     fn test_constants_valid() {
         assert!(RECOVERY_QUORUM <= Perbill::from_percent(100));
         assert!(VAULT_MIN_THRESHOLD <= VAULT_MIN_RING_SIZE);
