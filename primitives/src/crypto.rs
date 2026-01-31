@@ -101,7 +101,9 @@ impl MerkleProof {
 }
 
 /// Nullifier to prevent double-spending/double-presence.
-#[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug, Hash)]
+#[derive(
+    Clone, Copy, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug, Hash,
+)]
 pub struct Nullifier(pub H256);
 
 impl Nullifier {
@@ -116,7 +118,9 @@ impl Nullifier {
 }
 
 /// State root representing a snapshot of all presence data.
-#[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug, Default)]
+#[derive(
+    Clone, Copy, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug, Default,
+)]
 pub struct StateRoot(pub H256);
 
 impl StateRoot {
