@@ -11,7 +11,21 @@ use crate::traits::EpochBound;
 // Identity Types
 // =============================================================================
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug, Default)]
+#[derive(
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    MaxEncodedLen,
+    TypeInfo,
+    RuntimeDebug,
+    Default,
+)]
 pub struct ActorId(pub H256);
 
 impl ActorId {
@@ -36,7 +50,21 @@ impl From<[u8; 32]> for ActorId {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug, Default)]
+#[derive(
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    MaxEncodedLen,
+    TypeInfo,
+    RuntimeDebug,
+    Default,
+)]
 pub struct ValidatorId(pub H256);
 
 impl ValidatorId {
@@ -55,7 +83,21 @@ impl From<H256> for ValidatorId {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug, Default)]
+#[derive(
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    MaxEncodedLen,
+    TypeInfo,
+    RuntimeDebug,
+    Default,
+)]
 pub struct EpochId(pub u64);
 
 impl EpochId {
@@ -90,7 +132,9 @@ impl From<u64> for EpochId {
 // =============================================================================
 
 /// State: None -> Declared -> Validated -> Finalized | Slashed
-#[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug, Default)]
+#[derive(
+    Clone, Copy, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug, Default,
+)]
 pub enum PresenceState {
     #[default]
     None,
@@ -122,7 +166,9 @@ impl PresenceState {
 // =============================================================================
 
 /// State: Scheduled -> Active -> Closed -> Finalized
-#[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug, Default)]
+#[derive(
+    Clone, Copy, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug, Default,
+)]
 pub enum EpochState {
     #[default]
     Scheduled,
@@ -205,7 +251,9 @@ impl<BlockNumber> EpochBound for PresenceRecord<BlockNumber> {
 // Validator Types
 // =============================================================================
 
-#[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug, Default)]
+#[derive(
+    Clone, Copy, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug, Default,
+)]
 pub enum ValidatorStatus {
     #[default]
     Inactive,
@@ -222,10 +270,10 @@ impl ValidatorStatus {
 
 #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug)]
 pub enum ViolationType {
-    Minor,      // 5%
-    Moderate,   // 20%
-    Severe,     // 50%
-    Critical,   // 100%
+    Minor,    // 5%
+    Moderate, // 20%
+    Severe,   // 50%
+    Critical, // 100%
 }
 
 impl ViolationType {
@@ -266,7 +314,10 @@ impl QuorumConfig {
 
 impl Default for QuorumConfig {
     fn default() -> Self {
-        Self { threshold: 3, total: 5 }
+        Self {
+            threshold: 3,
+            total: 5,
+        }
     }
 }
 

@@ -1,0 +1,50 @@
+# =============================================================================
+# Cargo Audit Configuration
+# =============================================================================
+# SPDX-License-Identifier: BUSL-1.1
+# Copyright (c) 2026 7ayLabs. All rights reserved.
+# =============================================================================
+#
+# This file documents known vulnerabilities in transitive dependencies from
+# the Substrate/Polkadot SDK (polkadot-stable2409). These cannot be upgraded
+# without breaking compatibility with the stable release.
+#
+# Each ignored advisory is tracked and will be reviewed when upgrading to
+# newer Substrate versions.
+# =============================================================================
+
+[advisories]
+# Known Substrate/Polkadot SDK transitive dependency vulnerabilities
+# These are inherited from polkadot-stable2409 and cannot be upgraded independently
+ignore = [
+    # =========================================================================
+    # curve25519-dalek 3.2.0
+    # =========================================================================
+    # Timing variability in Scalar29::sub/Scalar52::sub
+    # Source: ed25519-zebra -> sp-core (polkadot-stable2409)
+    # Tracking: Will be resolved when upgrading to polkadot-stable2503+
+    "RUSTSEC-2024-0344",
+
+    # =========================================================================
+    # tracing-subscriber 0.2.25
+    # =========================================================================
+    # ANSI escape sequence log poisoning
+    # Source: sp-tracing -> sp-runtime-interface (polkadot-stable2409)
+    # Tracking: Will be resolved when upgrading to polkadot-stable2503+
+    "RUSTSEC-2025-0055",
+
+    # =========================================================================
+    # wasmtime 8.0.1 (3 vulnerabilities)
+    # =========================================================================
+    # 1. Unsound API access to WebAssembly shared linear memory
+    # Source: sp-wasm-interface -> sp-runtime-interface (polkadot-stable2409)
+    "RUSTSEC-2025-0118",
+
+    # 2. Windows device filenames not fully sandboxed
+    # Source: sp-wasm-interface -> sp-runtime-interface (polkadot-stable2409)
+    "RUSTSEC-2024-0438",
+
+    # 3. Miscompilation of wasm i64x2.shr_s instruction on x86_64
+    # Source: sp-wasm-interface -> sp-runtime-interface (polkadot-stable2409)
+    "RUSTSEC-2023-0091",
+]

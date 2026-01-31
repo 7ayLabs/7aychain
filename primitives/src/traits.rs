@@ -52,8 +52,11 @@ pub trait SecretSharing {
     type Share: Encode + Decode + Clone;
     type Index: Encode + Decode + Copy;
 
-    fn split(secret: &Self::Secret, threshold: u32, total: u32)
-        -> Option<Vec<(Self::Index, Self::Share)>>;
+    fn split(
+        secret: &Self::Secret,
+        threshold: u32,
+        total: u32,
+    ) -> Option<Vec<(Self::Index, Self::Share)>>;
     fn reconstruct(shares: &[(Self::Index, Self::Share)]) -> Option<Self::Secret>;
     fn verify_share(index: &Self::Index, share: &Self::Share, commitment: &H256) -> bool;
 }
@@ -66,7 +69,12 @@ pub trait StateTransition {
 
     fn apply(state: &Self::State, action: &Self::Action) -> Option<Self::State>;
     fn prove(pre: &Self::State, action: &Self::Action, post: &Self::State) -> Option<Self::Proof>;
-    fn verify(pre_root: &H256, post_root: &H256, action: &Self::Action, proof: &Self::Proof) -> bool;
+    fn verify(
+        pre_root: &H256,
+        post_root: &H256,
+        action: &Self::Action,
+        proof: &Self::Proof,
+    ) -> bool;
 }
 
 /// Digital signature scheme.
@@ -84,17 +92,19 @@ pub trait AggregateSignature: Signature {
     type AggregateSig: Encode + Decode;
 
     fn aggregate(signatures: &[Self::Sig]) -> Option<Self::AggregateSig>;
-    fn verify_aggregate(
-        pks: &[Self::PublicKey],
-        msgs: &[&[u8]],
-        agg: &Self::AggregateSig,
-    ) -> bool;
+    fn verify_aggregate(pks: &[Self::PublicKey], msgs: &[&[u8]], agg: &Self::AggregateSig) -> bool;
 }
 
 /// Chain binding for replay protection.
 pub trait ChainBound {
     fn bind(&self, chain_id: u64, block_hash: H256, block_num: u64) -> H256;
-    fn verify_binding(&self, binding: &H256, chain_id: u64, block_hash: H256, block_num: u64) -> bool;
+    fn verify_binding(
+        &self,
+        binding: &H256,
+        chain_id: u64,
+        block_hash: H256,
+        block_num: u64,
+    ) -> bool;
 }
 
 /// Epoch-bound data validation.
