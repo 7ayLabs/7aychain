@@ -14,13 +14,6 @@
 # =============================================================================
 
 [advisories]
-# Vulnerability database source
-db-path = "~/.cargo/advisory-db"
-vulnerability = "deny"
-unmaintained = "warn"
-yanked = "warn"
-notice = "warn"
-
 # Known Substrate/Polkadot SDK transitive dependency vulnerabilities
 # These are inherited from polkadot-stable2409 and cannot be upgraded independently
 ignore = [
