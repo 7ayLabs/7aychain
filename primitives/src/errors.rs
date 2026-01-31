@@ -9,24 +9,24 @@ pub type ProtocolResult<T> = Result<T, ProtocolError>;
 #[derive(Clone, PartialEq, Eq, Encode, Decode, TypeInfo, RuntimeDebug)]
 pub enum ProtocolError {
     // Presence (INV1-13)
-    DuplicatePresence,          // INV1
-    PresenceImmutable,          // INV2
-    InvalidStateTransition,     // INV7
-    UnauthorizedDeclaration,    // INV4
-    EpochExpired,               // INV9
-    QuorumNotMet,               // INV10
-    DuplicateVote,              // INV11
-    SlashedTerminal,            // INV8
+    DuplicatePresence,       // INV1
+    PresenceImmutable,       // INV2
+    InvalidStateTransition,  // INV7
+    UnauthorizedDeclaration, // INV4
+    EpochExpired,            // INV9
+    QuorumNotMet,            // INV10
+    DuplicateVote,           // INV11
+    SlashedTerminal,         // INV8
 
     // Epoch (INV14-18)
     EpochInvalidState,
     EpochNotFound,
-    EphemeralOutOfBounds,       // INV14
-    ActorNotInEpoch,            // INV16
+    EphemeralOutOfBounds, // INV14
+    ActorNotInEpoch,      // INV16
 
     // Validator (INV46-49)
-    InsufficientValidators,     // INV46
-    StakeConcentration,         // INV47
+    InsufficientValidators, // INV46
+    StakeConcentration,     // INV47
     ValidatorNotActive,
     InsufficientStake,
     ValidatorUnauthorized,
@@ -39,14 +39,14 @@ pub enum ProtocolError {
     DisputeTimeout,
 
     // Slashing (INV48-49)
-    SlashExceeded,              // INV48
-    RewardExceeded,             // INV49
+    SlashExceeded,  // INV48
+    RewardExceeded, // INV49
 
     // Recovery (INV57-60)
-    RecoveryQuorumNotMet,       // INV57
-    RecoveryCooldown,           // INV58
-    UpgradeDelayRequired,       // INV59
-    EmergencyQuorumNotMet,      // INV60
+    RecoveryQuorumNotMet,  // INV57
+    RecoveryCooldown,      // INV58
+    UpgradeDelayRequired,  // INV59
+    EmergencyQuorumNotMet, // INV60
 
     // Security (INV43-45)
     ChainBindingInvalid,        // INV43
@@ -56,55 +56,55 @@ pub enum ProtocolError {
     DiscoveryRateLimit,         // INV45
 
     // Vault (INV66-68)
-    VaultRingInvalid,           // INV66
-    VaultLocked,                // INV67
-    VaultKeyNotDestroyed,       // INV68
+    VaultRingInvalid,     // INV66
+    VaultLocked,          // INV67
+    VaultKeyNotDestroyed, // INV68
 
     // Device (INV64-65)
-    DeviceIdentityInvalid,      // INV64
-    DevicePresenceInvalid,      // INV65
+    DeviceIdentityInvalid, // INV64
+    DevicePresenceInvalid, // INV65
 
     // Crypto (INV69)
-    InvalidShareDistribution,   // INV69
+    InvalidShareDistribution, // INV69
     CryptoFailed,
     SignatureInvalid,
 
     // Storage (INV70-72)
-    StorageEpochBinding,        // INV70
-    StorageAccessDenied,        // INV71
-    StorageIntegrity,           // INV72
+    StorageEpochBinding, // INV70
+    StorageAccessDenied, // INV71
+    StorageIntegrity,    // INV72
 
     // ZK Proofs (INV73-75)
-    ZkShareProofInvalid,        // INV73
-    ZkPresenceProofInvalid,     // INV74
-    ZkAccessProofInvalid,       // INV75
+    ZkShareProofInvalid,    // INV73
+    ZkPresenceProofInvalid, // INV74
+    ZkAccessProofInvalid,   // INV75
 
     // Lifecycle (INV76-78)
-    AutoLockTriggered,          // INV76
-    KeyDestructionFailed,       // INV77
-    KeyRotationRequired,        // INV78
+    AutoLockTriggered,    // INV76
+    KeyDestructionFailed, // INV77
+    KeyRotationRequired,  // INV78
 
     // Boomerang (INV30-33)
-    BoomerangPathInvalid,       // INV30
-    BoomerangTimeout,           // INV31
-    BoomerangVerification,      // INV33
+    BoomerangPathInvalid,  // INV30
+    BoomerangTimeout,      // INV31
+    BoomerangVerification, // INV33
 
     // Autonomous (INV34-37)
-    AutonomousIntentInvalid,    // INV34
-    AutonomousThreshold,        // INV35
-    AutonomousExpired,          // INV37
+    AutonomousIntentInvalid, // INV34
+    AutonomousThreshold,     // INV35
+    AutonomousExpired,       // INV37
 
     // Octopus (INV38-42, INV63)
-    OctopusPremature,           // INV38
-    OctopusSubnodeLimit,        // INV63
-    OctopusStateInconsistent,   // INV41
+    OctopusPremature,         // INV38
+    OctopusSubnodeLimit,      // INV63
+    OctopusStateInconsistent, // INV41
 
     // Small Network (INV54-56)
-    SmallNetworkVerification,   // INV55
+    SmallNetworkVerification, // INV55
 
     // Reputation (INV50-53)
-    ReputationOutOfBounds,      // INV50
-    CooldownActive,             // INV53
+    ReputationOutOfBounds, // INV50
+    CooldownActive,        // INV53
 
     // Generic
     ArithmeticOverflow,
@@ -201,7 +201,10 @@ mod tests {
     #[test]
     fn invariant_mapping() {
         assert_eq!(ProtocolError::DuplicatePresence.invariant(), Some("INV1"));
-        assert_eq!(ProtocolError::InsufficientValidators.invariant(), Some("INV46"));
+        assert_eq!(
+            ProtocolError::InsufficientValidators.invariant(),
+            Some("INV46")
+        );
         assert_eq!(ProtocolError::Internal.invariant(), None);
     }
 

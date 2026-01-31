@@ -1,0 +1,71 @@
+name: Benchmarks
+
+on:
+  pull_request:
+    paths:
+      - 'pallets/**'
+      - 'runtime/**'
+      - 'primitives/**'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  benchmark:
+    name: Run Benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build with benchmarks
+        run: cargo build --release --features runtime-benchmarks
+        continue-on-error: true
+
+      - name: Run benchmarks
+        run: |
+          if [ -f "./target/release/7aychain" ]; then
+            ./target/release/7aychain benchmark pallet \
+              --chain dev \
+              --pallet "*" \
+              --extrinsic "*" \
+              --steps 50 \
+              --repeat 20 \
+              --output pallets/weights/ || true
+          else
+            echo "Binary not found, skipping benchmarks"
+          fi
+        continue-on-error: true
+
+      - name: Upload weights
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-weights
+          path: pallets/*/src/weights.rs
+          if-no-files-found: ignore
+
+  compare:
+    name: Compare Weights
+    runs-on: ubuntu-latest
+    needs: benchmark
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download weights
+        uses: actions/download-artifact@v4
+        with:
+          name: benchmark-weights
+          path: new-weights
+        continue-on-error: true
+
+      - name: Compare weights
+        run: |
+          echo "Weight comparison would be performed here"
+          echo "This is a placeholder for weight diff analysis"
