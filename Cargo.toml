@@ -9,6 +9,7 @@
 resolver = "2"
 members = [
     "primitives",
+    "pallets/presence",
 ]
 
 [workspace.package]
@@ -28,6 +29,7 @@ categories = ["cryptography", "blockchain"]
 # Internal Crates
 # =============================================================================
 seveny-primitives = { path = "primitives", default-features = false }
+pallet-presence = { path = "pallets/presence", default-features = false }
 
 # =============================================================================
 # Codec & Serialization
