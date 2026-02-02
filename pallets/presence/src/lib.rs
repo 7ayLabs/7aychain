@@ -17,13 +17,14 @@ pub mod pallet {
     };
     use frame_system::pallet_prelude::*;
     use seveny_primitives::{
+        crypto::DOMAIN_PRESENCE,
         types::{
             ActorId, BlockRef, EpochId, PresenceRecord, PresenceState, QuorumConfig, ValidatorId,
             Vote,
         },
         CryptoCommitment as Commitment,
     };
-    use sp_runtime::traits::Hash;
+    use sp_runtime::{traits::Hash, Saturating};
     use sp_std::vec::Vec;
 
     use crate::WeightInfo;
@@ -47,6 +48,12 @@ pub mod pallet {
 
         #[pallet::constant]
         type DefaultQuorumTotal: Get<u32>;
+
+        #[pallet::constant]
+        type CommitRevealDelay: Get<BlockNumberFor<Self>>;
+
+        #[pallet::constant]
+        type RevealWindow: Get<BlockNumberFor<Self>>;
     }
 
     #[pallet::storage]
@@ -112,12 +119,40 @@ pub mod pallet {
     #[pallet::getter(fn epoch_active)]
     pub type EpochActive<T: Config> = StorageMap<_, Blake2_128Concat, EpochId, bool, ValueQuery>;
 
+    #[pallet::storage]
+    #[pallet::getter(fn epoch_commit_start)]
+    pub type EpochCommitStart<T: Config> =
+        StorageMap<_, Blake2_128Concat, EpochId, BlockNumberFor<T>, OptionQuery>;
+
+    #[pallet::storage]
+    #[pallet::getter(fn commitment_count)]
+    pub type CommitmentCount<T: Config> = StorageMap<_, Blake2_128Concat, EpochId, u32, ValueQuery>;
+
+    #[pallet::storage]
+    #[pallet::getter(fn reveal_count)]
+    pub type RevealCount<T: Config> = StorageMap<_, Blake2_128Concat, EpochId, u32, ValueQuery>;
+
     #[derive(Clone, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug)]
     #[scale_info(skip_type_params(T))]
     pub struct Declaration<BlockNumber> {
         pub commitment: Commitment,
         pub declared_at: BlockNumber,
         pub block_ref: BlockRef,
+        pub revealed: bool,
+        pub reveal_block: Option<BlockNumber>,
+    }
+
+    #[derive(Clone, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    pub struct RevealData {
+        pub secret: [u8; 32],
+        pub randomness: [u8; 32],
+    }
+
+    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    pub enum DeclarationPhase {
+        Commit,
+        Reveal,
+        Closed,
     }
 
     #[pallet::event]
@@ -152,6 +187,29 @@ pub mod pallet {
             threshold: u32,
             total: u32,
         },
+        CommitmentSubmitted {
+            actor: ActorId,
+            epoch: EpochId,
+            block_number: BlockNumberFor<T>,
+        },
+        CommitmentRevealed {
+            actor: ActorId,
+            epoch: EpochId,
+            block_number: BlockNumberFor<T>,
+        },
+        RevealFailed {
+            actor: ActorId,
+            epoch: EpochId,
+            reason: RevealFailureReason,
+        },
+    }
+
+    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    pub enum RevealFailureReason {
+        CommitmentMismatch,
+        RevealWindowExpired,
+        RevealWindowNotStarted,
+        AlreadyRevealed,
     }
 
     #[pallet::error]
@@ -171,6 +229,13 @@ pub mod pallet {
         ActorNotFound,
         PresenceNotValidated,
         ArithmeticOverflow,
+        DeclarationNotFound,
+        CommitmentMismatch,
+        RevealWindowNotStarted,
+        RevealWindowExpired,
+        AlreadyRevealed,
+        NotInCommitPhase,
+        NotInRevealPhase,
     }
 
     #[pallet::genesis_config]
@@ -261,9 +326,19 @@ pub mod pallet {
                 commitment,
                 declared_at: block_number,
                 block_ref,
+                revealed: false,
+                reveal_block: None,
             };
 
             Declarations::<T>::insert(epoch, actor, declaration);
+
+            if EpochCommitStart::<T>::get(epoch).is_none() {
+                EpochCommitStart::<T>::insert(epoch, block_number);
+            }
+
+            CommitmentCount::<T>::mutate(epoch, |count| {
+                *count = count.saturating_add(1);
+            });
 
             let record = PresenceRecord {
                 actor,
@@ -280,7 +355,7 @@ pub mod pallet {
                 *count = count.saturating_add(1);
             });
 
-            Self::deposit_event(Event::PresenceDeclared {
+            Self::deposit_event(Event::CommitmentSubmitted {
                 actor,
                 epoch,
                 block_number,
@@ -463,6 +538,59 @@ pub mod pallet {
 
             Ok(())
         }
+
+        #[pallet::call_index(8)]
+        #[pallet::weight(T::WeightInfo::reveal_commitment())]
+        pub fn reveal_commitment(
+            origin: OriginFor<T>,
+            epoch: EpochId,
+            secret: [u8; 32],
+            randomness: [u8; 32],
+        ) -> DispatchResult {
+            let who = ensure_signed(origin)?;
+            let actor = Self::account_to_actor(&who);
+            let block_number = frame_system::Pallet::<T>::block_number();
+
+            Self::ensure_epoch_active(&epoch)?;
+
+            let phase = Self::get_declaration_phase(epoch, block_number);
+            ensure!(
+                phase == DeclarationPhase::Reveal,
+                Error::<T>::NotInRevealPhase
+            );
+
+            let mut declaration =
+                Declarations::<T>::get(epoch, actor).ok_or(Error::<T>::DeclarationNotFound)?;
+
+            ensure!(!declaration.revealed, Error::<T>::AlreadyRevealed);
+
+            let expected_commitment =
+                Self::compute_commitment(&actor, &epoch, &secret, &randomness);
+            if declaration.commitment != expected_commitment {
+                Self::deposit_event(Event::RevealFailed {
+                    actor,
+                    epoch,
+                    reason: RevealFailureReason::CommitmentMismatch,
+                });
+                return Err(Error::<T>::CommitmentMismatch.into());
+            }
+
+            declaration.revealed = true;
+            declaration.reveal_block = Some(block_number);
+            Declarations::<T>::insert(epoch, actor, declaration);
+
+            RevealCount::<T>::mutate(epoch, |count| {
+                *count = count.saturating_add(1);
+            });
+
+            Self::deposit_event(Event::CommitmentRevealed {
+                actor,
+                epoch,
+                block_number,
+            });
+
+            Ok(())
+        }
     }
 
     impl<T: Config> Pallet<T> {
@@ -538,6 +666,60 @@ pub mod pallet {
             actor: ActorId,
         ) -> Option<Declaration<BlockNumberFor<T>>> {
             Declarations::<T>::get(epoch, actor)
+        }
+
+        pub fn get_declaration_phase(
+            epoch: EpochId,
+            current_block: BlockNumberFor<T>,
+        ) -> DeclarationPhase {
+            let Some(commit_start) = EpochCommitStart::<T>::get(epoch) else {
+                return DeclarationPhase::Commit;
+            };
+
+            let reveal_start = commit_start.saturating_add(T::CommitRevealDelay::get());
+            let reveal_end = reveal_start.saturating_add(T::RevealWindow::get());
+
+            if current_block < reveal_start {
+                DeclarationPhase::Commit
+            } else if current_block < reveal_end {
+                DeclarationPhase::Reveal
+            } else {
+                DeclarationPhase::Closed
+            }
+        }
+
+        pub fn compute_commitment(
+            actor: &ActorId,
+            epoch: &EpochId,
+            secret: &[u8; 32],
+            randomness: &[u8; 32],
+        ) -> Commitment {
+            let mut preimage = Vec::with_capacity(DOMAIN_PRESENCE.len() + 32 + 8 + 32 + 32);
+            preimage.extend_from_slice(DOMAIN_PRESENCE);
+            preimage.extend_from_slice(actor.as_bytes());
+            preimage.extend_from_slice(&epoch.inner().to_le_bytes());
+            preimage.extend_from_slice(secret);
+            preimage.extend_from_slice(randomness);
+
+            let hash = T::Hashing::hash(&preimage);
+            Commitment(sp_core::H256(hash.as_ref().try_into().unwrap_or([0u8; 32])))
+        }
+
+        pub fn is_in_commit_phase(epoch: EpochId) -> bool {
+            let current_block = frame_system::Pallet::<T>::block_number();
+            Self::get_declaration_phase(epoch, current_block) == DeclarationPhase::Commit
+        }
+
+        pub fn is_in_reveal_phase(epoch: EpochId) -> bool {
+            let current_block = frame_system::Pallet::<T>::block_number();
+            Self::get_declaration_phase(epoch, current_block) == DeclarationPhase::Reveal
+        }
+
+        pub fn get_reveal_window(epoch: EpochId) -> Option<(BlockNumberFor<T>, BlockNumberFor<T>)> {
+            let commit_start = EpochCommitStart::<T>::get(epoch)?;
+            let reveal_start = commit_start.saturating_add(T::CommitRevealDelay::get());
+            let reveal_end = reveal_start.saturating_add(T::RevealWindow::get());
+            Some((reveal_start, reveal_end))
         }
     }
 }

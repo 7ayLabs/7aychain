@@ -17,6 +17,7 @@ pub trait WeightInfo {
     fn set_quorum_config() -> Weight;
     fn set_validator_status() -> Weight;
     fn set_epoch_active() -> Weight;
+    fn reveal_commitment() -> Weight;
 }
 
 pub struct SubstrateWeight<T>(PhantomData<T>);
@@ -63,6 +64,12 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
     fn set_epoch_active() -> Weight {
         Weight::from_parts(12_000_000, 0).saturating_add(T::DbWeight::get().writes(2))
     }
+
+    fn reveal_commitment() -> Weight {
+        Weight::from_parts(40_000_000, 0)
+            .saturating_add(T::DbWeight::get().reads(3))
+            .saturating_add(T::DbWeight::get().writes(2))
+    }
 }
 
 impl WeightInfo for () {
@@ -106,5 +113,11 @@ impl WeightInfo for () {
 
     fn set_epoch_active() -> Weight {
         Weight::from_parts(12_000_000, 0).saturating_add(RocksDbWeight::get().writes(2))
+    }
+
+    fn reveal_commitment() -> Weight {
+        Weight::from_parts(40_000_000, 0)
+            .saturating_add(RocksDbWeight::get().reads(3))
+            .saturating_add(RocksDbWeight::get().writes(2))
     }
 }

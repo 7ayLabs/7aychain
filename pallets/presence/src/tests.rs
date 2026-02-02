@@ -52,6 +52,8 @@ parameter_types! {
     pub const MaxVotesPerPresence: u32 = 100;
     pub const DefaultQuorumThreshold: u32 = 3;
     pub const DefaultQuorumTotal: u32 = 5;
+    pub const CommitRevealDelay: u64 = 10;
+    pub const RevealWindow: u64 = 20;
 }
 
 impl pallet_presence::Config for Test {
@@ -60,6 +62,8 @@ impl pallet_presence::Config for Test {
     type MaxVotesPerPresence = MaxVotesPerPresence;
     type DefaultQuorumThreshold = DefaultQuorumThreshold;
     type DefaultQuorumTotal = DefaultQuorumTotal;
+    type CommitRevealDelay = CommitRevealDelay;
+    type RevealWindow = RevealWindow;
 }
 
 fn new_test_ext() -> sp_io::TestExternalities {
@@ -531,5 +535,398 @@ fn events_emitted_correctly() {
             epoch,
             block_number: 1,
         }));
+    });
+}
+
+fn run_to_block(n: u64) {
+    while System::block_number() < n {
+        System::set_block_number(System::block_number() + 1);
+    }
+}
+
+fn compute_test_commitment(actor: &ActorId, epoch: &EpochId, secret: &[u8; 32], randomness: &[u8; 32]) -> Commitment {
+    use seveny_primitives::crypto::DOMAIN_PRESENCE;
+
+    let mut preimage = sp_std::vec::Vec::with_capacity(DOMAIN_PRESENCE.len() + 32 + 8 + 32 + 32);
+    preimage.extend_from_slice(DOMAIN_PRESENCE);
+    preimage.extend_from_slice(actor.as_bytes());
+    preimage.extend_from_slice(&epoch.inner().to_le_bytes());
+    preimage.extend_from_slice(secret);
+    preimage.extend_from_slice(randomness);
+
+    let hash = BlakeTwo256::hash(&preimage);
+    Commitment(H256(hash.0))
+}
+
+#[test]
+fn commitment_submitted_event_emitted() {
+    new_test_ext().execute_with(|| {
+        let epoch = EpochId::new(1);
+        let commitment = Commitment(H256([1u8; 32]));
+
+        assert_ok!(Presence::declare_presence_with_commitment(
+            RuntimeOrigin::signed(1),
+            epoch,
+            commitment
+        ));
+
+        let actor = account_to_actor(1);
+
+        System::assert_has_event(RuntimeEvent::Presence(Event::CommitmentSubmitted {
+            actor,
+            epoch,
+            block_number: 1,
+        }));
+    });
+}
+
+#[test]
+fn declaration_phase_commit_initially() {
+    new_test_ext().execute_with(|| {
+        let epoch = EpochId::new(1);
+
+        let phase = Presence::get_declaration_phase(epoch, 1);
+        assert_eq!(phase, pallet_presence::DeclarationPhase::Commit);
+    });
+}
+
+#[test]
+fn declaration_phase_transitions_to_reveal() {
+    new_test_ext().execute_with(|| {
+        let epoch = EpochId::new(1);
+        let commitment = Commitment(H256([1u8; 32]));
+
+        assert_ok!(Presence::declare_presence_with_commitment(
+            RuntimeOrigin::signed(1),
+            epoch,
+            commitment
+        ));
+
+        let phase = Presence::get_declaration_phase(epoch, 1);
+        assert_eq!(phase, pallet_presence::DeclarationPhase::Commit);
+
+        let phase = Presence::get_declaration_phase(epoch, 11);
+        assert_eq!(phase, pallet_presence::DeclarationPhase::Reveal);
+    });
+}
+
+#[test]
+fn declaration_phase_transitions_to_closed() {
+    new_test_ext().execute_with(|| {
+        let epoch = EpochId::new(1);
+        let commitment = Commitment(H256([1u8; 32]));
+
+        assert_ok!(Presence::declare_presence_with_commitment(
+            RuntimeOrigin::signed(1),
+            epoch,
+            commitment
+        ));
+
+        let phase = Presence::get_declaration_phase(epoch, 31);
+        assert_eq!(phase, pallet_presence::DeclarationPhase::Closed);
+    });
+}
+
+#[test]
+fn reveal_commitment_success() {
+    new_test_ext().execute_with(|| {
+        let epoch = EpochId::new(1);
+        let secret = [42u8; 32];
+        let randomness = [99u8; 32];
+        let actor = account_to_actor(1);
+
+        let commitment = compute_test_commitment(&actor, &epoch, &secret, &randomness);
+
+        assert_ok!(Presence::declare_presence_with_commitment(
+            RuntimeOrigin::signed(1),
+            epoch,
+            commitment
+        ));
+
+        run_to_block(12);
+
+        assert_ok!(Presence::reveal_commitment(
+            RuntimeOrigin::signed(1),
+            epoch,
+            secret,
+            randomness
+        ));
+
+        let declaration = Presence::declarations(epoch, actor).expect("declaration should exist");
+        assert!(declaration.revealed);
+        assert_eq!(declaration.reveal_block, Some(12));
+
+        System::assert_has_event(RuntimeEvent::Presence(Event::CommitmentRevealed {
+            actor,
+            epoch,
+            block_number: 12,
+        }));
+    });
+}
+
+#[test]
+fn reveal_commitment_fails_before_reveal_window() {
+    new_test_ext().execute_with(|| {
+        let epoch = EpochId::new(1);
+        let secret = [42u8; 32];
+        let randomness = [99u8; 32];
+        let actor = account_to_actor(1);
+
+        let commitment = compute_test_commitment(&actor, &epoch, &secret, &randomness);
+
+        assert_ok!(Presence::declare_presence_with_commitment(
+            RuntimeOrigin::signed(1),
+            epoch,
+            commitment
+        ));
+
+        assert_noop!(
+            Presence::reveal_commitment(RuntimeOrigin::signed(1), epoch, secret, randomness),
+            Error::<Test>::NotInRevealPhase
+        );
+    });
+}
+
+#[test]
+fn reveal_commitment_fails_after_reveal_window() {
+    new_test_ext().execute_with(|| {
+        let epoch = EpochId::new(1);
+        let secret = [42u8; 32];
+        let randomness = [99u8; 32];
+        let actor = account_to_actor(1);
+
+        let commitment = compute_test_commitment(&actor, &epoch, &secret, &randomness);
+
+        assert_ok!(Presence::declare_presence_with_commitment(
+            RuntimeOrigin::signed(1),
+            epoch,
+            commitment
+        ));
+
+        run_to_block(35);
+
+        assert_noop!(
+            Presence::reveal_commitment(RuntimeOrigin::signed(1), epoch, secret, randomness),
+            Error::<Test>::NotInRevealPhase
+        );
+    });
+}
+
+#[test]
+fn reveal_commitment_fails_with_wrong_secret() {
+    new_test_ext().execute_with(|| {
+        let epoch = EpochId::new(1);
+        let secret = [42u8; 32];
+        let randomness = [99u8; 32];
+        let wrong_secret = [1u8; 32];
+        let actor = account_to_actor(1);
+
+        let commitment = compute_test_commitment(&actor, &epoch, &secret, &randomness);
+
+        assert_ok!(Presence::declare_presence_with_commitment(
+            RuntimeOrigin::signed(1),
+            epoch,
+            commitment
+        ));
+
+        run_to_block(12);
+
+        assert_noop!(
+            Presence::reveal_commitment(RuntimeOrigin::signed(1), epoch, wrong_secret, randomness),
+            Error::<Test>::CommitmentMismatch
+        );
+    });
+}
+
+#[test]
+fn reveal_commitment_fails_with_wrong_randomness() {
+    new_test_ext().execute_with(|| {
+        let epoch = EpochId::new(1);
+        let secret = [42u8; 32];
+        let randomness = [99u8; 32];
+        let wrong_randomness = [1u8; 32];
+        let actor = account_to_actor(1);
+
+        let commitment = compute_test_commitment(&actor, &epoch, &secret, &randomness);
+
+        assert_ok!(Presence::declare_presence_with_commitment(
+            RuntimeOrigin::signed(1),
+            epoch,
+            commitment
+        ));
+
+        run_to_block(12);
+
+        assert_noop!(
+            Presence::reveal_commitment(RuntimeOrigin::signed(1), epoch, secret, wrong_randomness),
+            Error::<Test>::CommitmentMismatch
+        );
+    });
+}
+
+#[test]
+fn reveal_commitment_fails_if_already_revealed() {
+    new_test_ext().execute_with(|| {
+        let epoch = EpochId::new(1);
+        let secret = [42u8; 32];
+        let randomness = [99u8; 32];
+        let actor = account_to_actor(1);
+
+        let commitment = compute_test_commitment(&actor, &epoch, &secret, &randomness);
+
+        assert_ok!(Presence::declare_presence_with_commitment(
+            RuntimeOrigin::signed(1),
+            epoch,
+            commitment
+        ));
+
+        run_to_block(12);
+
+        assert_ok!(Presence::reveal_commitment(
+            RuntimeOrigin::signed(1),
+            epoch,
+            secret,
+            randomness
+        ));
+
+        assert_noop!(
+            Presence::reveal_commitment(RuntimeOrigin::signed(1), epoch, secret, randomness),
+            Error::<Test>::AlreadyRevealed
+        );
+    });
+}
+
+#[test]
+fn reveal_commitment_fails_without_declaration() {
+    new_test_ext().execute_with(|| {
+        let epoch = EpochId::new(1);
+        let secret = [42u8; 32];
+        let randomness = [99u8; 32];
+
+        pallet_presence::EpochCommitStart::<Test>::insert(epoch, 1u64);
+
+        run_to_block(12);
+
+        assert_noop!(
+            Presence::reveal_commitment(RuntimeOrigin::signed(1), epoch, secret, randomness),
+            Error::<Test>::DeclarationNotFound
+        );
+    });
+}
+
+#[test]
+fn commitment_and_reveal_counts_tracked() {
+    new_test_ext().execute_with(|| {
+        let epoch = EpochId::new(1);
+        let secret1 = [42u8; 32];
+        let randomness1 = [99u8; 32];
+        let actor1 = account_to_actor(1);
+
+        let commitment1 = compute_test_commitment(&actor1, &epoch, &secret1, &randomness1);
+
+        let secret2 = [43u8; 32];
+        let randomness2 = [100u8; 32];
+        let actor2 = account_to_actor(2);
+
+        let commitment2 = compute_test_commitment(&actor2, &epoch, &secret2, &randomness2);
+
+        assert_ok!(Presence::declare_presence_with_commitment(
+            RuntimeOrigin::signed(1),
+            epoch,
+            commitment1
+        ));
+        assert_ok!(Presence::declare_presence_with_commitment(
+            RuntimeOrigin::signed(2),
+            epoch,
+            commitment2
+        ));
+
+        assert_eq!(Presence::commitment_count(epoch), 2);
+
+        run_to_block(12);
+
+        assert_ok!(Presence::reveal_commitment(
+            RuntimeOrigin::signed(1),
+            epoch,
+            secret1,
+            randomness1
+        ));
+
+        assert_eq!(Presence::reveal_count(epoch), 1);
+
+        assert_ok!(Presence::reveal_commitment(
+            RuntimeOrigin::signed(2),
+            epoch,
+            secret2,
+            randomness2
+        ));
+
+        assert_eq!(Presence::reveal_count(epoch), 2);
+    });
+}
+
+#[test]
+fn get_reveal_window_returns_correct_bounds() {
+    new_test_ext().execute_with(|| {
+        let epoch = EpochId::new(1);
+        let commitment = Commitment(H256([1u8; 32]));
+
+        assert!(Presence::get_reveal_window(epoch).is_none());
+
+        assert_ok!(Presence::declare_presence_with_commitment(
+            RuntimeOrigin::signed(1),
+            epoch,
+            commitment
+        ));
+
+        let window = Presence::get_reveal_window(epoch).expect("window should exist");
+        assert_eq!(window.0, 11);
+        assert_eq!(window.1, 31);
+    });
+}
+
+#[test]
+fn is_in_commit_phase_helper() {
+    new_test_ext().execute_with(|| {
+        let epoch = EpochId::new(1);
+
+        assert!(Presence::is_in_commit_phase(epoch));
+
+        let commitment = Commitment(H256([1u8; 32]));
+        assert_ok!(Presence::declare_presence_with_commitment(
+            RuntimeOrigin::signed(1),
+            epoch,
+            commitment
+        ));
+
+        assert!(Presence::is_in_commit_phase(epoch));
+
+        run_to_block(12);
+
+        assert!(!Presence::is_in_commit_phase(epoch));
+    });
+}
+
+#[test]
+fn is_in_reveal_phase_helper() {
+    new_test_ext().execute_with(|| {
+        let epoch = EpochId::new(1);
+
+        assert!(!Presence::is_in_reveal_phase(epoch));
+
+        let commitment = Commitment(H256([1u8; 32]));
+        assert_ok!(Presence::declare_presence_with_commitment(
+            RuntimeOrigin::signed(1),
+            epoch,
+            commitment
+        ));
+
+        run_to_block(12);
+
+        assert!(Presence::is_in_reveal_phase(epoch));
+
+        run_to_block(35);
+
+        assert!(!Presence::is_in_reveal_phase(epoch));
     });
 }
