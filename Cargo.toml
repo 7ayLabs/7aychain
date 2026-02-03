@@ -16,6 +16,7 @@ members = [
     "pallets/governance",
     "pallets/semantic",
     "pallets/boomerang",
+    "pallets/autonomous",
 ]
 
 [workspace.package]
@@ -42,6 +43,7 @@ pallet-dispute = { path = "pallets/dispute", default-features = false }
 pallet-governance = { path = "pallets/governance", default-features = false }
 pallet-semantic = { path = "pallets/semantic", default-features = false }
 pallet-boomerang = { path = "pallets/boomerang", default-features = false }
+pallet-autonomous = { path = "pallets/autonomous", default-features = false }
 
 # =============================================================================
 # FRAME Pallets
