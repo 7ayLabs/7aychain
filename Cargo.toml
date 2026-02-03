@@ -21,6 +21,7 @@ members = [
     "pallets/device",
     "pallets/vault",
     "pallets/zk",
+    "pallets/storage",
 ]
 
 [workspace.package]
@@ -52,6 +53,7 @@ pallet-octopus = { path = "pallets/octopus", default-features = false }
 pallet-device = { path = "pallets/device", default-features = false }
 pallet-vault = { path = "pallets/vault", default-features = false }
 pallet-zk = { path = "pallets/zk", default-features = false }
+pallet-storage = { path = "pallets/storage", default-features = false }
 
 # =============================================================================
 # FRAME Pallets
