@@ -18,6 +18,7 @@ members = [
     "pallets/boomerang",
     "pallets/autonomous",
     "pallets/octopus",
+    "pallets/device",
 ]
 
 [workspace.package]
@@ -46,6 +47,7 @@ pallet-semantic = { path = "pallets/semantic", default-features = false }
 pallet-boomerang = { path = "pallets/boomerang", default-features = false }
 pallet-autonomous = { path = "pallets/autonomous", default-features = false }
 pallet-octopus = { path = "pallets/octopus", default-features = false }
+pallet-device = { path = "pallets/device", default-features = false }
 
 # =============================================================================
 # FRAME Pallets
