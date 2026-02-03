@@ -12,6 +12,7 @@ members = [
     "pallets/presence",
     "pallets/epoch",
     "pallets/validator",
+    "pallets/dispute",
 ]
 
 [workspace.package]
@@ -34,6 +35,7 @@ seveny-primitives = { path = "primitives", default-features = false }
 pallet-presence = { path = "pallets/presence", default-features = false }
 pallet-epoch = { path = "pallets/epoch", default-features = false }
 pallet-validator = { path = "pallets/validator", default-features = false }
+pallet-dispute = { path = "pallets/dispute", default-features = false }
 
 # =============================================================================
 # FRAME Pallets
