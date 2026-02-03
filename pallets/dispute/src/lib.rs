@@ -1,5 +1,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![allow(clippy::expect_used)]
+extern crate alloc;
 
 pub use pallet::*;
 
@@ -18,13 +19,13 @@ pub mod pallet {
     };
     use frame_system::pallet_prelude::*;
     use seveny_primitives::types::{ValidatorId, ViolationType};
-    use sp_std::vec::Vec;
+    use alloc::vec::Vec;
 
     use crate::WeightInfo;
 
     const STORAGE_VERSION: StorageVersion = StorageVersion::new(1);
 
-    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
     pub struct DisputeId(pub u64);
 
     impl DisputeId {
@@ -37,10 +38,10 @@ pub mod pallet {
         }
     }
 
-    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
     pub struct EvidenceId(pub u64);
 
-    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
     pub enum DisputeStatus {
         Open,
         UnderReview,
@@ -48,14 +49,14 @@ pub mod pallet {
         Rejected,
     }
 
-    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
     pub enum DisputeOutcome {
         ValidatorSlashed,
         DisputeRejected,
         InsufficientEvidence,
     }
 
-    #[derive(Clone, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(Clone, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
     #[scale_info(skip_type_params(T))]
     pub struct Dispute<T: Config> {
         pub id: DisputeId,
@@ -69,7 +70,7 @@ pub mod pallet {
         pub evidence_count: u32,
     }
 
-    #[derive(Clone, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(Clone, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
     #[scale_info(skip_type_params(T))]
     pub struct Evidence<T: Config> {
         pub id: EvidenceId,
@@ -171,7 +172,7 @@ pub mod pallet {
         },
     }
 
-    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
     pub enum DisputeRejectionReason {
         InsufficientEvidence,
         ResolutionPeriodExpired,

@@ -6,7 +6,7 @@ use frame_support::{
     traits::Get,
     weights::{constants::RocksDbWeight, Weight},
 };
-use sp_std::marker::PhantomData;
+use core::marker::PhantomData;
 
 pub trait WeightInfo {
     fn initiate_path() -> Weight;

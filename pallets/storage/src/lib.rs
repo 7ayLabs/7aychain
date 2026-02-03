@@ -14,7 +14,7 @@ use seveny_primitives::types::{ActorId, EpochId};
 use sp_core::H256;
 use sp_runtime::Saturating;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen, Default, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen, Default, Hash)]
 pub struct DataKey(pub H256);
 
 impl DataKey {
@@ -28,7 +28,7 @@ impl DataKey {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
 pub enum DataType {
     Presence,
     Commitment,
@@ -43,7 +43,7 @@ impl Default for DataType {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
 pub enum StorageStatus {
     Active,
     Expired,
@@ -56,7 +56,7 @@ impl Default for StorageStatus {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
 pub enum RetentionPolicy {
     EpochBound,
     TimeBound,
@@ -70,7 +70,7 @@ impl Default for RetentionPolicy {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
 #[scale_info(skip_type_params(T))]
 pub struct EphemeralEntry<T: Config> {
     pub key: DataKey,
@@ -85,7 +85,7 @@ pub struct EphemeralEntry<T: Config> {
     pub size_bytes: u32,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
 #[scale_info(skip_type_params(T))]
 pub struct StorageQuota<T: Config> {
     pub actor: ActorId,
@@ -96,7 +96,7 @@ pub struct StorageQuota<T: Config> {
     pub last_updated: BlockNumberFor<T>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
 #[scale_info(skip_type_params(T))]
 pub struct EpochStorage<T: Config> {
     pub epoch: EpochId,

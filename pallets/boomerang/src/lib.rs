@@ -1,4 +1,5 @@
 #![cfg_attr(not(feature = "std"), no_std)]
+extern crate alloc;
 
 pub use pallet::*;
 
@@ -18,13 +19,13 @@ pub mod pallet {
     use frame_system::pallet_prelude::*;
     use seveny_primitives::types::ActorId;
     use sp_runtime::Saturating;
-    use sp_std::vec::Vec;
+    use alloc::vec::Vec;
 
     use crate::WeightInfo;
 
     const STORAGE_VERSION: StorageVersion = StorageVersion::new(1);
 
-    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
     pub struct PathId(pub u64);
 
     impl PathId {
@@ -37,7 +38,7 @@ pub mod pallet {
         }
     }
 
-    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
     pub struct HopId(pub u64);
 
     impl HopId {
@@ -46,7 +47,7 @@ pub mod pallet {
         }
     }
 
-    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
     pub enum PathStatus {
         Initiated,
         InProgress,
@@ -56,13 +57,13 @@ pub mod pallet {
         Failed,
     }
 
-    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
     pub enum HopDirection {
         Outbound,
         Return,
     }
 
-    #[derive(Clone, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(Clone, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
     #[scale_info(skip_type_params(T))]
     pub struct BoomerangPath<T: Config> {
         pub id: PathId,
@@ -78,7 +79,7 @@ pub mod pallet {
         pub verification_hash: Option<sp_core::H256>,
     }
 
-    #[derive(Clone, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(Clone, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
     #[scale_info(skip_type_params(T))]
     pub struct PathHop<T: Config> {
         pub id: HopId,
@@ -191,7 +192,7 @@ pub mod pallet {
         },
     }
 
-    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
     pub enum PathFailureReason {
         InvalidHop,
         MismatchedReturn,

@@ -1,4 +1,5 @@
 #![cfg_attr(not(feature = "std"), no_std)]
+extern crate alloc;
 
 pub use pallet::*;
 
@@ -18,13 +19,13 @@ pub mod pallet {
     use frame_system::pallet_prelude::*;
     use seveny_primitives::types::ActorId;
     use sp_runtime::Saturating;
-    use sp_std::vec::Vec;
+    use alloc::vec::Vec;
 
     use crate::WeightInfo;
 
     const STORAGE_VERSION: StorageVersion = StorageVersion::new(1);
 
-    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
     pub struct RelationshipId(pub u64);
 
     impl RelationshipId {
@@ -37,7 +38,7 @@ pub mod pallet {
         }
     }
 
-    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
     pub struct DiscoveryRequestId(pub u64);
 
     impl DiscoveryRequestId {
@@ -50,7 +51,7 @@ pub mod pallet {
         }
     }
 
-    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
     pub enum RelationshipType {
         Trust,
         Follow,
@@ -59,7 +60,7 @@ pub mod pallet {
         Verify,
     }
 
-    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
     pub enum RelationshipStatus {
         Active,
         Pending,
@@ -67,7 +68,7 @@ pub mod pallet {
         Expired,
     }
 
-    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
     pub enum DiscoveryStatus {
         Pending,
         Processing,
@@ -76,7 +77,7 @@ pub mod pallet {
         RateLimited,
     }
 
-    #[derive(Clone, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(Clone, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
     #[scale_info(skip_type_params(T))]
     pub struct Relationship<T: Config> {
         pub id: RelationshipId,
@@ -91,7 +92,7 @@ pub mod pallet {
         pub trust_level: u8,
     }
 
-    #[derive(Clone, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(Clone, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
     #[scale_info(skip_type_params(T))]
     pub struct DiscoveryRequest<T: Config> {
         pub id: DiscoveryRequestId,
@@ -103,7 +104,7 @@ pub mod pallet {
         pub results_count: u32,
     }
 
-    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
     pub struct DiscoveryCriteria {
         pub min_trust_level: u8,
         pub relationship_type: Option<RelationshipType>,
@@ -122,7 +123,7 @@ pub mod pallet {
         }
     }
 
-    #[derive(Clone, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(Clone, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
     pub struct SemanticProfile {
         pub actor: ActorId,
         pub total_relationships: u32,

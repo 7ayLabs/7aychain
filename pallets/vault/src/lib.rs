@@ -1,4 +1,5 @@
 #![cfg_attr(not(feature = "std"), no_std)]
+extern crate alloc;
 
 pub use pallet::*;
 pub mod weights;
@@ -13,10 +14,10 @@ use scale_info::TypeInfo;
 use seveny_primitives::types::ActorId;
 use sp_core::H256;
 use sp_runtime::Saturating;
-use sp_std::vec::Vec;
+use alloc::vec::Vec;
 
 #[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen, Default, Hash,
+    Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen, Default, Hash,
 )]
 pub struct VaultId(pub u64);
 
@@ -27,7 +28,7 @@ impl VaultId {
 }
 
 #[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen, Default, Hash,
+    Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen, Default, Hash,
 )]
 pub struct ShareId(pub u64);
 
@@ -37,7 +38,7 @@ impl ShareId {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
 pub enum VaultStatus {
     Creating,
     Active,
@@ -52,7 +53,7 @@ impl Default for VaultStatus {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
 pub enum MemberRole {
     Owner,
     Guardian,
@@ -65,7 +66,7 @@ impl Default for MemberRole {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
 pub enum ShareStatus {
     Pending,
     Distributed,
@@ -79,7 +80,7 @@ impl Default for ShareStatus {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
 #[scale_info(skip_type_params(T))]
 pub struct Vault<T: Config> {
     pub id: VaultId,
@@ -93,7 +94,7 @@ pub struct Vault<T: Config> {
     pub last_activity: BlockNumberFor<T>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
 #[scale_info(skip_type_params(T))]
 pub struct VaultMember<T: Config> {
     pub vault: VaultId,
@@ -104,7 +105,7 @@ pub struct VaultMember<T: Config> {
     pub share_committed: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
 #[scale_info(skip_type_params(T))]
 pub struct Share<T: Config> {
     pub id: ShareId,
@@ -116,7 +117,7 @@ pub struct Share<T: Config> {
     pub created_at: BlockNumberFor<T>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
 #[scale_info(skip_type_params(T))]
 pub struct RecoveryRequest<T: Config> {
     pub vault: VaultId,

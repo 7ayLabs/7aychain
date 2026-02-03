@@ -1,0 +1,132 @@
+[package]
+name = "seveny-runtime"
+description = "7aychain Runtime - Substrate-based Proof of Presence Protocol"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[dependencies]
+parity-scale-codec = { workspace = true, features = ["derive"] }
+scale-info = { workspace = true, features = ["derive"] }
+
+sp-api = { workspace = true }
+sp-block-builder = { version = "40.0.0", default-features = false }
+sp-consensus-aura = { version = "0.46.0", default-features = false }
+sp-consensus-grandpa = { version = "27.0.0", default-features = false }
+sp-core = { workspace = true }
+sp-inherents = { version = "40.0.0", default-features = false }
+sp-offchain = { version = "40.0.0", default-features = false }
+sp-runtime = { workspace = true }
+sp-session = { version = "42.0.0", default-features = false }
+sp-storage = { version = "22.0.0", default-features = false }
+sp-transaction-pool = { version = "40.0.0", default-features = false }
+sp-version = { version = "43.0.0", default-features = false }
+sp-genesis-builder = { version = "0.21.0", default-features = false }
+
+frame-executive = { version = "45.0.0", default-features = false }
+frame-support = { workspace = true }
+frame-system = { workspace = true }
+frame-system-rpc-runtime-api = { version = "40.0.0", default-features = false }
+frame-try-runtime = { version = "0.51.0", default-features = false, optional = true }
+
+pallet-aura = { version = "44.0.0", default-features = false }
+pallet-balances = { workspace = true }
+pallet-grandpa = { version = "45.0.0", default-features = false }
+pallet-sudo = { version = "45.0.0", default-features = false }
+pallet-timestamp = { version = "44.0.0", default-features = false }
+pallet-transaction-payment = { version = "45.0.0", default-features = false }
+pallet-transaction-payment-rpc-runtime-api = { version = "45.0.0", default-features = false }
+
+seveny-primitives = { workspace = true }
+pallet-presence = { workspace = true }
+pallet-epoch = { workspace = true }
+pallet-validator = { workspace = true }
+pallet-dispute = { workspace = true }
+pallet-governance = { workspace = true }
+pallet-semantic = { workspace = true }
+pallet-boomerang = { workspace = true }
+pallet-autonomous = { workspace = true }
+pallet-octopus = { workspace = true }
+pallet-device = { workspace = true }
+pallet-vault = { workspace = true }
+pallet-zk = { workspace = true }
+pallet-storage = { workspace = true }
+pallet-lifecycle = { workspace = true }
+
+[build-dependencies]
+substrate-wasm-builder = { version = "31.1.0", optional = true }
+
+[features]
+default = ["std"]
+std = [
+    "parity-scale-codec/std",
+    "scale-info/std",
+    "sp-api/std",
+    "sp-block-builder/std",
+    "sp-consensus-aura/std",
+    "sp-consensus-grandpa/std",
+    "sp-core/std",
+    "sp-inherents/std",
+    "sp-offchain/std",
+    "sp-runtime/std",
+    "sp-session/std",
+    "sp-storage/std",
+    "sp-transaction-pool/std",
+    "sp-version/std",
+    "sp-genesis-builder/std",
+    "frame-executive/std",
+    "frame-support/std",
+    "frame-system/std",
+    "frame-system-rpc-runtime-api/std",
+    "frame-try-runtime?/std",
+    "pallet-aura/std",
+    "pallet-balances/std",
+    "pallet-grandpa/std",
+    "pallet-sudo/std",
+    "pallet-timestamp/std",
+    "pallet-transaction-payment/std",
+    "pallet-transaction-payment-rpc-runtime-api/std",
+    "seveny-primitives/std",
+    "pallet-presence/std",
+    "pallet-epoch/std",
+    "pallet-validator/std",
+    "pallet-dispute/std",
+    "pallet-governance/std",
+    "pallet-semantic/std",
+    "pallet-boomerang/std",
+    "pallet-autonomous/std",
+    "pallet-octopus/std",
+    "pallet-device/std",
+    "pallet-vault/std",
+    "pallet-zk/std",
+    "pallet-storage/std",
+    "pallet-lifecycle/std",
+    "substrate-wasm-builder",
+]
+runtime-benchmarks = [
+    "frame-support/runtime-benchmarks",
+    "frame-system/runtime-benchmarks",
+    "pallet-balances/runtime-benchmarks",
+    "pallet-grandpa/runtime-benchmarks",
+    "pallet-sudo/runtime-benchmarks",
+    "pallet-timestamp/runtime-benchmarks",
+    "sp-runtime/runtime-benchmarks",
+]
+try-runtime = [
+    "frame-try-runtime/try-runtime",
+    "frame-executive/try-runtime",
+    "frame-support/try-runtime",
+    "frame-system/try-runtime",
+    "pallet-aura/try-runtime",
+    "pallet-balances/try-runtime",
+    "pallet-grandpa/try-runtime",
+    "pallet-sudo/try-runtime",
+    "pallet-timestamp/try-runtime",
+    "pallet-transaction-payment/try-runtime",
+]

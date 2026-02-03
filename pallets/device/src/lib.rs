@@ -1,4 +1,5 @@
 #![cfg_attr(not(feature = "std"), no_std)]
+extern crate alloc;
 
 pub use pallet::*;
 pub mod weights;
@@ -13,10 +14,10 @@ use scale_info::TypeInfo;
 use seveny_primitives::types::ActorId;
 use sp_core::H256;
 use sp_runtime::Saturating;
-use sp_std::vec::Vec;
+use alloc::vec::Vec;
 
 #[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen, Default, Hash,
+    Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen, Default, Hash,
 )]
 pub struct DeviceId(pub u64);
 
@@ -26,7 +27,7 @@ impl DeviceId {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
 pub enum DeviceType {
     Mobile,
     Desktop,
@@ -42,7 +43,7 @@ impl Default for DeviceType {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
 pub enum DeviceStatus {
     Pending,
     Active,
@@ -57,7 +58,7 @@ impl Default for DeviceStatus {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
 pub enum AttestationType {
     SelfSigned,
     TrustedParty,
@@ -72,7 +73,7 @@ impl Default for AttestationType {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
 #[scale_info(skip_type_params(T))]
 pub struct Device<T: Config> {
     pub id: DeviceId,
@@ -86,7 +87,7 @@ pub struct Device<T: Config> {
     pub trust_score: u8,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
 #[scale_info(skip_type_params(T))]
 pub struct DeviceAttestation<T: Config> {
     pub device: DeviceId,

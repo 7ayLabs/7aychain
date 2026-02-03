@@ -1,4 +1,5 @@
 #![cfg_attr(not(feature = "std"), no_std)]
+extern crate alloc;
 
 pub use pallet::*;
 pub mod weights;
@@ -15,9 +16,9 @@ use seveny_primitives::{
     types::ActorId,
 };
 use sp_core::{blake2_256, H256};
-use sp_std::vec::Vec;
+use alloc::vec::Vec;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
 pub enum ProofType {
     Share,
     Presence,
@@ -30,7 +31,7 @@ impl Default for ProofType {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
 pub enum VerificationStatus {
     Pending,
     Verified,
@@ -43,26 +44,26 @@ impl Default for VerificationStatus {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
 pub struct ShareStatement {
     pub commitment_hash: H256,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, TypeInfo)]
+#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo)]
 pub struct ShareWitness {
     pub share_value: [u8; 32],
     pub share_index: u8,
     pub randomness: [u8; 32],
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
 pub struct PresenceStatement {
     pub epoch_id: u64,
     pub state_root: StateRoot,
     pub nullifier: Nullifier,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, TypeInfo)]
+#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo)]
 pub struct PresenceWitness {
     pub secret: [u8; 32],
     pub randomness: [u8; 32],
@@ -70,20 +71,20 @@ pub struct PresenceWitness {
     pub leaf_index: u64,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
 pub struct AccessStatement {
     pub vault_id: u64,
     pub access_hash: H256,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, TypeInfo)]
+#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo)]
 pub struct AccessWitness {
     pub actor_id: ActorId,
     pub ring_position: u32,
     pub membership_commitment: H256,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
 #[scale_info(skip_type_params(T))]
 pub struct ZkProof<T: Config> {
     pub proof_type: ProofType,
@@ -91,7 +92,7 @@ pub struct ZkProof<T: Config> {
     pub created_at: BlockNumberFor<T>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
 #[scale_info(skip_type_params(T))]
 pub struct VerificationRecord<T: Config> {
     pub proof_type: ProofType,

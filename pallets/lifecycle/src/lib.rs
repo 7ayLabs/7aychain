@@ -14,7 +14,7 @@ use seveny_primitives::types::ActorId;
 use sp_core::H256;
 use sp_runtime::Saturating;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
 pub enum ActorStatus {
     Pending,
     Active,
@@ -29,7 +29,7 @@ impl Default for ActorStatus {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
 pub enum KeyStatus {
     Active,
     Rotating,
@@ -43,7 +43,7 @@ impl Default for KeyStatus {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
 pub enum DestructionReason {
     OwnerRequest,
     SecurityBreach,
@@ -58,7 +58,7 @@ impl Default for DestructionReason {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
 #[scale_info(skip_type_params(T))]
 pub struct ActorLifecycle<T: Config> {
     pub actor: ActorId,
@@ -69,7 +69,7 @@ pub struct ActorLifecycle<T: Config> {
     pub key_status: KeyStatus,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
 #[scale_info(skip_type_params(T))]
 pub struct KeyDestructionRequest<T: Config> {
     pub actor: ActorId,
@@ -81,7 +81,7 @@ pub struct KeyDestructionRequest<T: Config> {
     pub finalized: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
 #[scale_info(skip_type_params(T))]
 pub struct DestructionAttestation<T: Config> {
     pub attester: ActorId,
@@ -89,7 +89,7 @@ pub struct DestructionAttestation<T: Config> {
     pub signature_hash: H256,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
 #[scale_info(skip_type_params(T))]
 pub struct KeyRotation<T: Config> {
     pub actor: ActorId,

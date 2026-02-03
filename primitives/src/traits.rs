@@ -2,7 +2,7 @@
 
 use parity_scale_codec::{Decode, Encode};
 use sp_core::H256;
-use sp_std::vec::Vec;
+use alloc::vec::Vec;
 
 /// Cryptographic hash computation.
 pub trait CryptoHash {

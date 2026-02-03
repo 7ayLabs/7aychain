@@ -27,7 +27,6 @@ scale-info = { workspace = true }
 # Substrate primitives
 sp-core = { workspace = true }
 sp-runtime = { workspace = true }
-sp-std = { workspace = true }
 sp-arithmetic = { workspace = true }
 
 [dev-dependencies]
@@ -40,7 +39,6 @@ std = [
     "scale-info/std",
     "sp-core/std",
     "sp-runtime/std",
-    "sp-std/std",
     "sp-arithmetic/std",
 ]
 runtime-benchmarks = []

@@ -1,5 +1,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![allow(clippy::expect_used)]
+extern crate alloc;
 
 pub use pallet::*;
 
@@ -25,7 +26,7 @@ pub mod pallet {
     };
     use sp_arithmetic::Perbill;
     use sp_runtime::{traits::Zero, Saturating};
-    use sp_std::vec::Vec;
+    use alloc::vec::Vec;
 
     use crate::WeightInfo;
 
@@ -57,7 +58,7 @@ pub mod pallet {
         type SlashDeferDuration: Get<BlockNumberFor<Self>>;
     }
 
-    #[derive(Clone, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(Clone, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
     pub enum ValidatorStatus {
         Bonding,
         Active,
@@ -65,7 +66,7 @@ pub mod pallet {
         Slashed,
     }
 
-    #[derive(Clone, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(Clone, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
     #[scale_info(skip_type_params(T))]
     pub struct ValidatorInfo<T: Config> {
         pub id: ValidatorId,
@@ -76,7 +77,7 @@ pub mod pallet {
         pub unbonding_at: Option<BlockNumberFor<T>>,
     }
 
-    #[derive(Clone, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(Clone, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
     #[scale_info(skip_type_params(T))]
     pub struct SlashRecord<T: Config> {
         pub validator: ValidatorId,
