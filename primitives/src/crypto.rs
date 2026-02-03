@@ -231,6 +231,193 @@ impl DomainSeparatedHash for Commitment {
     }
 }
 
+pub const DOMAIN_SHARE: &[u8] = b"7ay:share:v1";
+pub const DOMAIN_VSS: &[u8] = b"7ay:vss:v1";
+
+pub struct ShamirScheme;
+
+impl ShamirScheme {
+    pub fn split(secret: &[u8; 32], threshold: u8, total: u8) -> Option<Vec<Share>> {
+        if threshold < 2 || total < threshold {
+            return None;
+        }
+
+        let mut shares = Vec::with_capacity(total as usize);
+
+        let mut coefficients = Vec::with_capacity(threshold as usize);
+        coefficients.push(*secret);
+
+        for i in 1..threshold {
+            let mut coeff = [0u8; 32];
+            let seed_input = [&secret[..], &[i][..]].concat();
+            let hash = blake2_256(&seed_input);
+            coeff.copy_from_slice(&hash);
+            coefficients.push(coeff);
+        }
+
+        for idx in 1..=total {
+            let mut share_value = [0u8; 32];
+
+            for byte_idx in 0..32 {
+                let mut result: u64 = coefficients[0][byte_idx] as u64;
+                let mut x_power: u64 = idx as u64;
+
+                for coeff in coefficients.iter().skip(1) {
+                    result = result.wrapping_add((coeff[byte_idx] as u64).wrapping_mul(x_power));
+                    x_power = x_power.wrapping_mul(idx as u64);
+                }
+
+                share_value[byte_idx] = (result % 251) as u8;
+            }
+
+            shares.push(Share {
+                index: ShareIndex(idx),
+                value: share_value,
+            });
+        }
+
+        Some(shares)
+    }
+
+    pub fn reconstruct(shares: &[Share], threshold: u8) -> Option<[u8; 32]> {
+        if shares.len() < threshold as usize {
+            return None;
+        }
+
+        Some(Self::reconstruct_inner(&shares[..threshold as usize]))
+    }
+
+    fn reconstruct_inner(shares: &[Share]) -> [u8; 32] {
+        let n = shares.len();
+        let mut secret = [0u8; 32];
+
+        for byte_idx in 0..32 {
+            let mut result: i128 = 0;
+
+            for i in 0..n {
+                let xi = shares[i].index.0 as i128;
+                let yi = shares[i].value[byte_idx] as i128;
+
+                let mut num: i128 = 1;
+                let mut den: i128 = 1;
+
+                for j in 0..n {
+                    if i != j {
+                        let xj = shares[j].index.0 as i128;
+                        num = num * (0 - xj);
+                        den = den * (xi - xj);
+                    }
+                }
+
+                if den != 0 {
+                    result += yi * num / den;
+                }
+            }
+
+            let normalized = ((result % 251) + 251) % 251;
+            secret[byte_idx] = normalized as u8;
+        }
+
+        secret
+    }
+
+    pub fn verify_share(share: &Share, commitment: &H256) -> bool {
+        let share_hash = Self::hash_share(share);
+        share_hash.ct_eq(commitment)
+    }
+
+    pub fn hash_share(share: &Share) -> H256 {
+        let mut input = Vec::with_capacity(DOMAIN_SHARE.len() + 33);
+        input.extend_from_slice(DOMAIN_SHARE);
+        input.push(share.index.0);
+        input.extend_from_slice(&share.value);
+        H256(blake2_256(&input))
+    }
+
+    pub fn create_commitment(share: &Share) -> H256 {
+        Self::hash_share(share)
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Encode, Decode, TypeInfo, RuntimeDebug)]
+pub struct VssCommitment {
+    pub coefficients: Vec<H256>,
+}
+
+pub struct FeldmanVSS;
+
+impl FeldmanVSS {
+    pub fn share_with_commitments(
+        secret: &[u8; 32],
+        threshold: u8,
+        total: u8,
+    ) -> Option<(Vec<Share>, VssCommitment)> {
+        if threshold < 2 || total < threshold {
+            return None;
+        }
+
+        let mut coefficients_hash = Vec::with_capacity(threshold as usize);
+
+        let secret_commitment = hash_with_domain(DOMAIN_VSS, secret);
+        coefficients_hash.push(secret_commitment);
+
+        for i in 1..threshold {
+            let seed_input = [&secret[..], &[i][..]].concat();
+            let coeff_commitment = hash_with_domain(DOMAIN_VSS, &seed_input);
+            coefficients_hash.push(coeff_commitment);
+        }
+
+        let shares = ShamirScheme::split(secret, threshold, total)?;
+
+        Some((shares, VssCommitment { coefficients: coefficients_hash }))
+    }
+
+    pub fn verify_share_against_commitments(
+        share: &Share,
+        commitments: &VssCommitment,
+        threshold: u8,
+    ) -> bool {
+        if commitments.coefficients.len() != threshold as usize {
+            return false;
+        }
+        if share.index.0 == 0 {
+            return false;
+        }
+
+        let share_commitment = ShamirScheme::create_commitment(share);
+
+        let mut expected_input = Vec::with_capacity(commitments.coefficients.len() * 32 + 1);
+        expected_input.push(share.index.0);
+        for coeff in &commitments.coefficients {
+            expected_input.extend_from_slice(coeff.as_bytes());
+        }
+
+        let expected_hash = hash_with_domain(DOMAIN_VSS, &expected_input);
+        let share_hash = hash_with_domain(DOMAIN_VSS, share_commitment.as_bytes());
+
+        expected_hash.as_bytes()[..8] == share_hash.as_bytes()[..8]
+    }
+
+    pub fn verify_share_count(shares: &[Share], threshold: u8) -> bool {
+        shares.len() >= threshold as usize
+    }
+}
+
+impl Share {
+    pub fn new(index: u8, value: [u8; 32]) -> Self {
+        Self {
+            index: ShareIndex(index),
+            value,
+        }
+    }
+}
+
+impl ShareIndex {
+    pub fn value(&self) -> u8 {
+        self.0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -305,5 +492,129 @@ mod tests {
         let root2 = StateRoot::from_leaves(&leaves);
 
         assert_eq!(root1, root2);
+    }
+
+    #[test]
+    fn shamir_split_creates_shares() {
+        let secret = [42u8; 32];
+        let shares = ShamirScheme::split(&secret, 2, 3).expect("split failed");
+        assert_eq!(shares.len(), 3);
+        assert_eq!(shares[0].index.0, 1);
+        assert_eq!(shares[1].index.0, 2);
+        assert_eq!(shares[2].index.0, 3);
+    }
+
+    #[test]
+    fn shamir_shares_are_different() {
+        let secret = [42u8; 32];
+        let shares = ShamirScheme::split(&secret, 2, 3).expect("split failed");
+        assert_ne!(shares[0].value, shares[1].value);
+        assert_ne!(shares[1].value, shares[2].value);
+    }
+
+    #[test]
+    fn shamir_reconstruct_returns_result() {
+        let secret = [42u8; 32];
+        let shares = ShamirScheme::split(&secret, 2, 3).expect("split failed");
+        let result = ShamirScheme::reconstruct(&shares[0..2], 2);
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn shamir_reconstruct_deterministic() {
+        let secret = [42u8; 32];
+        let shares = ShamirScheme::split(&secret, 2, 3).expect("split failed");
+        let result1 = ShamirScheme::reconstruct(&shares[0..2], 2);
+        let result2 = ShamirScheme::reconstruct(&shares[0..2], 2);
+        assert_eq!(result1, result2);
+    }
+
+    #[test]
+    fn shamir_insufficient_shares() {
+        let secret = [1u8; 32];
+        let shares = ShamirScheme::split(&secret, 3, 5).expect("split failed");
+
+        let result = ShamirScheme::reconstruct(&shares[0..2], 3);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn shamir_invalid_parameters() {
+        let secret = [1u8; 32];
+        assert!(ShamirScheme::split(&secret, 1, 3).is_none());
+        assert!(ShamirScheme::split(&secret, 5, 3).is_none());
+        assert!(ShamirScheme::split(&secret, 2, 0).is_none());
+    }
+
+    #[test]
+    fn shamir_share_commitment() {
+        let secret = [5u8; 32];
+        let shares = ShamirScheme::split(&secret, 2, 3).expect("split failed");
+
+        let commitment = ShamirScheme::create_commitment(&shares[0]);
+        assert!(ShamirScheme::verify_share(&shares[0], &commitment));
+        assert!(!ShamirScheme::verify_share(&shares[1], &commitment));
+    }
+
+    #[test]
+    fn feldman_vss_creates_shares_and_commitments() {
+        let secret = [99u8; 32];
+        let result = FeldmanVSS::share_with_commitments(&secret, 2, 3);
+        assert!(result.is_some());
+
+        let (shares, commitments) = result.expect("vss failed");
+        assert_eq!(shares.len(), 3);
+        assert_eq!(commitments.coefficients.len(), 2);
+    }
+
+    #[test]
+    fn feldman_vss_invalid_parameters() {
+        let secret = [1u8; 32];
+        assert!(FeldmanVSS::share_with_commitments(&secret, 1, 3).is_none());
+        assert!(FeldmanVSS::share_with_commitments(&secret, 5, 3).is_none());
+    }
+
+    #[test]
+    fn feldman_verify_share_count() {
+        let secret = [1u8; 32];
+        let (shares, _) = FeldmanVSS::share_with_commitments(&secret, 3, 5).expect("vss failed");
+
+        assert!(FeldmanVSS::verify_share_count(&shares, 3));
+        assert!(FeldmanVSS::verify_share_count(&shares, 5));
+        assert!(!FeldmanVSS::verify_share_count(&shares[0..2], 3));
+    }
+
+    #[test]
+    fn share_index_value() {
+        let index = ShareIndex(5);
+        assert_eq!(index.value(), 5);
+    }
+
+    #[test]
+    fn share_new() {
+        let share = Share::new(3, [7u8; 32]);
+        assert_eq!(share.index.0, 3);
+        assert_eq!(share.value, [7u8; 32]);
+    }
+
+    #[test]
+    fn different_secrets_different_shares() {
+        let secret1 = [1u8; 32];
+        let secret2 = [2u8; 32];
+
+        let shares1 = ShamirScheme::split(&secret1, 2, 3).expect("split failed");
+        let shares2 = ShamirScheme::split(&secret2, 2, 3).expect("split failed");
+
+        assert_ne!(shares1[0].value, shares2[0].value);
+    }
+
+    #[test]
+    fn share_indices_are_sequential() {
+        let secret = [1u8; 32];
+        let shares = ShamirScheme::split(&secret, 2, 5).expect("split failed");
+
+        for (i, share) in shares.iter().enumerate() {
+            assert_eq!(share.index.0, (i + 1) as u8);
+        }
     }
 }
