@@ -19,6 +19,7 @@ members = [
     "pallets/autonomous",
     "pallets/octopus",
     "pallets/device",
+    "pallets/vault",
 ]
 
 [workspace.package]
@@ -48,6 +49,7 @@ pallet-boomerang = { path = "pallets/boomerang", default-features = false }
 pallet-autonomous = { path = "pallets/autonomous", default-features = false }
 pallet-octopus = { path = "pallets/octopus", default-features = false }
 pallet-device = { path = "pallets/device", default-features = false }
+pallet-vault = { path = "pallets/vault", default-features = false }
 
 # =============================================================================
 # FRAME Pallets
