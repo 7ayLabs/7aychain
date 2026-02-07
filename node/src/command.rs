@@ -3,6 +3,7 @@ use crate::{
     cli::{Cli, Subcommand},
     service,
 };
+use clap::Parser;
 use sc_cli::SubstrateCli;
 use sc_service::PartialComponents;
 use seveny_runtime::Block;

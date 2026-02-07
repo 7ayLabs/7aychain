@@ -17,6 +17,7 @@ use sp_runtime::{
     ApplyExtrinsicResult, MultiSignature,
 };
 extern crate alloc;
+use alloc::vec;
 use alloc::vec::Vec;
 use sp_version::RuntimeVersion;
 
@@ -72,7 +73,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     impl_version: 1,
     apis: RUNTIME_API_VERSIONS,
     transaction_version: 1,
-    state_version: 1,
+    system_version: 1,
 };
 
 #[cfg(feature = "std")]
@@ -129,6 +130,7 @@ impl frame_system::Config for Runtime {
     type PreInherents = ();
     type PostInherents = ();
     type PostTransactions = ();
+    type ExtensionsWeightInfo = ();
 }
 
 parameter_types! {
@@ -185,6 +187,7 @@ impl pallet_balances::Config for Runtime {
     type RuntimeFreezeReason = RuntimeFreezeReason;
     type FreezeIdentifier = RuntimeFreezeReason;
     type MaxFreezes = ConstU32<1>;
+    type DoneSlashHandler = ();
 }
 
 parameter_types! {
@@ -198,6 +201,7 @@ impl pallet_transaction_payment::Config for Runtime {
     type WeightToFee = IdentityFee<Balance>;
     type LengthToFee = IdentityFee<Balance>;
     type FeeMultiplierUpdate = ConstFeeMultiplier<FeeMultiplier>;
+    type WeightInfo = ();
 }
 
 impl pallet_sudo::Config for Runtime {
@@ -207,108 +211,149 @@ impl pallet_sudo::Config for Runtime {
 }
 
 parameter_types! {
-    pub const EpochDurationBlocks: BlockNumber = 100;
-    pub const MaxPresencesPerEpoch: u32 = 10_000;
+    pub const MaxVotesPerPresence: u32 = 100;
+    pub const DefaultQuorumThreshold: u32 = 2;
+    pub const DefaultQuorumTotal: u32 = 3;
+    pub const CommitRevealDelay: BlockNumber = 10;
+    pub const RevealWindow: BlockNumber = 20;
 }
 
 impl pallet_presence::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
-    type EpochDurationBlocks = EpochDurationBlocks;
-    type MaxPresencesPerEpoch = MaxPresencesPerEpoch;
+    type MaxVotesPerPresence = MaxVotesPerPresence;
+    type DefaultQuorumThreshold = DefaultQuorumThreshold;
+    type DefaultQuorumTotal = DefaultQuorumTotal;
+    type CommitRevealDelay = CommitRevealDelay;
+    type RevealWindow = RevealWindow;
 }
 
 parameter_types! {
+    pub const EpochDuration: BlockNumber = 100;
     pub const MinEpochDuration: BlockNumber = 10;
     pub const MaxEpochDuration: BlockNumber = 1000;
+    pub const GracePeriod: BlockNumber = 10;
 }
 
 impl pallet_epoch::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
+    type EpochDuration = EpochDuration;
     type MinEpochDuration = MinEpochDuration;
     type MaxEpochDuration = MaxEpochDuration;
+    type GracePeriod = GracePeriod;
 }
 
 parameter_types! {
-    pub const MinValidatorStake: Balance = 10_000;
+    pub const MinStake: Balance = 10_000;
     pub const MaxValidators: u32 = 100;
-    pub const SlashingPeriod: BlockNumber = 100;
+    pub const BondingDuration: BlockNumber = 100;
+    pub const SlashDeferDuration: BlockNumber = 50;
 }
 
 impl pallet_validator::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type Currency = Balances;
-    type MinValidatorStake = MinValidatorStake;
+    type MinStake = MinStake;
     type MaxValidators = MaxValidators;
-    type SlashingPeriod = SlashingPeriod;
+    type BondingDuration = BondingDuration;
+    type SlashDeferDuration = SlashDeferDuration;
 }
 
 parameter_types! {
+    pub const MaxEvidencePerDispute: u32 = 10;
     pub const DisputeResolutionPeriod: BlockNumber = 50;
-    pub const MaxEvidenceSize: u32 = 10_000;
+    pub const MinEvidenceRequired: u32 = 1;
+    pub const MaxDisputesPerValidator: u32 = 5;
+    pub const MaxOpenDisputes: u32 = 100;
 }
 
 impl pallet_dispute::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
+    type MaxEvidencePerDispute = MaxEvidencePerDispute;
     type DisputeResolutionPeriod = DisputeResolutionPeriod;
-    type MaxEvidenceSize = MaxEvidenceSize;
+    type MinEvidenceRequired = MinEvidenceRequired;
+    type MaxDisputesPerValidator = MaxDisputesPerValidator;
+    type MaxOpenDisputes = MaxOpenDisputes;
 }
 
 parameter_types! {
-    pub const MaxProposalsPerEpoch: u32 = 100;
-    pub const VotingPeriod: BlockNumber = 50;
+    pub const MaxCapabilitiesPerActor: u32 = 100;
+    pub const MaxDelegationDepth: u32 = 5;
+    pub const DefaultCapabilityDuration: BlockNumber = 1000;
+    pub const MaxCapabilitiesPerResource: u32 = 50;
 }
 
 impl pallet_governance::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
-    type MaxProposalsPerEpoch = MaxProposalsPerEpoch;
-    type VotingPeriod = VotingPeriod;
+    type MaxCapabilitiesPerActor = MaxCapabilitiesPerActor;
+    type MaxDelegationDepth = MaxDelegationDepth;
+    type DefaultCapabilityDuration = DefaultCapabilityDuration;
+    type MaxCapabilitiesPerResource = MaxCapabilitiesPerResource;
 }
 
 parameter_types! {
-    pub const MaxTagsPerEntity: u32 = 20;
-    pub const MaxRelationsPerEntity: u32 = 50;
+    pub const MaxRelationshipsPerActor: u32 = 50;
+    pub const MaxDiscoveryResults: u32 = 100;
+    pub const DiscoveryRateLimitBlocks: BlockNumber = 10;
+    pub const RelationshipExpiryBlocks: BlockNumber = 10000;
+    pub const MaxTrustLevel: u8 = 100;
 }
 
 impl pallet_semantic::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
-    type MaxTagsPerEntity = MaxTagsPerEntity;
-    type MaxRelationsPerEntity = MaxRelationsPerEntity;
+    type MaxRelationshipsPerActor = MaxRelationshipsPerActor;
+    type MaxDiscoveryResults = MaxDiscoveryResults;
+    type DiscoveryRateLimitBlocks = DiscoveryRateLimitBlocks;
+    type RelationshipExpiryBlocks = RelationshipExpiryBlocks;
+    type MaxTrustLevel = MaxTrustLevel;
 }
 
 parameter_types! {
-    pub const BoomerangTimeout: BlockNumber = 10;
-    pub const MaxBoomerangsPerActor: u32 = 10;
+    pub const BoomerangTimeoutBlocks: BlockNumber = 10;
+    pub const MaxExtensionBlocks: BlockNumber = 100;
+    pub const MaxHopsPerPath: u32 = 10;
+    pub const MaxActivePaths: u32 = 100;
 }
 
 impl pallet_boomerang::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
-    type BoomerangTimeout = BoomerangTimeout;
-    type MaxBoomerangsPerActor = MaxBoomerangsPerActor;
+    type BoomerangTimeoutBlocks = BoomerangTimeoutBlocks;
+    type MaxExtensionBlocks = MaxExtensionBlocks;
+    type MaxHopsPerPath = MaxHopsPerPath;
+    type MaxActivePaths = MaxActivePaths;
 }
 
 parameter_types! {
     pub const PatternThreshold: u32 = 3;
-    pub const MaxPatternsPerActor: u32 = 50;
+    pub const MaxBehaviorsPerActor: u32 = 50;
+    pub const MaxPatterns: u32 = 100;
+    pub const BehaviorExpiryBlocks: BlockNumber = 10000;
+    pub const ScoreIncreasePerMatch: u8 = 5;
 }
 
 impl pallet_autonomous::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type PatternThreshold = PatternThreshold;
-    type MaxPatternsPerActor = MaxPatternsPerActor;
+    type MaxBehaviorsPerActor = MaxBehaviorsPerActor;
+    type MaxPatterns = MaxPatterns;
+    type BehaviorExpiryBlocks = BehaviorExpiryBlocks;
+    type ScoreIncreasePerMatch = ScoreIncreasePerMatch;
 }
 
 parameter_types! {
     pub const ActivationThreshold: Perbill = Perbill::from_percent(45);
     pub const DeactivationThreshold: Perbill = Perbill::from_percent(20);
+    pub const DeactivationDurationBlocks: BlockNumber = 100;
     pub const MaxSubnodesPerCluster: u32 = 8;
+    pub const MinSubnodes: u32 = 2;
+    pub const ScalingCooldownBlocks: BlockNumber = 50;
 }
 
 impl pallet_octopus::Config for Runtime {
@@ -316,19 +361,24 @@ impl pallet_octopus::Config for Runtime {
     type WeightInfo = ();
     type ActivationThreshold = ActivationThreshold;
     type DeactivationThreshold = DeactivationThreshold;
+    type DeactivationDurationBlocks = DeactivationDurationBlocks;
     type MaxSubnodesPerCluster = MaxSubnodesPerCluster;
+    type MinSubnodes = MinSubnodes;
+    type ScalingCooldownBlocks = ScalingCooldownBlocks;
 }
 
 parameter_types! {
     pub const MaxDevicesPerActor: u32 = 10;
-    pub const AttestationValidityPeriod: BlockNumber = 1000;
+    pub const AttestationValidityBlocks: BlockNumber = 1000;
+    pub const InitialTrustScore: u8 = 50;
 }
 
 impl pallet_device::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type MaxDevicesPerActor = MaxDevicesPerActor;
-    type AttestationValidityPeriod = AttestationValidityPeriod;
+    type AttestationValidityBlocks = AttestationValidityBlocks;
+    type InitialTrustScore = InitialTrustScore;
 }
 
 parameter_types! {
@@ -456,7 +506,7 @@ impl_runtime_apis! {
             VERSION
         }
 
-        fn execute_block(block: Block) {
+        fn execute_block(block: <Block as BlockT>::LazyBlock) {
             Executive::execute_block(block);
         }
 
@@ -493,7 +543,7 @@ impl_runtime_apis! {
         }
 
         fn check_inherents(
-            block: Block,
+            block: <Block as BlockT>::LazyBlock,
             data: sp_inherents::InherentData,
         ) -> sp_inherents::CheckInherentsResult {
             data.check_extrinsics(&block)

@@ -1,10 +1,11 @@
 use futures::FutureExt;
-use sc_client_api::Backend;
+use sc_client_api::{Backend, BlockBackend};
 use sc_consensus_aura::{ImportQueueParams, SlotProportion, StartAuraParams};
 use sc_consensus_grandpa::SharedVoterState;
 use sc_executor::WasmExecutor;
 use sc_service::{error::Error as ServiceError, Configuration, TaskManager};
 use sc_telemetry::{Telemetry, TelemetryWorker};
+use sc_transaction_pool::{BasicPool, FullChainApi};
 use sc_transaction_pool_api::OffchainTransactionPoolFactory;
 use seveny_runtime::{self, opaque::Block, RuntimeApi};
 use sp_consensus_aura::sr25519::AuthorityPair as AuraPair;
@@ -13,6 +14,7 @@ use std::sync::Arc;
 pub type FullClient = sc_service::TFullClient<Block, RuntimeApi, WasmExecutor<sp_io::SubstrateHostFunctions>>;
 type FullBackend = sc_service::TFullBackend<Block>;
 type FullSelectChain = sc_consensus::LongestChain<FullBackend, Block>;
+type FullPool = BasicPool<FullChainApi<FullClient, Block>, Block>;
 
 pub fn new_partial(
     config: &Configuration,
@@ -22,7 +24,7 @@ pub fn new_partial(
         FullBackend,
         FullSelectChain,
         sc_consensus::DefaultImportQueue<Block>,
-        sc_transaction_pool::FullPool<Block, FullClient>,
+        FullPool,
         (
             sc_consensus_grandpa::GrandpaBlockImport<FullBackend, Block, FullClient, FullSelectChain>,
             sc_consensus_grandpa::LinkHalf<Block, FullClient, FullSelectChain>,
@@ -59,20 +61,20 @@ pub fn new_partial(
 
     let select_chain = sc_consensus::LongestChain::new(backend.clone());
 
-    let transaction_pool = sc_transaction_pool::BasicPool::new_full(
-        config.transaction_pool.clone(),
+    let transaction_pool = Arc::new(BasicPool::new_full(
+        Default::default(),
         config.role.is_authority().into(),
         config.prometheus_registry(),
         task_manager.spawn_essential_handle(),
         client.clone(),
-    );
+    ));
 
     let (grandpa_block_import, grandpa_link) = sc_consensus_grandpa::block_import(
         client.clone(),
         512,
         &client,
         select_chain.clone(),
-        telemetry.as_ref().map(|x| x.handle()),
+        telemetry.as_ref().map(|t: &Telemetry| t.handle()),
     )?;
 
     let slot_duration = sc_consensus_aura::slot_duration(&*client)?;
@@ -96,7 +98,7 @@ pub fn new_partial(
             spawner: &task_manager.spawn_essential_handle(),
             registry: config.prometheus_registry(),
             check_for_equivocation: Default::default(),
-            telemetry: telemetry.as_ref().map(|x| x.handle()),
+            telemetry: telemetry.as_ref().map(|t: &Telemetry| t.handle()),
             compatibility_mode: Default::default(),
         })?;
 
@@ -137,7 +139,7 @@ pub fn new_full(config: Configuration) -> Result<TaskManager, ServiceError> {
     );
 
     let (grandpa_protocol_config, grandpa_notification_service) =
-        sc_consensus_grandpa::grandpa_peers_set_config::<_, sc_network::NetworkWorker<_, _>>(
+        sc_consensus_grandpa::grandpa_peers_set_config::<Block, sc_network::NetworkWorker<Block, <Block as sp_runtime::traits::Block>::Hash>>(
             grandpa_protocol_name.clone(),
             metrics.clone(),
             Arc::clone(&net_config.peer_store_handle()),
@@ -151,7 +153,7 @@ pub fn new_full(config: Configuration) -> Result<TaskManager, ServiceError> {
         Vec::default(),
     ));
 
-    let (network, system_rpc_tx, tx_handler_controller, network_starter, sync_service) =
+    let (network, system_rpc_tx, tx_handler_controller, sync_service) =
         sc_service::build_network(sc_service::BuildNetworkParams {
             config: &config,
             net_config,
@@ -180,7 +182,7 @@ pub fn new_full(config: Configuration) -> Result<TaskManager, ServiceError> {
                 network_provider: Arc::new(network.clone()),
                 enable_http_requests: true,
                 custom_extensions: |_| vec![],
-            })
+            })?
             .run(client.clone(), task_manager.spawn_handle())
             .boxed(),
         );
@@ -219,6 +221,7 @@ pub fn new_full(config: Configuration) -> Result<TaskManager, ServiceError> {
         sync_service: sync_service.clone(),
         config,
         telemetry: telemetry.as_mut(),
+        tracing_execute_block: None,
     })?;
 
     if role.is_authority() {
@@ -227,7 +230,7 @@ pub fn new_full(config: Configuration) -> Result<TaskManager, ServiceError> {
             client.clone(),
             transaction_pool.clone(),
             prometheus_registry.as_ref(),
-            telemetry.as_ref().map(|x| x.handle()),
+            telemetry.as_ref().map(|t: &Telemetry| t.handle()),
         );
 
         let slot_duration = sc_consensus_aura::slot_duration(&*client)?;
@@ -257,7 +260,7 @@ pub fn new_full(config: Configuration) -> Result<TaskManager, ServiceError> {
                 justification_sync_link: sync_service.clone(),
                 block_proposal_slot_portion: SlotProportion::new(2f32 / 3f32),
                 max_block_proposal_slot_portion: None,
-                telemetry: telemetry.as_ref().map(|x| x.handle()),
+                telemetry: telemetry.as_ref().map(|t: &Telemetry| t.handle()),
                 compatibility_mode: Default::default(),
             },
         )?;
@@ -275,7 +278,7 @@ pub fn new_full(config: Configuration) -> Result<TaskManager, ServiceError> {
             observer_enabled: false,
             keystore: Some(keystore_container.keystore()),
             local_role: role,
-            telemetry: telemetry.as_ref().map(|x| x.handle()),
+            telemetry: telemetry.as_ref().map(|t: &Telemetry| t.handle()),
             protocol_name: grandpa_protocol_name,
         };
 
@@ -288,7 +291,7 @@ pub fn new_full(config: Configuration) -> Result<TaskManager, ServiceError> {
             voting_rule: sc_consensus_grandpa::VotingRulesBuilder::default().build(),
             prometheus_registry,
             shared_voter_state: SharedVoterState::empty(),
-            telemetry: telemetry.as_ref().map(|x| x.handle()),
+            telemetry: telemetry.as_ref().map(|t: &Telemetry| t.handle()),
             offchain_tx_pool_factory: OffchainTransactionPoolFactory::new(transaction_pool),
         };
 
@@ -299,6 +302,5 @@ pub fn new_full(config: Configuration) -> Result<TaskManager, ServiceError> {
         );
     }
 
-    network_starter.start_network();
     Ok(task_manager)
 }

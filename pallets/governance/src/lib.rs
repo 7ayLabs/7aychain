@@ -18,6 +18,7 @@ pub mod pallet {
     };
     use frame_system::pallet_prelude::*;
     use seveny_primitives::types::ActorId;
+    use alloc::vec;
     use alloc::vec::Vec;
 
     use crate::WeightInfo;
