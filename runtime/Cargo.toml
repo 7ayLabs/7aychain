@@ -29,9 +29,11 @@ sp-transaction-pool = { version = "40.0.0", default-features = false }
 sp-version = { version = "43.0.0", default-features = false }
 sp-genesis-builder = { version = "0.21.0", default-features = false }
 
+frame-benchmarking = { version = "45.0.0", default-features = false, optional = true }
 frame-executive = { version = "45.0.0", default-features = false }
 frame-support = { workspace = true }
 frame-system = { workspace = true }
+frame-system-benchmarking = { version = "45.0.0", default-features = false, optional = true }
 frame-system-rpc-runtime-api = { version = "40.0.0", default-features = false }
 frame-try-runtime = { version = "0.51.0", default-features = false, optional = true }
 
@@ -80,9 +82,11 @@ std = [
     "sp-transaction-pool/std",
     "sp-version/std",
     "sp-genesis-builder/std",
+    "frame-benchmarking?/std",
     "frame-executive/std",
     "frame-support/std",
     "frame-system/std",
+    "frame-system-benchmarking?/std",
     "frame-system-rpc-runtime-api/std",
     "frame-try-runtime?/std",
     "pallet-aura/std",
@@ -110,8 +114,10 @@ std = [
     "substrate-wasm-builder",
 ]
 runtime-benchmarks = [
+    "frame-benchmarking/runtime-benchmarks",
     "frame-support/runtime-benchmarks",
     "frame-system/runtime-benchmarks",
+    "frame-system-benchmarking/runtime-benchmarks",
     "pallet-balances/runtime-benchmarks",
     "pallet-grandpa/runtime-benchmarks",
     "pallet-sudo/runtime-benchmarks",

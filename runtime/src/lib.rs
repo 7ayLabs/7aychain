@@ -208,6 +208,9 @@ impl pallet_sudo::Config for Runtime {
     type WeightInfo = ();
 }
 
+#[cfg(feature = "runtime-benchmarks")]
+impl frame_system_benchmarking::Config for Runtime {}
+
 parameter_types! {
     pub const MaxVotesPerPresence: u32 = 100;
     pub const DefaultQuorumThreshold: u32 = 2;
@@ -480,8 +483,11 @@ pub type Executive = frame_executive::Executive<
 >;
 
 #[cfg(feature = "runtime-benchmarks")]
+type SystemBench = frame_system_benchmarking::Pallet<Runtime>;
+
+#[cfg(feature = "runtime-benchmarks")]
 mod benches {
-    frame_support::define_benchmarks!(
+    frame_benchmarking::define_benchmarks!(
         [frame_system, SystemBench::<Runtime>]
         [pallet_balances, Balances]
         [pallet_timestamp, Timestamp]
