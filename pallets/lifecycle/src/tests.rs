@@ -1,3 +1,5 @@
+#![allow(clippy::disallowed_macros)]
+
 use crate::{self as pallet_lifecycle, *};
 use frame_support::{
     assert_noop, assert_ok, derive_impl, parameter_types,
