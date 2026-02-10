@@ -567,17 +567,12 @@ pub mod pallet {
         fn update_actor_quota(actor: ActorId, bytes: u32, increase: bool) {
             let block_number = frame_system::Pallet::<T>::block_number();
 
-            StorageQuotas::<T>::mutate(actor, |quota| {
-                if let Some(ref mut q) = quota {
-                    if increase {
-                        q.used_entries = q.used_entries.saturating_add(1);
-                        q.used_bytes = q.used_bytes.saturating_add(bytes as u64);
-                    } else {
-                        q.used_entries = q.used_entries.saturating_sub(1);
-                        q.used_bytes = q.used_bytes.saturating_sub(bytes as u64);
-                    }
+            StorageQuotas::<T>::mutate(actor, |quota| match quota {
+                Some(q) => {
+                    Self::apply_quota_delta(q, bytes, increase);
                     q.last_updated = block_number;
-                } else if increase {
+                }
+                None if increase => {
                     *quota = Some(StorageQuota {
                         actor,
                         max_entries: T::MaxEntriesPerActor::get(),
@@ -588,22 +583,33 @@ pub mod pallet {
                         last_updated: block_number,
                     });
                 }
+                None => {}
             });
+        }
+
+        fn apply_quota_delta(q: &mut StorageQuota<T>, bytes: u32, increase: bool) {
+            if increase {
+                q.used_entries = q.used_entries.saturating_add(1);
+                q.used_bytes = q.used_bytes.saturating_add(bytes as u64);
+            } else {
+                q.used_entries = q.used_entries.saturating_sub(1);
+                q.used_bytes = q.used_bytes.saturating_sub(bytes as u64);
+            }
         }
 
         fn update_epoch_storage(epoch: EpochId, bytes: u32, increase: bool) {
             let block_number = frame_system::Pallet::<T>::block_number();
 
-            EpochStorageInfo::<T>::mutate(epoch, |storage| {
-                if let Some(ref mut s) = storage {
-                    if increase {
-                        s.entry_count = s.entry_count.saturating_add(1);
-                        s.total_bytes = s.total_bytes.saturating_add(bytes as u64);
-                    } else {
-                        s.entry_count = s.entry_count.saturating_sub(1);
-                        s.total_bytes = s.total_bytes.saturating_sub(bytes as u64);
-                    }
-                } else if increase {
+            EpochStorageInfo::<T>::mutate(epoch, |storage| match storage {
+                Some(s) if increase => {
+                    s.entry_count = s.entry_count.saturating_add(1);
+                    s.total_bytes = s.total_bytes.saturating_add(bytes as u64);
+                }
+                Some(s) => {
+                    s.entry_count = s.entry_count.saturating_sub(1);
+                    s.total_bytes = s.total_bytes.saturating_sub(bytes as u64);
+                }
+                None if increase => {
                     *storage = Some(EpochStorage {
                         epoch,
                         entry_count: 1,
@@ -612,9 +618,11 @@ pub mod pallet {
                         finalized: false,
                     });
                 }
+                None => {}
             });
         }
 
+        #[allow(clippy::excessive_nesting)]
         fn cleanup_expired_entries(current_block: BlockNumberFor<T>) -> Weight {
             let mut cleaned = 0u32;
             let max_cleanup = 50u32;
@@ -624,24 +632,28 @@ pub mod pallet {
                     break;
                 }
 
-                if let Some(expires_at) = entry.expires_at {
-                    if current_block >= expires_at && entry.status == StorageStatus::Active {
-                        let size = entry.size_bytes;
+                let is_expired = entry.expires_at.is_some_and(|exp| {
+                    current_block >= exp && entry.status == StorageStatus::Active
+                });
 
-                        EphemeralData::<T>::mutate((epoch, actor, key), |e| {
-                            if let Some(ref mut entry) = e {
-                                entry.status = StorageStatus::Expired;
-                            }
-                        });
-
-                        ActiveEntries::<T>::mutate(|c| *c = c.saturating_sub(1));
-                        TotalStorageBytes::<T>::mutate(|b| *b = b.saturating_sub(size as u64));
-
-                        Self::deposit_event(Event::DataExpired { epoch, actor, key });
-
-                        cleaned = cleaned.saturating_add(1);
-                    }
+                if !is_expired {
+                    continue;
                 }
+
+                let size = entry.size_bytes;
+
+                EphemeralData::<T>::mutate((epoch, actor, key), |e| {
+                    if let Some(entry) = e {
+                        entry.status = StorageStatus::Expired;
+                    }
+                });
+
+                ActiveEntries::<T>::mutate(|c| *c = c.saturating_sub(1));
+                TotalStorageBytes::<T>::mutate(|b| *b = b.saturating_sub(size as u64));
+
+                Self::deposit_event(Event::DataExpired { epoch, actor, key });
+
+                cleaned = cleaned.saturating_add(1);
             }
 
             Weight::from_parts(cleaned as u64 * 10_000, 0)

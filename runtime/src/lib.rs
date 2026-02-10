@@ -4,33 +4,29 @@
 #[cfg(feature = "std")]
 include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 
-use parity_scale_codec::{Decode, Encode, MaxEncodedLen};
-use scale_info::TypeInfo;
 use sp_api::impl_runtime_apis;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_consensus_grandpa::AuthorityId as GrandpaId;
 use sp_core::{crypto::KeyTypeId, OpaqueMetadata, H256};
 use sp_runtime::{
-    create_runtime_str, generic, impl_opaque_keys,
+    generic, impl_opaque_keys,
     traits::{BlakeTwo256, Block as BlockT, IdentifyAccount, NumberFor, One, Verify},
     transaction_validity::{TransactionSource, TransactionValidity},
     ApplyExtrinsicResult, MultiSignature,
 };
 extern crate alloc;
+use alloc::borrow::Cow;
 use alloc::vec;
 use alloc::vec::Vec;
 use sp_version::RuntimeVersion;
 
 use frame_support::{
     construct_runtime,
-    dispatch::DispatchClass,
     genesis_builder_helper::{build_state, get_preset},
     parameter_types,
-    traits::{ConstBool, ConstU128, ConstU32, ConstU64, ConstU8, KeyOwnerProofSystem},
+    traits::{ConstBool, ConstU32, ConstU64, ConstU8},
     weights::{
-        constants::{
-            BlockExecutionWeight, ExtrinsicBaseWeight, RocksDbWeight, WEIGHT_REF_TIME_PER_SECOND,
-        },
+        constants::{RocksDbWeight, WEIGHT_REF_TIME_PER_SECOND},
         IdentityFee, Weight,
     },
 };
@@ -66,8 +62,8 @@ pub mod opaque {
 
 #[sp_version::runtime_version]
 pub const VERSION: RuntimeVersion = RuntimeVersion {
-    spec_name: create_runtime_str!("seveny"),
-    impl_name: create_runtime_str!("seveny-node"),
+    spec_name: Cow::Borrowed("seveny"),
+    impl_name: Cow::Borrowed("seveny-node"),
     authoring_version: 1,
     spec_version: 100,
     impl_version: 1,

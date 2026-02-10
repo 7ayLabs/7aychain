@@ -569,7 +569,7 @@ pub mod pallet {
 
         pub fn is_attestation_valid(device_id: DeviceId, block_number: BlockNumberFor<T>) -> bool {
             Attestations::<T>::get(device_id)
-                .is_some_and(|a| a.valid_until.map_or(true, |until| block_number <= until))
+                .is_some_and(|a| a.valid_until.is_none_or(|until| block_number <= until))
         }
 
         pub fn get_total_active_devices() -> u32 {

@@ -381,22 +381,24 @@ pub mod pallet {
 
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+        #[allow(clippy::excessive_nesting)]
         fn on_initialize(now: BlockNumberFor<T>) -> Weight {
             let mut expired_count = 0u32;
 
             for (id, relationship) in Relationships::<T>::iter() {
-                if relationship.status == RelationshipStatus::Active {
-                    if let Some(expires_at) = relationship.expires_at {
-                        if now >= expires_at {
-                            Relationships::<T>::mutate(id, |rel| {
-                                if let Some(ref mut r) = rel {
-                                    r.status = RelationshipStatus::Expired;
-                                }
-                            });
-                            expired_count = expired_count.saturating_add(1);
-                        }
-                    }
+                let should_expire = relationship.status == RelationshipStatus::Active
+                    && relationship.expires_at.is_some_and(|exp| now >= exp);
+
+                if !should_expire {
+                    continue;
                 }
+
+                Relationships::<T>::mutate(id, |rel| {
+                    if let Some(ref mut r) = rel {
+                        r.status = RelationshipStatus::Expired;
+                    }
+                });
+                expired_count = expired_count.saturating_add(1);
             }
 
             T::DbWeight::get()
@@ -715,7 +717,8 @@ pub mod pallet {
         pub fn get_actor_relationships(actor: ActorId) -> Vec<Relationship<T>> {
             ActorRelationships::<T>::get(actor)
                 .iter()
-                .filter_map(|rel_id| Relationships::<T>::get(rel_id))
+                .copied()
+                .filter_map(Relationships::<T>::get)
                 .collect()
         }
 
@@ -725,7 +728,7 @@ pub mod pallet {
 
         pub fn get_trust_level(from: ActorId, to: ActorId) -> Option<u8> {
             RelationshipIndex::<T>::get(from, to)
-                .and_then(|rel_id| Relationships::<T>::get(rel_id))
+                .and_then(Relationships::<T>::get)
                 .filter(|rel| rel.status == RelationshipStatus::Active)
                 .map(|rel| rel.trust_level)
         }
@@ -773,25 +776,28 @@ pub mod pallet {
             ActorId::from_raw(bytes)
         }
 
+        #[allow(clippy::excessive_nesting)]
         fn update_profile_relationship_count(
             actor: ActorId,
             block_number: BlockNumberFor<T>,
             increment: bool,
         ) {
             let block_number_u64: u64 = block_number.try_into().unwrap_or(0u64);
+            let initial_count: u32 = if increment { 1 } else { 0 };
 
-            SemanticProfiles::<T>::mutate(actor, |profile| {
-                if let Some(ref mut p) = profile {
+            SemanticProfiles::<T>::mutate(actor, |profile| match profile {
+                Some(p) => {
                     if increment {
                         p.total_relationships = p.total_relationships.saturating_add(1);
                     } else {
                         p.total_relationships = p.total_relationships.saturating_sub(1);
                     }
                     p.last_activity_block = block_number_u64;
-                } else {
+                }
+                None => {
                     *profile = Some(SemanticProfile {
                         actor,
-                        total_relationships: if increment { 1 } else { 0 },
+                        total_relationships: initial_count,
                         trust_score: 0,
                         discovery_enabled: true,
                         last_activity_block: block_number_u64,

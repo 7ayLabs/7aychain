@@ -302,6 +302,7 @@ pub mod pallet {
 
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+        #[allow(clippy::excessive_nesting)]
         fn on_initialize(now: BlockNumberFor<T>) -> Weight {
             let mut timed_out_count = 0u32;
             let active = ActivePaths::<T>::get();

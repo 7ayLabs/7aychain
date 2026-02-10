@@ -494,7 +494,7 @@ pub mod pallet {
             let slash_record = SlashRecord {
                 validator,
                 amount: slash_amount,
-                violation: violation.clone(),
+                violation,
                 block: block_number,
                 applied: false,
             };
@@ -598,7 +598,7 @@ pub mod pallet {
             let slash_record = SlashRecord {
                 validator,
                 amount: slash_amount,
-                violation: violation.clone(),
+                violation,
                 block: block_number,
                 applied: false,
             };

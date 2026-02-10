@@ -308,23 +308,25 @@ pub mod pallet {
 
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+        #[allow(clippy::excessive_nesting)]
         fn on_initialize(now: BlockNumberFor<T>) -> Weight {
             let mut expired_count = 0u32;
 
             for (id, capability) in Capabilities::<T>::iter() {
-                if capability.status == CapabilityStatus::Active {
-                    if let Some(expires_at) = capability.expires_at {
-                        if now >= expires_at {
-                            Capabilities::<T>::mutate(id, |cap| {
-                                if let Some(ref mut c) = cap {
-                                    c.status = CapabilityStatus::Expired;
-                                }
-                            });
-                            Self::deposit_event(Event::CapabilityExpired { capability_id: id });
-                            expired_count = expired_count.saturating_add(1);
-                        }
-                    }
+                let should_expire = capability.status == CapabilityStatus::Active
+                    && capability.expires_at.is_some_and(|exp| now >= exp);
+
+                if !should_expire {
+                    continue;
                 }
+
+                Capabilities::<T>::mutate(id, |cap| {
+                    if let Some(ref mut c) = cap {
+                        c.status = CapabilityStatus::Expired;
+                    }
+                });
+                Self::deposit_event(Event::CapabilityExpired { capability_id: id });
+                expired_count = expired_count.saturating_add(1);
             }
 
             T::DbWeight::get()
@@ -553,38 +555,39 @@ pub mod pallet {
 
             ActorCapabilities::<T>::get(actor)
                 .iter()
-                .filter_map(|cap_id| Capabilities::<T>::get(cap_id))
+                .copied()
+                .filter_map(Capabilities::<T>::get)
                 .any(|cap| {
                     cap.resource == resource
                         && cap.status == CapabilityStatus::Active
                         && cap.permissions.contains(required)
-                        && cap.expires_at.map_or(true, |exp| block_number < exp)
+                        && cap.expires_at.is_none_or(|exp| block_number < exp)
                 })
         }
 
         pub fn get_actor_capabilities(actor: ActorId) -> Vec<Capability<T>> {
             ActorCapabilities::<T>::get(actor)
                 .iter()
-                .filter_map(|cap_id| Capabilities::<T>::get(cap_id))
+                .copied()
+                .filter_map(Capabilities::<T>::get)
                 .collect()
         }
 
         pub fn get_resource_capabilities(resource: ResourceId) -> Vec<Capability<T>> {
             ResourceCapabilities::<T>::get(resource)
                 .iter()
-                .filter_map(|cap_id| Capabilities::<T>::get(cap_id))
+                .copied()
+                .filter_map(Capabilities::<T>::get)
                 .collect()
         }
 
         pub fn is_capability_active(capability_id: CapabilityId) -> bool {
             let block_number = frame_system::Pallet::<T>::block_number();
 
-            Capabilities::<T>::get(capability_id)
-                .map(|cap| {
-                    cap.status == CapabilityStatus::Active
-                        && cap.expires_at.map_or(true, |exp| block_number < exp)
-                })
-                .unwrap_or(false)
+            Capabilities::<T>::get(capability_id).is_some_and(|cap| {
+                cap.status == CapabilityStatus::Active
+                    && cap.expires_at.is_none_or(|exp| block_number < exp)
+            })
         }
 
         pub fn get_delegation_chain(capability_id: CapabilityId) -> Vec<CapabilityId> {
@@ -604,16 +607,18 @@ pub mod pallet {
             chain
         }
 
+        #[allow(clippy::excessive_nesting)]
         fn revoke_delegated_capabilities(
             parent_capability_id: CapabilityId,
             _block_number: BlockNumberFor<T>,
         ) {
             for (delegated_id, _) in Delegations::<T>::iter_prefix(parent_capability_id) {
                 Capabilities::<T>::mutate(delegated_id, |cap| {
-                    if let Some(ref mut c) = cap {
-                        if c.status == CapabilityStatus::Active {
-                            c.status = CapabilityStatus::Revoked;
-                        }
+                    if let Some(c) = cap
+                        .as_mut()
+                        .filter(|c| c.status == CapabilityStatus::Active)
+                    {
+                        c.status = CapabilityStatus::Revoked;
                     }
                 });
 

@@ -228,6 +228,7 @@ pub mod pallet {
 
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+        #[allow(clippy::excessive_nesting)]
         fn on_initialize(n: BlockNumberFor<T>) -> Weight {
             let schedule = EpochSchedule::<T>::get();
             if !schedule.auto_transition {

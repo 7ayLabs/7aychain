@@ -626,7 +626,7 @@ pub mod pallet {
 
         fn calculate_target_subnodes(throughput: Perbill) -> u32 {
             let pct = throughput.deconstruct() / 10_000_000;
-            let scaled = (pct as u32).saturating_mul(10);
+            let scaled = pct.saturating_mul(10);
             let divisor = 225u32;
             let result = scaled.saturating_add(divisor.saturating_sub(1)) / divisor;
 
@@ -636,6 +636,7 @@ pub mod pallet {
             result.clamp(min, max)
         }
 
+        #[allow(clippy::excessive_nesting)]
         fn process_deactivations(block_number: BlockNumberFor<T>) {
             let duration = T::DeactivationDurationBlocks::get();
 

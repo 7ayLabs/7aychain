@@ -669,6 +669,7 @@ pub mod pallet {
             Ok(())
         }
 
+        #[allow(clippy::excessive_nesting)]
         fn process_destruction_timeouts(current_block: BlockNumberFor<T>) -> Weight {
             let mut processed = 0u32;
             let max_process = 5u32;

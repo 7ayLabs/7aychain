@@ -625,6 +625,7 @@ pub mod pallet {
             }
         }
 
+        #[allow(clippy::excessive_nesting)]
         fn try_match_pattern(
             behavior_id: BehaviorId,
             actor: ActorId,
@@ -651,6 +652,7 @@ pub mod pallet {
             }
         }
 
+        #[allow(clippy::excessive_nesting)]
         fn increment_pattern_occurrence(
             pattern_id: PatternId,
             actor: ActorId,

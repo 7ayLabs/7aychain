@@ -303,7 +303,7 @@ pub mod pallet {
                 id: dispute_id,
                 reporter: who.clone(),
                 target,
-                violation: violation.clone(),
+                violation,
                 status: DisputeStatus::Open,
                 created_at: block_number,
                 resolved_at: None,
@@ -410,7 +410,7 @@ pub mod pallet {
 
             dispute.status = DisputeStatus::Resolved;
             dispute.resolved_at = Some(block_number);
-            dispute.outcome = Some(outcome.clone());
+            dispute.outcome = Some(outcome);
 
             Disputes::<T>::insert(dispute_id, dispute);
 
