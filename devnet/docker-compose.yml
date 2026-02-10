@@ -42,6 +42,7 @@ services:
       - "--rpc-cors=all"
       - "--rpc-external"
       - "--rpc-methods=unsafe"
+      - "--node-key=0000000000000000000000000000000000000000000000000000000000000002"
       - "--bootnodes=/dns/alice/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp"
     networks:
       - seveny-net
@@ -68,6 +69,7 @@ services:
       - "--rpc-cors=all"
       - "--rpc-external"
       - "--rpc-methods=unsafe"
+      - "--node-key=0000000000000000000000000000000000000000000000000000000000000003"
       - "--bootnodes=/dns/alice/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp"
     networks:
       - seveny-net
