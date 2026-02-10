@@ -377,6 +377,7 @@ fn deactivate_validator_success() {
 }
 
 #[test]
+#[allow(clippy::cognitive_complexity)]
 fn withdraw_stake_success() {
     new_test_ext().execute_with(|| {
         assert_ok!(Validator::register_validator(
