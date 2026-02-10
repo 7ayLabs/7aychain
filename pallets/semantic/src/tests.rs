@@ -334,11 +334,11 @@ fn discovery_rate_limited() {
 
         assert_ok!(Semantic::request_discovery(
             RuntimeOrigin::signed(1),
-            criteria.clone()
+            criteria
         ));
 
         assert_noop!(
-            Semantic::request_discovery(RuntimeOrigin::signed(1), criteria.clone()),
+            Semantic::request_discovery(RuntimeOrigin::signed(1), criteria),
             Error::<Test>::DiscoveryRateLimited
         );
 

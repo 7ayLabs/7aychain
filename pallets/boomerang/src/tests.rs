@@ -294,10 +294,10 @@ fn max_hops_enforced() {
 
         let path_id = PathId::new(0);
 
-        for i in 2..12 {
+        for i in 2u64..12 {
             let to_actor = account_to_actor(i);
             assert_ok!(Boomerang::record_hop(
-                RuntimeOrigin::signed((i - 1) as u64),
+                RuntimeOrigin::signed(i - 1),
                 path_id,
                 to_actor,
                 H256([(i as u8); 32])
