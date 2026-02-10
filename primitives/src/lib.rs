@@ -3,6 +3,8 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![deny(unsafe_code)]
 
+extern crate alloc;
+
 pub mod constants;
 pub mod crypto;
 pub mod errors;
