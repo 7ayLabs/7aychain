@@ -1,7 +1,7 @@
 use sc_service::ChainType;
 use seveny_runtime::{
-    opaque::SessionKeys, AccountId, AuraConfig, BalancesConfig, GrandpaConfig, RuntimeGenesisConfig,
-    Signature, SudoConfig, SystemConfig, WASM_BINARY,
+    opaque::SessionKeys, AccountId, AuraConfig, BalancesConfig, GrandpaConfig,
+    RuntimeGenesisConfig, Signature, SudoConfig, SystemConfig, WASM_BINARY,
 };
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_consensus_grandpa::AuthorityId as GrandpaId;

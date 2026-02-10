@@ -11,6 +11,8 @@ pub use weights::WeightInfo;
 
 #[frame_support::pallet]
 pub mod pallet {
+    use alloc::vec;
+    use alloc::vec::Vec;
     use frame_support::{
         pallet_prelude::*,
         traits::{Get, StorageVersion},
@@ -18,14 +20,23 @@ pub mod pallet {
     };
     use frame_system::pallet_prelude::*;
     use seveny_primitives::types::ActorId;
-    use alloc::vec;
-    use alloc::vec::Vec;
 
     use crate::WeightInfo;
 
     const STORAGE_VERSION: StorageVersion = StorageVersion::new(1);
 
-    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(
+        Clone,
+        Copy,
+        PartialEq,
+        Eq,
+        Encode,
+        Decode,
+        parity_scale_codec::DecodeWithMemTracking,
+        MaxEncodedLen,
+        TypeInfo,
+        RuntimeDebug,
+    )]
     pub struct CapabilityId(pub u64);
 
     impl CapabilityId {
@@ -38,7 +49,18 @@ pub mod pallet {
         }
     }
 
-    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(
+        Clone,
+        Copy,
+        PartialEq,
+        Eq,
+        Encode,
+        Decode,
+        parity_scale_codec::DecodeWithMemTracking,
+        MaxEncodedLen,
+        TypeInfo,
+        RuntimeDebug,
+    )]
     pub struct ResourceId(pub [u8; 32]);
 
     impl ResourceId {
@@ -51,7 +73,18 @@ pub mod pallet {
         }
     }
 
-    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(
+        Clone,
+        Copy,
+        PartialEq,
+        Eq,
+        Encode,
+        Decode,
+        parity_scale_codec::DecodeWithMemTracking,
+        MaxEncodedLen,
+        TypeInfo,
+        RuntimeDebug,
+    )]
     pub struct Permissions(pub u32);
 
     impl Permissions {
@@ -84,14 +117,35 @@ pub mod pallet {
         }
     }
 
-    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(
+        Clone,
+        Copy,
+        PartialEq,
+        Eq,
+        Encode,
+        Decode,
+        parity_scale_codec::DecodeWithMemTracking,
+        MaxEncodedLen,
+        TypeInfo,
+        RuntimeDebug,
+    )]
     pub enum CapabilityStatus {
         Active,
         Revoked,
         Expired,
     }
 
-    #[derive(Clone, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(
+        Clone,
+        PartialEq,
+        Eq,
+        Encode,
+        Decode,
+        parity_scale_codec::DecodeWithMemTracking,
+        MaxEncodedLen,
+        TypeInfo,
+        RuntimeDebug,
+    )]
     #[scale_info(skip_type_params(T))]
     pub struct Capability<T: Config> {
         pub id: CapabilityId,
@@ -106,7 +160,17 @@ pub mod pallet {
         pub parent_capability: Option<CapabilityId>,
     }
 
-    #[derive(Clone, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(
+        Clone,
+        PartialEq,
+        Eq,
+        Encode,
+        Decode,
+        parity_scale_codec::DecodeWithMemTracking,
+        MaxEncodedLen,
+        TypeInfo,
+        RuntimeDebug,
+    )]
     #[scale_info(skip_type_params(T))]
     pub struct DelegationRecord<T: Config> {
         pub original_capability: CapabilityId,
@@ -484,11 +548,7 @@ pub mod pallet {
             Capabilities::<T>::get(capability_id)
         }
 
-        pub fn has_permission(
-            actor: ActorId,
-            resource: ResourceId,
-            required: Permissions,
-        ) -> bool {
+        pub fn has_permission(actor: ActorId, resource: ResourceId, required: Permissions) -> bool {
             let block_number = frame_system::Pallet::<T>::block_number();
 
             ActorCapabilities::<T>::get(actor)

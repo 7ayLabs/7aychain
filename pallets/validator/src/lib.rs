@@ -12,6 +12,7 @@ pub use weights::WeightInfo;
 
 #[frame_support::pallet]
 pub mod pallet {
+    use alloc::vec::Vec;
     use frame_support::{
         pallet_prelude::*,
         traits::{Currency, Get, ReservableCurrency, StorageVersion},
@@ -26,7 +27,6 @@ pub mod pallet {
     };
     use sp_arithmetic::Perbill;
     use sp_runtime::{traits::Zero, Saturating};
-    use alloc::vec::Vec;
 
     use crate::WeightInfo;
 
@@ -57,7 +57,17 @@ pub mod pallet {
         type SlashDeferDuration: Get<BlockNumberFor<Self>>;
     }
 
-    #[derive(Clone, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(
+        Clone,
+        PartialEq,
+        Eq,
+        Encode,
+        Decode,
+        parity_scale_codec::DecodeWithMemTracking,
+        MaxEncodedLen,
+        TypeInfo,
+        RuntimeDebug,
+    )]
     pub enum ValidatorStatus {
         Bonding,
         Active,
@@ -65,7 +75,17 @@ pub mod pallet {
         Slashed,
     }
 
-    #[derive(Clone, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(
+        Clone,
+        PartialEq,
+        Eq,
+        Encode,
+        Decode,
+        parity_scale_codec::DecodeWithMemTracking,
+        MaxEncodedLen,
+        TypeInfo,
+        RuntimeDebug,
+    )]
     #[scale_info(skip_type_params(T))]
     pub struct ValidatorInfo<T: Config> {
         pub id: ValidatorId,
@@ -76,7 +96,17 @@ pub mod pallet {
         pub unbonding_at: Option<BlockNumberFor<T>>,
     }
 
-    #[derive(Clone, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(
+        Clone,
+        PartialEq,
+        Eq,
+        Encode,
+        Decode,
+        parity_scale_codec::DecodeWithMemTracking,
+        MaxEncodedLen,
+        TypeInfo,
+        RuntimeDebug,
+    )]
     #[scale_info(skip_type_params(T))]
     pub struct SlashRecord<T: Config> {
         pub validator: ValidatorId,
@@ -294,7 +324,8 @@ pub mod pallet {
 
             let validator_id =
                 ValidatorByController::<T>::get(&who).ok_or(Error::<T>::ValidatorNotFound)?;
-            let mut info = Validators::<T>::get(validator_id).ok_or(Error::<T>::ValidatorNotFound)?;
+            let mut info =
+                Validators::<T>::get(validator_id).ok_or(Error::<T>::ValidatorNotFound)?;
 
             ensure!(
                 info.status == ValidatorStatus::Bonding,
@@ -329,7 +360,8 @@ pub mod pallet {
 
             let validator_id =
                 ValidatorByController::<T>::get(&who).ok_or(Error::<T>::ValidatorNotFound)?;
-            let mut info = Validators::<T>::get(validator_id).ok_or(Error::<T>::ValidatorNotFound)?;
+            let mut info =
+                Validators::<T>::get(validator_id).ok_or(Error::<T>::ValidatorNotFound)?;
 
             ensure!(
                 info.status == ValidatorStatus::Active,
@@ -414,7 +446,8 @@ pub mod pallet {
 
             let validator_id =
                 ValidatorByController::<T>::get(&who).ok_or(Error::<T>::ValidatorNotFound)?;
-            let mut info = Validators::<T>::get(validator_id).ok_or(Error::<T>::ValidatorNotFound)?;
+            let mut info =
+                Validators::<T>::get(validator_id).ok_or(Error::<T>::ValidatorNotFound)?;
 
             let new_stake = info.stake.saturating_add(additional);
             Self::ensure_stake_ratio_valid(new_stake)?;
@@ -514,8 +547,8 @@ pub mod pallet {
                 Error::<T>::UnbondingPeriodNotElapsed
             );
 
-            let info =
-                Validators::<T>::get(slash_record.validator).ok_or(Error::<T>::ValidatorNotFound)?;
+            let info = Validators::<T>::get(slash_record.validator)
+                .ok_or(Error::<T>::ValidatorNotFound)?;
 
             let _ = T::Currency::slash_reserved(&info.controller, slash_record.amount);
 

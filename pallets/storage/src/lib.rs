@@ -14,7 +14,20 @@ use seveny_primitives::types::{ActorId, EpochId};
 use sp_core::H256;
 use sp_runtime::Saturating;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen, Default, Hash)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+    Default,
+    Hash,
+)]
 pub struct DataKey(pub H256);
 
 impl DataKey {
@@ -28,7 +41,18 @@ impl DataKey {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 pub enum DataType {
     Presence,
     Commitment,
@@ -43,7 +67,18 @@ impl Default for DataType {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 pub enum StorageStatus {
     Active,
     Expired,
@@ -56,7 +91,18 @@ impl Default for StorageStatus {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 pub enum RetentionPolicy {
     EpochBound,
     TimeBound,
@@ -70,7 +116,17 @@ impl Default for RetentionPolicy {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 #[scale_info(skip_type_params(T))]
 pub struct EphemeralEntry<T: Config> {
     pub key: DataKey,
@@ -85,7 +141,17 @@ pub struct EphemeralEntry<T: Config> {
     pub size_bytes: u32,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 #[scale_info(skip_type_params(T))]
 pub struct StorageQuota<T: Config> {
     pub actor: ActorId,
@@ -96,7 +162,17 @@ pub struct StorageQuota<T: Config> {
     pub last_updated: BlockNumberFor<T>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 #[scale_info(skip_type_params(T))]
 pub struct EpochStorage<T: Config> {
     pub epoch: EpochId,
@@ -163,7 +239,8 @@ pub mod pallet {
 
     #[pallet::storage]
     #[pallet::getter(fn epoch_storage)]
-    pub type EpochStorageInfo<T: Config> = StorageMap<_, Blake2_128Concat, EpochId, EpochStorage<T>>;
+    pub type EpochStorageInfo<T: Config> =
+        StorageMap<_, Blake2_128Concat, EpochId, EpochStorage<T>>;
 
     #[pallet::storage]
     #[pallet::getter(fn active_entries)]
@@ -333,10 +410,7 @@ pub mod pallet {
             let who = ensure_signed(origin)?;
             let actor = Self::account_to_actor(who);
 
-            ensure!(
-                new_size <= T::MaxDataSize::get(),
-                Error::<T>::DataTooLarge
-            );
+            ensure!(new_size <= T::MaxDataSize::get(), Error::<T>::DataTooLarge);
 
             EphemeralData::<T>::try_mutate((epoch, actor, key), |entry| -> DispatchResult {
                 let e = entry.as_mut().ok_or(Error::<T>::DataNotFound)?;
@@ -375,16 +449,12 @@ pub mod pallet {
 
         #[pallet::call_index(2)]
         #[pallet::weight(T::WeightInfo::delete_data())]
-        pub fn delete_data(
-            origin: OriginFor<T>,
-            epoch: EpochId,
-            key: DataKey,
-        ) -> DispatchResult {
+        pub fn delete_data(origin: OriginFor<T>, epoch: EpochId, key: DataKey) -> DispatchResult {
             let who = ensure_signed(origin)?;
             let actor = Self::account_to_actor(who);
 
-            let entry = EphemeralData::<T>::get((epoch, actor, key))
-                .ok_or(Error::<T>::DataNotFound)?;
+            let entry =
+                EphemeralData::<T>::get((epoch, actor, key)).ok_or(Error::<T>::DataNotFound)?;
 
             ensure!(entry.owner == actor, Error::<T>::NotDataOwner);
 
@@ -511,7 +581,8 @@ pub mod pallet {
                     *quota = Some(StorageQuota {
                         actor,
                         max_entries: T::MaxEntriesPerActor::get(),
-                        max_bytes: T::MaxDataSize::get() as u64 * T::MaxEntriesPerActor::get() as u64,
+                        max_bytes: T::MaxDataSize::get() as u64
+                            * T::MaxEntriesPerActor::get() as u64,
                         used_entries: 1,
                         used_bytes: bytes as u64,
                         last_updated: block_number,
@@ -576,7 +647,11 @@ pub mod pallet {
             Weight::from_parts(cleaned as u64 * 10_000, 0)
         }
 
-        pub fn get_entry(epoch: EpochId, actor: ActorId, key: DataKey) -> Option<EphemeralEntry<T>> {
+        pub fn get_entry(
+            epoch: EpochId,
+            actor: ActorId,
+            key: DataKey,
+        ) -> Option<EphemeralEntry<T>> {
             EphemeralData::<T>::get((epoch, actor, key))
         }
 

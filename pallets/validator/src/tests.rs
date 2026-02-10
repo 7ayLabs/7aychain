@@ -167,7 +167,10 @@ fn run_to_block(n: u64) {
 #[test]
 fn register_validator_success() {
     new_test_ext().execute_with(|| {
-        assert_ok!(Validator::register_validator(RuntimeOrigin::signed(1), 5000));
+        assert_ok!(Validator::register_validator(
+            RuntimeOrigin::signed(1),
+            5000
+        ));
 
         let validator_id = account_to_validator(1);
         let info = Validator::validators(validator_id).expect("validator should exist");
@@ -194,7 +197,10 @@ fn register_validator_insufficient_stake() {
 #[test]
 fn register_validator_duplicate() {
     new_test_ext().execute_with(|| {
-        assert_ok!(Validator::register_validator(RuntimeOrigin::signed(1), 5000));
+        assert_ok!(Validator::register_validator(
+            RuntimeOrigin::signed(1),
+            5000
+        ));
 
         assert_noop!(
             Validator::register_validator(RuntimeOrigin::signed(1), 5000),
@@ -206,7 +212,10 @@ fn register_validator_duplicate() {
 #[test]
 fn activate_validator_success() {
     new_test_ext().execute_with(|| {
-        assert_ok!(Validator::register_validator(RuntimeOrigin::signed(1), 5000));
+        assert_ok!(Validator::register_validator(
+            RuntimeOrigin::signed(1),
+            5000
+        ));
 
         run_to_block(12);
 
@@ -223,7 +232,10 @@ fn activate_validator_success() {
 #[test]
 fn activate_validator_bonding_not_elapsed() {
     new_test_ext().execute_with(|| {
-        assert_ok!(Validator::register_validator(RuntimeOrigin::signed(1), 5000));
+        assert_ok!(Validator::register_validator(
+            RuntimeOrigin::signed(1),
+            5000
+        ));
 
         assert_noop!(
             Validator::activate_validator(RuntimeOrigin::signed(1)),
@@ -253,8 +265,14 @@ fn invariant_inv46_min_validators() {
 #[test]
 fn invariant_inv47_max_stake_ratio() {
     new_test_ext().execute_with(|| {
-        assert_ok!(Validator::register_validator(RuntimeOrigin::signed(1), 3000));
-        assert_ok!(Validator::register_validator(RuntimeOrigin::signed(2), 1400));
+        assert_ok!(Validator::register_validator(
+            RuntimeOrigin::signed(1),
+            3000
+        ));
+        assert_ok!(Validator::register_validator(
+            RuntimeOrigin::signed(2),
+            1400
+        ));
 
         assert_noop!(
             Validator::register_validator(RuntimeOrigin::signed(3), 10_000),
@@ -339,7 +357,10 @@ fn invariant_inv49_evidence_reward_capped() {
 #[test]
 fn deactivate_validator_success() {
     new_test_ext_with_validators().execute_with(|| {
-        assert_ok!(Validator::register_validator(RuntimeOrigin::signed(7), 2000));
+        assert_ok!(Validator::register_validator(
+            RuntimeOrigin::signed(7),
+            2000
+        ));
         run_to_block(12);
         assert_ok!(Validator::activate_validator(RuntimeOrigin::signed(7)));
 
@@ -358,27 +379,45 @@ fn deactivate_validator_success() {
 #[test]
 fn withdraw_stake_success() {
     new_test_ext().execute_with(|| {
-        assert_ok!(Validator::register_validator(RuntimeOrigin::signed(1), 3000));
+        assert_ok!(Validator::register_validator(
+            RuntimeOrigin::signed(1),
+            3000
+        ));
         run_to_block(12);
         assert_ok!(Validator::activate_validator(RuntimeOrigin::signed(1)));
 
-        assert_ok!(Validator::register_validator(RuntimeOrigin::signed(2), 1200));
+        assert_ok!(Validator::register_validator(
+            RuntimeOrigin::signed(2),
+            1200
+        ));
         run_to_block(24);
         assert_ok!(Validator::activate_validator(RuntimeOrigin::signed(2)));
 
-        assert_ok!(Validator::register_validator(RuntimeOrigin::signed(3), 1200));
+        assert_ok!(Validator::register_validator(
+            RuntimeOrigin::signed(3),
+            1200
+        ));
         run_to_block(36);
         assert_ok!(Validator::activate_validator(RuntimeOrigin::signed(3)));
 
-        assert_ok!(Validator::register_validator(RuntimeOrigin::signed(4), 1200));
+        assert_ok!(Validator::register_validator(
+            RuntimeOrigin::signed(4),
+            1200
+        ));
         run_to_block(48);
         assert_ok!(Validator::activate_validator(RuntimeOrigin::signed(4)));
 
-        assert_ok!(Validator::register_validator(RuntimeOrigin::signed(5), 1200));
+        assert_ok!(Validator::register_validator(
+            RuntimeOrigin::signed(5),
+            1200
+        ));
         run_to_block(60);
         assert_ok!(Validator::activate_validator(RuntimeOrigin::signed(5)));
 
-        assert_ok!(Validator::register_validator(RuntimeOrigin::signed(6), 1200));
+        assert_ok!(Validator::register_validator(
+            RuntimeOrigin::signed(6),
+            1200
+        ));
         run_to_block(72);
         assert_ok!(Validator::activate_validator(RuntimeOrigin::signed(6)));
 
@@ -396,7 +435,10 @@ fn withdraw_stake_success() {
 #[test]
 fn withdraw_stake_unbonding_not_elapsed() {
     new_test_ext().execute_with(|| {
-        assert_ok!(Validator::register_validator(RuntimeOrigin::signed(1), 3000));
+        assert_ok!(Validator::register_validator(
+            RuntimeOrigin::signed(1),
+            3000
+        ));
         run_to_block(12);
         assert_ok!(Validator::activate_validator(RuntimeOrigin::signed(1)));
 
@@ -421,8 +463,14 @@ fn withdraw_stake_unbonding_not_elapsed() {
 #[test]
 fn increase_stake_success() {
     new_test_ext().execute_with(|| {
-        assert_ok!(Validator::register_validator(RuntimeOrigin::signed(1), 3000));
-        assert_ok!(Validator::register_validator(RuntimeOrigin::signed(2), 1200));
+        assert_ok!(Validator::register_validator(
+            RuntimeOrigin::signed(1),
+            3000
+        ));
+        assert_ok!(Validator::register_validator(
+            RuntimeOrigin::signed(2),
+            1200
+        ));
 
         assert_ok!(Validator::increase_stake(RuntimeOrigin::signed(2), 500));
 
@@ -546,7 +594,10 @@ fn is_validator_active_helper() {
 #[test]
 fn events_emitted_correctly() {
     new_test_ext().execute_with(|| {
-        assert_ok!(Validator::register_validator(RuntimeOrigin::signed(1), 5000));
+        assert_ok!(Validator::register_validator(
+            RuntimeOrigin::signed(1),
+            5000
+        ));
 
         let validator_id = account_to_validator(1);
 

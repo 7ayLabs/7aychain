@@ -11,7 +11,8 @@ use seveny_runtime::{self, opaque::Block, RuntimeApi};
 use sp_consensus_aura::sr25519::AuthorityPair as AuraPair;
 use std::sync::Arc;
 
-pub type FullClient = sc_service::TFullClient<Block, RuntimeApi, WasmExecutor<sp_io::SubstrateHostFunctions>>;
+pub type FullClient =
+    sc_service::TFullClient<Block, RuntimeApi, WasmExecutor<sp_io::SubstrateHostFunctions>>;
 type FullBackend = sc_service::TFullBackend<Block>;
 type FullSelectChain = sc_consensus::LongestChain<FullBackend, Block>;
 type FullPool = BasicPool<FullChainApi<FullClient, Block>, Block>;
@@ -26,7 +27,12 @@ pub fn new_partial(
         sc_consensus::DefaultImportQueue<Block>,
         FullPool,
         (
-            sc_consensus_grandpa::GrandpaBlockImport<FullBackend, Block, FullClient, FullSelectChain>,
+            sc_consensus_grandpa::GrandpaBlockImport<
+                FullBackend,
+                Block,
+                FullClient,
+                FullSelectChain,
+            >,
             sc_consensus_grandpa::LinkHalf<Block, FullClient, FullSelectChain>,
             Option<Telemetry>,
         ),
@@ -55,7 +61,9 @@ pub fn new_partial(
     let client = Arc::new(client);
 
     let telemetry = telemetry.map(|(worker, telemetry)| {
-        task_manager.spawn_handle().spawn("telemetry", None, worker.run());
+        task_manager
+            .spawn_handle()
+            .spawn("telemetry", None, worker.run());
         telemetry
     });
 
@@ -79,8 +87,8 @@ pub fn new_partial(
 
     let slot_duration = sc_consensus_aura::slot_duration(&*client)?;
 
-    let import_queue =
-        sc_consensus_aura::import_queue::<AuraPair, _, _, _, _, _>(ImportQueueParams {
+    let import_queue = sc_consensus_aura::import_queue::<AuraPair, _, _, _, _, _>(
+        ImportQueueParams {
             block_import: grandpa_block_import.clone(),
             justification_import: Some(Box::new(grandpa_block_import.clone())),
             client: client.clone(),
@@ -100,7 +108,8 @@ pub fn new_partial(
             check_for_equivocation: Default::default(),
             telemetry: telemetry.as_ref().map(|t: &Telemetry| t.handle()),
             compatibility_mode: Default::default(),
-        })?;
+        },
+    )?;
 
     Ok(sc_service::PartialComponents {
         client,
@@ -134,12 +143,19 @@ pub fn new_full(config: Configuration) -> Result<TaskManager, ServiceError> {
     let metrics = sc_network::NotificationMetrics::new(config.prometheus_registry());
 
     let grandpa_protocol_name = sc_consensus_grandpa::protocol_standard_name(
-        &client.block_hash(0).ok().flatten().expect("Genesis block exists; qed"),
+        &client
+            .block_hash(0)
+            .ok()
+            .flatten()
+            .expect("Genesis block exists; qed"),
         &config.chain_spec,
     );
 
     let (grandpa_protocol_config, grandpa_notification_service) =
-        sc_consensus_grandpa::grandpa_peers_set_config::<Block, sc_network::NetworkWorker<Block, <Block as sp_runtime::traits::Block>::Hash>>(
+        sc_consensus_grandpa::grandpa_peers_set_config::<
+            Block,
+            sc_network::NetworkWorker<Block, <Block as sp_runtime::traits::Block>::Hash>,
+        >(
             grandpa_protocol_name.clone(),
             metrics.clone(),
             Arc::clone(&net_config.peer_store_handle()),

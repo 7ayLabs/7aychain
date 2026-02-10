@@ -430,10 +430,9 @@ fn events_emitted_correctly() {
         ));
 
         let events = System::events();
-        assert!(events.iter().any(|e| matches!(
-            &e.event,
-            RuntimeEvent::Zk(Event::ShareProofVerified { .. })
-        )));
+        assert!(events
+            .iter()
+            .any(|e| matches!(&e.event, RuntimeEvent::Zk(Event::ShareProofVerified { .. }))));
     });
 }
 

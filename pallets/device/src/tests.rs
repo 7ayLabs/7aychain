@@ -711,7 +711,10 @@ fn device_lifecycle_server() {
         ));
         assert!(!Device::is_device_active(device_id));
 
-        assert_ok!(Device::reactivate_device(RuntimeOrigin::signed(1), device_id));
+        assert_ok!(Device::reactivate_device(
+            RuntimeOrigin::signed(1),
+            device_id
+        ));
         assert!(Device::is_device_active(device_id));
 
         assert_ok!(Device::revoke_device(RuntimeOrigin::signed(1), device_id));

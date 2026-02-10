@@ -11,6 +11,7 @@ pub use weights::WeightInfo;
 
 #[frame_support::pallet]
 pub mod pallet {
+    use alloc::vec::Vec;
     use frame_support::{
         pallet_prelude::*,
         traits::{Get, StorageVersion},
@@ -19,13 +20,23 @@ pub mod pallet {
     use frame_system::pallet_prelude::*;
     use seveny_primitives::types::ActorId;
     use sp_runtime::Saturating;
-    use alloc::vec::Vec;
 
     use crate::WeightInfo;
 
     const STORAGE_VERSION: StorageVersion = StorageVersion::new(1);
 
-    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(
+        Clone,
+        Copy,
+        PartialEq,
+        Eq,
+        Encode,
+        Decode,
+        parity_scale_codec::DecodeWithMemTracking,
+        MaxEncodedLen,
+        TypeInfo,
+        RuntimeDebug,
+    )]
     pub struct RelationshipId(pub u64);
 
     impl RelationshipId {
@@ -38,7 +49,18 @@ pub mod pallet {
         }
     }
 
-    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(
+        Clone,
+        Copy,
+        PartialEq,
+        Eq,
+        Encode,
+        Decode,
+        parity_scale_codec::DecodeWithMemTracking,
+        MaxEncodedLen,
+        TypeInfo,
+        RuntimeDebug,
+    )]
     pub struct DiscoveryRequestId(pub u64);
 
     impl DiscoveryRequestId {
@@ -51,7 +73,18 @@ pub mod pallet {
         }
     }
 
-    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(
+        Clone,
+        Copy,
+        PartialEq,
+        Eq,
+        Encode,
+        Decode,
+        parity_scale_codec::DecodeWithMemTracking,
+        MaxEncodedLen,
+        TypeInfo,
+        RuntimeDebug,
+    )]
     pub enum RelationshipType {
         Trust,
         Follow,
@@ -60,7 +93,18 @@ pub mod pallet {
         Verify,
     }
 
-    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(
+        Clone,
+        Copy,
+        PartialEq,
+        Eq,
+        Encode,
+        Decode,
+        parity_scale_codec::DecodeWithMemTracking,
+        MaxEncodedLen,
+        TypeInfo,
+        RuntimeDebug,
+    )]
     pub enum RelationshipStatus {
         Active,
         Pending,
@@ -68,7 +112,18 @@ pub mod pallet {
         Expired,
     }
 
-    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(
+        Clone,
+        Copy,
+        PartialEq,
+        Eq,
+        Encode,
+        Decode,
+        parity_scale_codec::DecodeWithMemTracking,
+        MaxEncodedLen,
+        TypeInfo,
+        RuntimeDebug,
+    )]
     pub enum DiscoveryStatus {
         Pending,
         Processing,
@@ -77,7 +132,17 @@ pub mod pallet {
         RateLimited,
     }
 
-    #[derive(Clone, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(
+        Clone,
+        PartialEq,
+        Eq,
+        Encode,
+        Decode,
+        parity_scale_codec::DecodeWithMemTracking,
+        MaxEncodedLen,
+        TypeInfo,
+        RuntimeDebug,
+    )]
     #[scale_info(skip_type_params(T))]
     pub struct Relationship<T: Config> {
         pub id: RelationshipId,
@@ -92,7 +157,17 @@ pub mod pallet {
         pub trust_level: u8,
     }
 
-    #[derive(Clone, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(
+        Clone,
+        PartialEq,
+        Eq,
+        Encode,
+        Decode,
+        parity_scale_codec::DecodeWithMemTracking,
+        MaxEncodedLen,
+        TypeInfo,
+        RuntimeDebug,
+    )]
     #[scale_info(skip_type_params(T))]
     pub struct DiscoveryRequest<T: Config> {
         pub id: DiscoveryRequestId,
@@ -104,7 +179,18 @@ pub mod pallet {
         pub results_count: u32,
     }
 
-    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(
+        Clone,
+        Copy,
+        PartialEq,
+        Eq,
+        Encode,
+        Decode,
+        parity_scale_codec::DecodeWithMemTracking,
+        MaxEncodedLen,
+        TypeInfo,
+        RuntimeDebug,
+    )]
     pub struct DiscoveryCriteria {
         pub min_trust_level: u8,
         pub relationship_type: Option<RelationshipType>,
@@ -123,7 +209,17 @@ pub mod pallet {
         }
     }
 
-    #[derive(Clone, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(
+        Clone,
+        PartialEq,
+        Eq,
+        Encode,
+        Decode,
+        parity_scale_codec::DecodeWithMemTracking,
+        MaxEncodedLen,
+        TypeInfo,
+        RuntimeDebug,
+    )]
     pub struct SemanticProfile {
         pub actor: ActorId,
         pub total_relationships: u32,
@@ -388,10 +484,7 @@ pub mod pallet {
             let mut relationship =
                 Relationships::<T>::get(relationship_id).ok_or(Error::<T>::RelationshipNotFound)?;
 
-            ensure!(
-                relationship.to_actor == actor,
-                Error::<T>::NotAuthorized
-            );
+            ensure!(relationship.to_actor == actor, Error::<T>::NotAuthorized);
             ensure!(
                 relationship.status == RelationshipStatus::Pending,
                 Error::<T>::RelationshipRevoked
@@ -471,10 +564,7 @@ pub mod pallet {
             let mut relationship =
                 Relationships::<T>::get(relationship_id).ok_or(Error::<T>::RelationshipNotFound)?;
 
-            ensure!(
-                relationship.from_actor == actor,
-                Error::<T>::NotAuthorized
-            );
+            ensure!(relationship.from_actor == actor, Error::<T>::NotAuthorized);
             ensure!(
                 relationship.status == RelationshipStatus::Active,
                 Error::<T>::RelationshipRevoked
@@ -555,17 +645,12 @@ pub mod pallet {
 
         #[pallet::call_index(5)]
         #[pallet::weight(T::WeightInfo::update_profile())]
-        pub fn update_profile(
-            origin: OriginFor<T>,
-            discovery_enabled: bool,
-        ) -> DispatchResult {
+        pub fn update_profile(origin: OriginFor<T>, discovery_enabled: bool) -> DispatchResult {
             let who = ensure_signed(origin)?;
             let actor = Self::account_to_actor(&who);
             let block_number = frame_system::Pallet::<T>::block_number();
 
-            let block_number_u64: u64 = block_number
-                .try_into()
-                .unwrap_or(0u64);
+            let block_number_u64: u64 = block_number.try_into().unwrap_or(0u64);
 
             SemanticProfiles::<T>::mutate(actor, |profile| {
                 if let Some(ref mut p) = profile {
@@ -645,7 +730,10 @@ pub mod pallet {
                 .map(|rel| rel.trust_level)
         }
 
-        pub fn get_mutual_relationships(actor1: ActorId, actor2: ActorId) -> Option<(Relationship<T>, Relationship<T>)> {
+        pub fn get_mutual_relationships(
+            actor1: ActorId,
+            actor2: ActorId,
+        ) -> Option<(Relationship<T>, Relationship<T>)> {
             let rel1_id = RelationshipIndex::<T>::get(actor1, actor2)?;
             let rel2_id = RelationshipIndex::<T>::get(actor2, actor1)?;
 

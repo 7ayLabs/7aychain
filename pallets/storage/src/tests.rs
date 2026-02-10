@@ -506,10 +506,9 @@ fn events_emitted_correctly() {
         ));
 
         let events = System::events();
-        assert!(events.iter().any(|e| matches!(
-            &e.event,
-            RuntimeEvent::Storage(Event::DataStored { .. })
-        )));
+        assert!(events
+            .iter()
+            .any(|e| matches!(&e.event, RuntimeEvent::Storage(Event::DataStored { .. }))));
     });
 }
 

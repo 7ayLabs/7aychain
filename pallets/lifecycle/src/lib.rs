@@ -14,7 +14,18 @@ use seveny_primitives::types::ActorId;
 use sp_core::H256;
 use sp_runtime::Saturating;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 pub enum ActorStatus {
     Pending,
     Active,
@@ -29,7 +40,18 @@ impl Default for ActorStatus {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 pub enum KeyStatus {
     Active,
     Rotating,
@@ -43,7 +65,18 @@ impl Default for KeyStatus {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 pub enum DestructionReason {
     OwnerRequest,
     SecurityBreach,
@@ -58,7 +91,17 @@ impl Default for DestructionReason {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 #[scale_info(skip_type_params(T))]
 pub struct ActorLifecycle<T: Config> {
     pub actor: ActorId,
@@ -69,7 +112,17 @@ pub struct ActorLifecycle<T: Config> {
     pub key_status: KeyStatus,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 #[scale_info(skip_type_params(T))]
 pub struct KeyDestructionRequest<T: Config> {
     pub actor: ActorId,
@@ -81,7 +134,17 @@ pub struct KeyDestructionRequest<T: Config> {
     pub finalized: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 #[scale_info(skip_type_params(T))]
 pub struct DestructionAttestation<T: Config> {
     pub attester: ActorId,
@@ -89,7 +152,17 @@ pub struct DestructionAttestation<T: Config> {
     pub signature_hash: H256,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 #[scale_info(skip_type_params(T))]
 pub struct KeyRotation<T: Config> {
     pub actor: ActorId,
@@ -151,8 +224,7 @@ pub mod pallet {
 
     #[pallet::storage]
     #[pallet::getter(fn destroyed_keys)]
-    pub type DestroyedKeys<T: Config> =
-        StorageMap<_, Blake2_128Concat, H256, BlockNumberFor<T>>;
+    pub type DestroyedKeys<T: Config> = StorageMap<_, Blake2_128Concat, H256, BlockNumberFor<T>>;
 
     #[pallet::storage]
     #[pallet::getter(fn active_actors)]
@@ -247,10 +319,7 @@ pub mod pallet {
     impl<T: Config> Pallet<T> {
         #[pallet::call_index(0)]
         #[pallet::weight(T::WeightInfo::register_actor())]
-        pub fn register_actor(
-            origin: OriginFor<T>,
-            key_hash: H256,
-        ) -> DispatchResult {
+        pub fn register_actor(origin: OriginFor<T>, key_hash: H256) -> DispatchResult {
             let who = ensure_signed(origin)?;
             let actor = Self::account_to_actor(who);
 
@@ -286,10 +355,7 @@ pub mod pallet {
             Actors::<T>::try_mutate(actor, |lifecycle| -> DispatchResult {
                 let l = lifecycle.as_mut().ok_or(Error::<T>::ActorNotFound)?;
 
-                ensure!(
-                    l.status == ActorStatus::Pending,
-                    Error::<T>::ActorNotActive
-                );
+                ensure!(l.status == ActorStatus::Pending, Error::<T>::ActorNotActive);
 
                 l.status = ActorStatus::Active;
                 l.last_active = frame_system::Pallet::<T>::block_number();
@@ -310,10 +376,7 @@ pub mod pallet {
             Actors::<T>::try_mutate(actor, |lifecycle| -> DispatchResult {
                 let l = lifecycle.as_mut().ok_or(Error::<T>::ActorNotFound)?;
 
-                ensure!(
-                    l.status == ActorStatus::Active,
-                    Error::<T>::ActorNotActive
-                );
+                ensure!(l.status == ActorStatus::Active, Error::<T>::ActorNotActive);
 
                 l.status = ActorStatus::Suspended;
                 l.last_active = frame_system::Pallet::<T>::block_number();
@@ -362,7 +425,8 @@ pub mod pallet {
             let lifecycle = Actors::<T>::get(actor).ok_or(Error::<T>::ActorNotFound)?;
 
             ensure!(
-                lifecycle.status == ActorStatus::Active || lifecycle.status == ActorStatus::Suspended,
+                lifecycle.status == ActorStatus::Active
+                    || lifecycle.status == ActorStatus::Suspended,
                 Error::<T>::ActorDestroyed
             );
             ensure!(
@@ -413,8 +477,7 @@ pub mod pallet {
 
             ensure!(attester != target_actor, Error::<T>::CannotSelfAttest);
 
-            let attester_lifecycle = Actors::<T>::get(attester)
-                .ok_or(Error::<T>::ActorNotFound)?;
+            let attester_lifecycle = Actors::<T>::get(attester).ok_or(Error::<T>::ActorNotFound)?;
             ensure!(
                 attester_lifecycle.status == ActorStatus::Active,
                 Error::<T>::ActorNotActive
@@ -468,8 +531,8 @@ pub mod pallet {
             let who = ensure_signed(origin)?;
             let actor = Self::account_to_actor(who);
 
-            let request = DestructionRequests::<T>::get(actor)
-                .ok_or(Error::<T>::DestructionNotPending)?;
+            let request =
+                DestructionRequests::<T>::get(actor).ok_or(Error::<T>::DestructionNotPending)?;
 
             ensure!(!request.finalized, Error::<T>::ActorDestroyed);
 
@@ -491,10 +554,7 @@ pub mod pallet {
 
         #[pallet::call_index(7)]
         #[pallet::weight(T::WeightInfo::initiate_rotation())]
-        pub fn initiate_rotation(
-            origin: OriginFor<T>,
-            new_key_hash: H256,
-        ) -> DispatchResult {
+        pub fn initiate_rotation(origin: OriginFor<T>, new_key_hash: H256) -> DispatchResult {
             let who = ensure_signed(origin)?;
             let actor = Self::account_to_actor(who);
 
@@ -546,8 +606,7 @@ pub mod pallet {
             let who = ensure_signed(origin)?;
             let actor = Self::account_to_actor(who);
 
-            let rotation = KeyRotations::<T>::get(actor)
-                .ok_or(Error::<T>::KeyRotationPending)?;
+            let rotation = KeyRotations::<T>::get(actor).ok_or(Error::<T>::KeyRotationPending)?;
 
             ensure!(!rotation.completed, Error::<T>::KeyRotationPending);
 

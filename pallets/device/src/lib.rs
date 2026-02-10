@@ -7,6 +7,7 @@ pub mod weights;
 #[cfg(test)]
 mod tests;
 
+use alloc::vec::Vec;
 use frame_support::pallet_prelude::*;
 use frame_system::pallet_prelude::*;
 use parity_scale_codec::{Decode, Encode, MaxEncodedLen};
@@ -14,10 +15,20 @@ use scale_info::TypeInfo;
 use seveny_primitives::types::ActorId;
 use sp_core::H256;
 use sp_runtime::Saturating;
-use alloc::vec::Vec;
 
 #[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen, Default, Hash,
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+    Default,
+    Hash,
 )]
 pub struct DeviceId(pub u64);
 
@@ -27,7 +38,18 @@ impl DeviceId {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 pub enum DeviceType {
     Mobile,
     Desktop,
@@ -43,7 +65,18 @@ impl Default for DeviceType {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 pub enum DeviceStatus {
     Pending,
     Active,
@@ -58,7 +91,18 @@ impl Default for DeviceStatus {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 pub enum AttestationType {
     SelfSigned,
     TrustedParty,
@@ -73,7 +117,17 @@ impl Default for AttestationType {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 #[scale_info(skip_type_params(T))]
 pub struct Device<T: Config> {
     pub id: DeviceId,
@@ -87,7 +141,17 @@ pub struct Device<T: Config> {
     pub trust_score: u8,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 #[scale_info(skip_type_params(T))]
 pub struct DeviceAttestation<T: Config> {
     pub device: DeviceId,
@@ -376,7 +440,8 @@ pub mod pallet {
             );
 
             let block_number = frame_system::Pallet::<T>::block_number();
-            let valid_until = Some(block_number.saturating_add(T::AttestationValidityBlocks::get()));
+            let valid_until =
+                Some(block_number.saturating_add(T::AttestationValidityBlocks::get()));
 
             let attestation = DeviceAttestation {
                 device: device_id,
@@ -493,8 +558,7 @@ pub mod pallet {
         }
 
         pub fn is_device_active(device_id: DeviceId) -> bool {
-            Devices::<T>::get(device_id)
-                .is_some_and(|d| d.status == DeviceStatus::Active)
+            Devices::<T>::get(device_id).is_some_and(|d| d.status == DeviceStatus::Active)
         }
 
         pub fn get_device_trust_score(device_id: DeviceId) -> u8 {

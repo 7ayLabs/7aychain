@@ -1,10 +1,10 @@
 #![allow(clippy::disallowed_macros)]
 
-use crate::{self as pallet_dispute, DisputeId, DisputeOutcome, DisputeRejectionReason, DisputeStatus, Error, Event};
-use frame_support::{
-    assert_noop, assert_ok, derive_impl, parameter_types,
-    traits::ConstU32,
+use crate::{
+    self as pallet_dispute, DisputeId, DisputeOutcome, DisputeRejectionReason, DisputeStatus,
+    Error, Event,
 };
+use frame_support::{assert_noop, assert_ok, derive_impl, parameter_types, traits::ConstU32};
 use frame_system as system;
 use seveny_primitives::types::{ValidatorId, ViolationType};
 use sp_core::H256;
@@ -190,11 +190,7 @@ fn submit_evidence_max_reached() {
         }
 
         assert_noop!(
-            Dispute::submit_evidence(
-                RuntimeOrigin::signed(100),
-                dispute_id,
-                H256([99u8; 32])
-            ),
+            Dispute::submit_evidence(RuntimeOrigin::signed(100), dispute_id, H256([99u8; 32])),
             Error::<Test>::MaxEvidenceReached
         );
     });
@@ -287,11 +283,7 @@ fn dispute_not_found() {
         let dispute_id = DisputeId::new(999);
 
         assert_noop!(
-            Dispute::submit_evidence(
-                RuntimeOrigin::signed(1),
-                dispute_id,
-                H256([1u8; 32])
-            ),
+            Dispute::submit_evidence(RuntimeOrigin::signed(1), dispute_id, H256([1u8; 32])),
             Error::<Test>::DisputeNotFound
         );
 

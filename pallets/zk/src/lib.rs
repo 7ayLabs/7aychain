@@ -7,6 +7,7 @@ pub mod weights;
 #[cfg(test)]
 mod tests;
 
+use alloc::vec::Vec;
 use frame_support::pallet_prelude::*;
 use frame_system::pallet_prelude::*;
 use parity_scale_codec::{Decode, Encode, MaxEncodedLen};
@@ -16,9 +17,19 @@ use seveny_primitives::{
     types::ActorId,
 };
 use sp_core::{blake2_256, H256};
-use alloc::vec::Vec;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 pub enum ProofType {
     Share,
     Presence,
@@ -31,7 +42,18 @@ impl Default for ProofType {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 pub enum VerificationStatus {
     Pending,
     Verified,
@@ -44,26 +66,50 @@ impl Default for VerificationStatus {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 pub struct ShareStatement {
     pub commitment_hash: H256,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo)]
+#[derive(
+    Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo,
+)]
 pub struct ShareWitness {
     pub share_value: [u8; 32],
     pub share_index: u8,
     pub randomness: [u8; 32],
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 pub struct PresenceStatement {
     pub epoch_id: u64,
     pub state_root: StateRoot,
     pub nullifier: Nullifier,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo)]
+#[derive(
+    Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo,
+)]
 pub struct PresenceWitness {
     pub secret: [u8; 32],
     pub randomness: [u8; 32],
@@ -71,20 +117,42 @@ pub struct PresenceWitness {
     pub leaf_index: u64,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 pub struct AccessStatement {
     pub vault_id: u64,
     pub access_hash: H256,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo)]
+#[derive(
+    Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo,
+)]
 pub struct AccessWitness {
     pub actor_id: ActorId,
     pub ring_position: u32,
     pub membership_commitment: H256,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 #[scale_info(skip_type_params(T))]
 pub struct ZkProof<T: Config> {
     pub proof_type: ProofType,
@@ -92,7 +160,17 @@ pub struct ZkProof<T: Config> {
     pub created_at: BlockNumberFor<T>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 #[scale_info(skip_type_params(T))]
 pub struct VerificationRecord<T: Config> {
     pub proof_type: ProofType,
@@ -415,7 +493,11 @@ pub mod pallet {
             };
 
             Verifications::<T>::insert(statement_hash, record);
-            VerifiedAccessProofs::<T>::insert(statement.vault_id, statement.access_hash, block_number);
+            VerifiedAccessProofs::<T>::insert(
+                statement.vault_id,
+                statement.access_hash,
+                block_number,
+            );
             VerificationCount::<T>::mutate(|c| *c = c.saturating_add(1));
             VerificationsThisBlock::<T>::mutate(|c| *c = c.saturating_add(1));
 

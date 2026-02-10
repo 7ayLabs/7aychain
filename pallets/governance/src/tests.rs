@@ -369,7 +369,11 @@ fn has_permission_helper() {
         let actor = account_to_actor(2);
         let resource = test_resource(1);
 
-        assert!(!Governance::has_permission(actor, resource, Permissions::READ));
+        assert!(!Governance::has_permission(
+            actor,
+            resource,
+            Permissions::READ
+        ));
 
         assert_ok!(Governance::grant_capability(
             RuntimeOrigin::signed(1),
@@ -380,8 +384,16 @@ fn has_permission_helper() {
             false
         ));
 
-        assert!(Governance::has_permission(actor, resource, Permissions::READ));
-        assert!(Governance::has_permission(actor, resource, Permissions::WRITE));
+        assert!(Governance::has_permission(
+            actor,
+            resource,
+            Permissions::READ
+        ));
+        assert!(Governance::has_permission(
+            actor,
+            resource,
+            Permissions::WRITE
+        ));
         assert!(!Governance::has_permission(
             actor,
             resource,
@@ -405,7 +417,11 @@ fn capability_expires() {
             false
         ));
 
-        assert!(Governance::has_permission(grantee, resource, Permissions::READ));
+        assert!(Governance::has_permission(
+            grantee,
+            resource,
+            Permissions::READ
+        ));
 
         System::set_block_number(10);
         Governance::on_initialize(10);

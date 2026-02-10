@@ -44,7 +44,17 @@ pub mod pallet {
         type GracePeriod: Get<BlockNumberFor<Self>>;
     }
 
-    #[derive(Clone, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(
+        Clone,
+        PartialEq,
+        Eq,
+        Encode,
+        Decode,
+        parity_scale_codec::DecodeWithMemTracking,
+        MaxEncodedLen,
+        TypeInfo,
+        RuntimeDebug,
+    )]
     #[scale_info(skip_type_params(T))]
     pub struct EpochMetadata<BlockNumber> {
         pub id: EpochId,
@@ -68,7 +78,17 @@ pub mod pallet {
         }
     }
 
-    #[derive(Clone, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(
+        Clone,
+        PartialEq,
+        Eq,
+        Encode,
+        Decode,
+        parity_scale_codec::DecodeWithMemTracking,
+        MaxEncodedLen,
+        TypeInfo,
+        RuntimeDebug,
+    )]
     pub struct EpochScheduleConfig<BlockNumber> {
         pub duration: BlockNumber,
         pub grace_period: BlockNumber,
@@ -232,10 +252,9 @@ pub mod pallet {
 
                 if metadata.state == EpochState::Closed {
                     let grace_end = metadata.end_block.saturating_add(schedule.grace_period);
-                    if n >= grace_end
-                        && Self::try_start_next_epoch(n).is_ok() {
-                            return T::DbWeight::get().reads_writes(4, 2);
-                        }
+                    if n >= grace_end && Self::try_start_next_epoch(n).is_ok() {
+                        return T::DbWeight::get().reads_writes(4, 2);
+                    }
                 }
             }
 

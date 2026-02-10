@@ -12,6 +12,7 @@ pub use weights::WeightInfo;
 
 #[frame_support::pallet]
 pub mod pallet {
+    use alloc::vec::Vec;
     use frame_support::{
         pallet_prelude::*,
         traits::{Get, StorageVersion},
@@ -26,7 +27,6 @@ pub mod pallet {
         CryptoCommitment as Commitment,
     };
     use sp_runtime::{traits::Hash, Saturating};
-    use alloc::vec::Vec;
 
     use crate::WeightInfo;
 
@@ -132,7 +132,17 @@ pub mod pallet {
     #[pallet::getter(fn reveal_count)]
     pub type RevealCount<T: Config> = StorageMap<_, Blake2_128Concat, EpochId, u32, ValueQuery>;
 
-    #[derive(Clone, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(
+        Clone,
+        PartialEq,
+        Eq,
+        Encode,
+        Decode,
+        parity_scale_codec::DecodeWithMemTracking,
+        MaxEncodedLen,
+        TypeInfo,
+        RuntimeDebug,
+    )]
     #[scale_info(skip_type_params(T))]
     pub struct Declaration<BlockNumber> {
         pub commitment: Commitment,
@@ -142,13 +152,34 @@ pub mod pallet {
         pub reveal_block: Option<BlockNumber>,
     }
 
-    #[derive(Clone, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(
+        Clone,
+        PartialEq,
+        Eq,
+        Encode,
+        Decode,
+        parity_scale_codec::DecodeWithMemTracking,
+        MaxEncodedLen,
+        TypeInfo,
+        RuntimeDebug,
+    )]
     pub struct RevealData {
         pub secret: [u8; 32],
         pub randomness: [u8; 32],
     }
 
-    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(
+        Clone,
+        Copy,
+        PartialEq,
+        Eq,
+        Encode,
+        Decode,
+        parity_scale_codec::DecodeWithMemTracking,
+        MaxEncodedLen,
+        TypeInfo,
+        RuntimeDebug,
+    )]
     pub enum DeclarationPhase {
         Commit,
         Reveal,
@@ -204,7 +235,18 @@ pub mod pallet {
         },
     }
 
-    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(
+        Clone,
+        Copy,
+        PartialEq,
+        Eq,
+        Encode,
+        Decode,
+        parity_scale_codec::DecodeWithMemTracking,
+        MaxEncodedLen,
+        TypeInfo,
+        RuntimeDebug,
+    )]
     pub enum RevealFailureReason {
         CommitmentMismatch,
         RevealWindowExpired,

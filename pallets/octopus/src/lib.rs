@@ -7,6 +7,7 @@ pub mod weights;
 #[cfg(test)]
 mod tests;
 
+use alloc::vec::Vec;
 use frame_support::pallet_prelude::*;
 use frame_system::pallet_prelude::*;
 use parity_scale_codec::{Decode, Encode, MaxEncodedLen};
@@ -14,10 +15,20 @@ use scale_info::TypeInfo;
 use seveny_primitives::types::ActorId;
 use sp_arithmetic::Perbill;
 use sp_runtime::Saturating;
-use alloc::vec::Vec;
 
 #[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen, Default, Hash,
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+    Default,
+    Hash,
 )]
 pub struct SubnodeId(pub u64);
 
@@ -28,7 +39,18 @@ impl SubnodeId {
 }
 
 #[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen, Default, Hash,
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+    Default,
+    Hash,
 )]
 pub struct ClusterId(pub u64);
 
@@ -38,7 +60,18 @@ impl ClusterId {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 pub enum SubnodeStatus {
     Inactive,
     Activating,
@@ -53,7 +86,18 @@ impl Default for SubnodeStatus {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 pub enum ScalingDecision {
     Maintain,
     ScaleUp(u32),
@@ -66,7 +110,18 @@ impl Default for ScalingDecision {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 pub enum ClusterStatus {
     Initializing,
     Running,
@@ -81,7 +136,17 @@ impl Default for ClusterStatus {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 #[scale_info(skip_type_params(T))]
 pub struct Subnode<T: Config> {
     pub id: SubnodeId,
@@ -95,7 +160,17 @@ pub struct Subnode<T: Config> {
     pub processed_count: u64,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 #[scale_info(skip_type_params(T))]
 pub struct Cluster<T: Config> {
     pub id: ClusterId,
@@ -108,7 +183,17 @@ pub struct Cluster<T: Config> {
     pub last_scaling_at: BlockNumberFor<T>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 #[scale_info(skip_type_params(T))]
 pub struct ThroughputMetric<T: Config> {
     pub cluster: ClusterId,
@@ -166,14 +251,8 @@ pub mod pallet {
 
     #[pallet::storage]
     #[pallet::getter(fn cluster_subnodes)]
-    pub type ClusterSubnodes<T: Config> = StorageDoubleMap<
-        _,
-        Blake2_128Concat,
-        ClusterId,
-        Blake2_128Concat,
-        SubnodeId,
-        (),
-    >;
+    pub type ClusterSubnodes<T: Config> =
+        StorageDoubleMap<_, Blake2_128Concat, ClusterId, Blake2_128Concat, SubnodeId, ()>;
 
     #[pallet::storage]
     #[pallet::getter(fn throughput_history)]
@@ -182,14 +261,8 @@ pub mod pallet {
 
     #[pallet::storage]
     #[pallet::getter(fn operator_subnodes)]
-    pub type OperatorSubnodes<T: Config> = StorageDoubleMap<
-        _,
-        Blake2_128Concat,
-        ActorId,
-        Blake2_128Concat,
-        SubnodeId,
-        (),
-    >;
+    pub type OperatorSubnodes<T: Config> =
+        StorageDoubleMap<_, Blake2_128Concat, ActorId, Blake2_128Concat, SubnodeId, ()>;
 
     #[pallet::storage]
     #[pallet::getter(fn active_subnode_count)]
@@ -352,10 +425,7 @@ pub mod pallet {
 
         #[pallet::call_index(2)]
         #[pallet::weight(T::WeightInfo::activate_subnode())]
-        pub fn activate_subnode(
-            origin: OriginFor<T>,
-            subnode_id: SubnodeId,
-        ) -> DispatchResult {
+        pub fn activate_subnode(origin: OriginFor<T>, subnode_id: SubnodeId) -> DispatchResult {
             ensure_signed(origin)?;
 
             let block_number = frame_system::Pallet::<T>::block_number();
@@ -400,10 +470,7 @@ pub mod pallet {
 
         #[pallet::call_index(3)]
         #[pallet::weight(T::WeightInfo::start_deactivation())]
-        pub fn start_deactivation(
-            origin: OriginFor<T>,
-            subnode_id: SubnodeId,
-        ) -> DispatchResult {
+        pub fn start_deactivation(origin: OriginFor<T>, subnode_id: SubnodeId) -> DispatchResult {
             ensure_signed(origin)?;
 
             let block_number = frame_system::Pallet::<T>::block_number();
@@ -480,8 +547,7 @@ pub mod pallet {
             let cluster = Clusters::<T>::get(cluster_id).ok_or(Error::<T>::ClusterNotFound)?;
             let block_number = frame_system::Pallet::<T>::block_number();
 
-            let cooldown_elapsed = block_number
-                .saturating_sub(cluster.last_scaling_at)
+            let cooldown_elapsed = block_number.saturating_sub(cluster.last_scaling_at)
                 >= T::ScalingCooldownBlocks::get();
 
             ensure!(cooldown_elapsed, Error::<T>::ScalingCooldownActive);
@@ -626,9 +692,8 @@ pub mod pallet {
         }
 
         pub fn is_scaling_needed(cluster_id: ClusterId) -> Option<ScalingDecision> {
-            Clusters::<T>::get(cluster_id).map(|c| {
-                Self::compute_scaling_decision(c.total_throughput, c.active_subnodes)
-            })
+            Clusters::<T>::get(cluster_id)
+                .map(|c| Self::compute_scaling_decision(c.total_throughput, c.active_subnodes))
         }
 
         pub fn get_total_active_subnodes() -> u32 {

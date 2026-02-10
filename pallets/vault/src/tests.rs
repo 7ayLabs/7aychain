@@ -505,7 +505,8 @@ fn member_roles() {
         let owner_member = Vault::vault_members(vault_id, owner).expect("owner should exist");
         assert_eq!(owner_member.role, MemberRole::Owner);
 
-        let guardian_member = Vault::vault_members(vault_id, guardian).expect("guardian should exist");
+        let guardian_member =
+            Vault::vault_members(vault_id, guardian).expect("guardian should exist");
         assert_eq!(guardian_member.role, MemberRole::Guardian);
 
         let participant_member =

@@ -7,6 +7,7 @@ pub mod weights;
 #[cfg(test)]
 mod tests;
 
+use alloc::vec::Vec;
 use frame_support::pallet_prelude::*;
 use frame_system::pallet_prelude::*;
 use parity_scale_codec::{Decode, Encode, MaxEncodedLen};
@@ -14,10 +15,20 @@ use scale_info::TypeInfo;
 use seveny_primitives::types::ActorId;
 use sp_core::H256;
 use sp_runtime::traits::Hash;
-use alloc::vec::Vec;
 
 #[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen, Default, Hash,
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+    Default,
+    Hash,
 )]
 pub struct PatternId(pub u64);
 
@@ -28,7 +39,18 @@ impl PatternId {
 }
 
 #[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen, Default, Hash,
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+    Default,
+    Hash,
 )]
 pub struct BehaviorId(pub u64);
 
@@ -38,7 +60,18 @@ impl BehaviorId {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 pub enum BehaviorType {
     PresencePattern,
     InteractionPattern,
@@ -54,7 +87,18 @@ impl Default for BehaviorType {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 pub enum PatternClassification {
     Normal,
     PotentiallyAutomated,
@@ -69,7 +113,18 @@ impl Default for PatternClassification {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 pub enum AutonomousStatus {
     Unknown,
     Human,
@@ -85,7 +140,17 @@ impl Default for AutonomousStatus {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 #[scale_info(skip_type_params(T))]
 pub struct Behavior<T: Config> {
     pub id: BehaviorId,
@@ -96,7 +161,17 @@ pub struct Behavior<T: Config> {
     pub matched_pattern: Option<PatternId>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 #[scale_info(skip_type_params(T))]
 pub struct Pattern<T: Config> {
     pub id: PatternId,
@@ -110,7 +185,17 @@ pub struct Pattern<T: Config> {
     pub threshold_met: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 #[scale_info(skip_type_params(T))]
 pub struct ActorProfile<T: Config> {
     pub actor: ActorId,
@@ -169,14 +254,8 @@ pub mod pallet {
 
     #[pallet::storage]
     #[pallet::getter(fn actor_behaviors)]
-    pub type ActorBehaviors<T: Config> = StorageDoubleMap<
-        _,
-        Blake2_128Concat,
-        ActorId,
-        Blake2_128Concat,
-        BehaviorId,
-        Behavior<T>,
-    >;
+    pub type ActorBehaviors<T: Config> =
+        StorageDoubleMap<_, Blake2_128Concat, ActorId, Blake2_128Concat, BehaviorId, Behavior<T>>;
 
     #[pallet::storage]
     #[pallet::getter(fn actor_profiles)]
@@ -184,14 +263,8 @@ pub mod pallet {
 
     #[pallet::storage]
     #[pallet::getter(fn pattern_actors)]
-    pub type PatternActors<T: Config> = StorageDoubleMap<
-        _,
-        Blake2_128Concat,
-        PatternId,
-        Blake2_128Concat,
-        ActorId,
-        u32,
-    >;
+    pub type PatternActors<T: Config> =
+        StorageDoubleMap<_, Blake2_128Concat, PatternId, Blake2_128Concat, ActorId, u32>;
 
     #[pallet::storage]
     #[pallet::getter(fn behavior_count_per_actor)]
@@ -474,15 +547,11 @@ pub mod pallet {
 
             let block_number = frame_system::Pallet::<T>::block_number();
 
-            ActorBehaviors::<T>::try_mutate(
-                actor,
-                behavior_id,
-                |behavior| -> DispatchResult {
-                    let b = behavior.as_mut().ok_or(Error::<T>::BehaviorNotFound)?;
-                    b.matched_pattern = Some(pattern_id);
-                    Ok(())
-                },
-            )?;
+            ActorBehaviors::<T>::try_mutate(actor, behavior_id, |behavior| -> DispatchResult {
+                let b = behavior.as_mut().ok_or(Error::<T>::BehaviorNotFound)?;
+                b.matched_pattern = Some(pattern_id);
+                Ok(())
+            })?;
 
             Self::increment_pattern_occurrence(pattern_id, actor, block_number);
 
@@ -653,8 +722,7 @@ pub mod pallet {
         }
 
         pub fn is_autonomous(actor: ActorId) -> bool {
-            ActorProfiles::<T>::get(actor)
-                .is_some_and(|p| p.status == AutonomousStatus::Confirmed)
+            ActorProfiles::<T>::get(actor).is_some_and(|p| p.status == AutonomousStatus::Confirmed)
         }
 
         pub fn get_automation_score(actor: ActorId) -> u8 {
@@ -664,8 +732,7 @@ pub mod pallet {
         }
 
         pub fn pattern_threshold_met(pattern_id: PatternId) -> bool {
-            Patterns::<T>::get(pattern_id)
-                .is_some_and(|p| p.threshold_met)
+            Patterns::<T>::get(pattern_id).is_some_and(|p| p.threshold_met)
         }
 
         pub fn get_pattern_occurrences(pattern_id: PatternId) -> u32 {

@@ -7,6 +7,7 @@ pub mod weights;
 #[cfg(test)]
 mod tests;
 
+use alloc::vec::Vec;
 use frame_support::pallet_prelude::*;
 use frame_system::pallet_prelude::*;
 use parity_scale_codec::{Decode, Encode, MaxEncodedLen};
@@ -14,10 +15,20 @@ use scale_info::TypeInfo;
 use seveny_primitives::types::ActorId;
 use sp_core::H256;
 use sp_runtime::Saturating;
-use alloc::vec::Vec;
 
 #[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen, Default, Hash,
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+    Default,
+    Hash,
 )]
 pub struct VaultId(pub u64);
 
@@ -28,7 +39,18 @@ impl VaultId {
 }
 
 #[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen, Default, Hash,
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+    Default,
+    Hash,
 )]
 pub struct ShareId(pub u64);
 
@@ -38,7 +60,18 @@ impl ShareId {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 pub enum VaultStatus {
     Creating,
     Active,
@@ -53,7 +86,18 @@ impl Default for VaultStatus {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 pub enum MemberRole {
     Owner,
     Guardian,
@@ -66,7 +110,18 @@ impl Default for MemberRole {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 pub enum ShareStatus {
     Pending,
     Distributed,
@@ -80,7 +135,17 @@ impl Default for ShareStatus {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 #[scale_info(skip_type_params(T))]
 pub struct Vault<T: Config> {
     pub id: VaultId,
@@ -94,7 +159,17 @@ pub struct Vault<T: Config> {
     pub last_activity: BlockNumberFor<T>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 #[scale_info(skip_type_params(T))]
 pub struct VaultMember<T: Config> {
     pub vault: VaultId,
@@ -105,7 +180,17 @@ pub struct VaultMember<T: Config> {
     pub share_committed: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 #[scale_info(skip_type_params(T))]
 pub struct Share<T: Config> {
     pub id: ShareId,
@@ -117,7 +202,17 @@ pub struct Share<T: Config> {
     pub created_at: BlockNumberFor<T>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 #[scale_info(skip_type_params(T))]
 pub struct RecoveryRequest<T: Config> {
     pub vault: VaultId,
@@ -307,10 +402,7 @@ pub mod pallet {
                 ring_size >= T::MinRingSize::get() && ring_size <= T::MaxRingSize::get(),
                 Error::<T>::InvalidRingSize
             );
-            ensure!(
-                threshold <= ring_size,
-                Error::<T>::ThresholdExceedsRingSize
-            );
+            ensure!(threshold <= ring_size, Error::<T>::ThresholdExceedsRingSize);
 
             let vault_count = VaultCountPerActor::<T>::get(owner);
             ensure!(
@@ -427,10 +519,7 @@ pub mod pallet {
                     v.status == VaultStatus::Creating,
                     Error::<T>::VaultAlreadyActive
                 );
-                ensure!(
-                    v.member_count >= v.ring_size,
-                    Error::<T>::InvalidRingSize
-                );
+                ensure!(v.member_count >= v.ring_size, Error::<T>::InvalidRingSize);
 
                 v.status = VaultStatus::Active;
                 v.last_activity = frame_system::Pallet::<T>::block_number();
@@ -683,8 +772,7 @@ pub mod pallet {
         }
 
         pub fn is_vault_active(vault_id: VaultId) -> bool {
-            Vaults::<T>::get(vault_id)
-                .is_some_and(|v| v.status == VaultStatus::Active)
+            Vaults::<T>::get(vault_id).is_some_and(|v| v.status == VaultStatus::Active)
         }
 
         pub fn get_revealed_shares_count(vault_id: VaultId) -> u32 {
@@ -698,8 +786,7 @@ pub mod pallet {
         }
 
         pub fn is_recovery_active(vault_id: VaultId) -> bool {
-            Vaults::<T>::get(vault_id)
-                .is_some_and(|v| v.status == VaultStatus::Recovering)
+            Vaults::<T>::get(vault_id).is_some_and(|v| v.status == VaultStatus::Recovering)
         }
     }
 }

@@ -11,6 +11,7 @@ pub use weights::WeightInfo;
 
 #[frame_support::pallet]
 pub mod pallet {
+    use alloc::vec::Vec;
     use frame_support::{
         pallet_prelude::*,
         traits::{Get, StorageVersion},
@@ -19,13 +20,23 @@ pub mod pallet {
     use frame_system::pallet_prelude::*;
     use seveny_primitives::types::ActorId;
     use sp_runtime::Saturating;
-    use alloc::vec::Vec;
 
     use crate::WeightInfo;
 
     const STORAGE_VERSION: StorageVersion = StorageVersion::new(1);
 
-    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(
+        Clone,
+        Copy,
+        PartialEq,
+        Eq,
+        Encode,
+        Decode,
+        parity_scale_codec::DecodeWithMemTracking,
+        MaxEncodedLen,
+        TypeInfo,
+        RuntimeDebug,
+    )]
     pub struct PathId(pub u64);
 
     impl PathId {
@@ -38,7 +49,18 @@ pub mod pallet {
         }
     }
 
-    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(
+        Clone,
+        Copy,
+        PartialEq,
+        Eq,
+        Encode,
+        Decode,
+        parity_scale_codec::DecodeWithMemTracking,
+        MaxEncodedLen,
+        TypeInfo,
+        RuntimeDebug,
+    )]
     pub struct HopId(pub u64);
 
     impl HopId {
@@ -47,7 +69,18 @@ pub mod pallet {
         }
     }
 
-    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(
+        Clone,
+        Copy,
+        PartialEq,
+        Eq,
+        Encode,
+        Decode,
+        parity_scale_codec::DecodeWithMemTracking,
+        MaxEncodedLen,
+        TypeInfo,
+        RuntimeDebug,
+    )]
     pub enum PathStatus {
         Initiated,
         InProgress,
@@ -57,13 +90,34 @@ pub mod pallet {
         Failed,
     }
 
-    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(
+        Clone,
+        Copy,
+        PartialEq,
+        Eq,
+        Encode,
+        Decode,
+        parity_scale_codec::DecodeWithMemTracking,
+        MaxEncodedLen,
+        TypeInfo,
+        RuntimeDebug,
+    )]
     pub enum HopDirection {
         Outbound,
         Return,
     }
 
-    #[derive(Clone, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(
+        Clone,
+        PartialEq,
+        Eq,
+        Encode,
+        Decode,
+        parity_scale_codec::DecodeWithMemTracking,
+        MaxEncodedLen,
+        TypeInfo,
+        RuntimeDebug,
+    )]
     #[scale_info(skip_type_params(T))]
     pub struct BoomerangPath<T: Config> {
         pub id: PathId,
@@ -79,7 +133,17 @@ pub mod pallet {
         pub verification_hash: Option<sp_core::H256>,
     }
 
-    #[derive(Clone, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(
+        Clone,
+        PartialEq,
+        Eq,
+        Encode,
+        Decode,
+        parity_scale_codec::DecodeWithMemTracking,
+        MaxEncodedLen,
+        TypeInfo,
+        RuntimeDebug,
+    )]
     #[scale_info(skip_type_params(T))]
     pub struct PathHop<T: Config> {
         pub id: HopId,
@@ -145,13 +209,8 @@ pub mod pallet {
 
     #[pallet::storage]
     #[pallet::getter(fn actor_paths)]
-    pub type ActorPaths<T: Config> = StorageMap<
-        _,
-        Blake2_128Concat,
-        ActorId,
-        BoundedVec<PathId, T::MaxActivePaths>,
-        ValueQuery,
-    >;
+    pub type ActorPaths<T: Config> =
+        StorageMap<_, Blake2_128Concat, ActorId, BoundedVec<PathId, T::MaxActivePaths>, ValueQuery>;
 
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
@@ -191,7 +250,18 @@ pub mod pallet {
         },
     }
 
-    #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+    #[derive(
+        Clone,
+        Copy,
+        PartialEq,
+        Eq,
+        Encode,
+        Decode,
+        parity_scale_codec::DecodeWithMemTracking,
+        MaxEncodedLen,
+        TypeInfo,
+        RuntimeDebug,
+    )]
     pub enum PathFailureReason {
         InvalidHop,
         MismatchedReturn,
@@ -354,7 +424,10 @@ pub mod pallet {
             );
 
             let total_hops = path.outbound_hops.saturating_add(path.return_hops);
-            ensure!(total_hops < T::MaxHopsPerPath::get(), Error::<T>::MaxHopsReached);
+            ensure!(
+                total_hops < T::MaxHopsPerPath::get(),
+                Error::<T>::MaxHopsReached
+            );
 
             let direction = if path.status == PathStatus::AwaitingReturn {
                 HopDirection::Return

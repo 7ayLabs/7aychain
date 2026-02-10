@@ -1,8 +1,8 @@
 //! Protocol trait abstractions for cryptographic operations and state management.
 
+use alloc::vec::Vec;
 use parity_scale_codec::{Decode, Encode};
 use sp_core::H256;
-use alloc::vec::Vec;
 
 /// Cryptographic hash computation.
 pub trait CryptoHash {

@@ -466,8 +466,12 @@ pub type SignedExtra = (
     frame_system::CheckWeight<Runtime>,
     pallet_transaction_payment::ChargeTransactionPayment<Runtime>,
 );
-pub type UncheckedExtrinsic =
-    generic::UncheckedExtrinsic<sp_runtime::MultiAddress<AccountId, ()>, RuntimeCall, Signature, SignedExtra>;
+pub type UncheckedExtrinsic = generic::UncheckedExtrinsic<
+    sp_runtime::MultiAddress<AccountId, ()>,
+    RuntimeCall,
+    Signature,
+    SignedExtra,
+>;
 pub type SignedPayload = generic::SignedPayload<RuntimeCall, SignedExtra>;
 pub type Executive = frame_executive::Executive<
     Runtime,

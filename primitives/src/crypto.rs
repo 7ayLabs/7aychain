@@ -1,10 +1,10 @@
 //! Cryptographic primitives for presence verification and state proofs.
 
+use alloc::vec::Vec;
 use parity_scale_codec::{Decode, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
 use sp_core::{blake2_256, H256};
 use sp_runtime::RuntimeDebug;
-use alloc::vec::Vec;
 
 use crate::traits::{ConstantTimeEq, CryptoHash, DomainSeparatedHash};
 
@@ -34,7 +34,17 @@ pub fn hash_pair(left: &H256, right: &H256) -> H256 {
 }
 
 /// Pedersen-style commitment: C = H(domain || value || randomness)
-#[derive(Clone, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+#[derive(
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    MaxEncodedLen,
+    TypeInfo,
+    RuntimeDebug,
+)]
 pub struct Commitment(pub H256);
 
 impl Commitment {
@@ -58,7 +68,16 @@ impl Commitment {
 }
 
 /// Merkle proof for membership verification.
-#[derive(Clone, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, RuntimeDebug)]
+#[derive(
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    RuntimeDebug,
+)]
 pub struct MerkleProof {
     pub leaf_index: u64,
     pub siblings: Vec<H256>,
@@ -102,7 +121,17 @@ impl MerkleProof {
 
 /// Nullifier to prevent double-spending/double-presence.
 #[derive(
-    Clone, Copy, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug, Hash,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    MaxEncodedLen,
+    TypeInfo,
+    RuntimeDebug,
+    Hash,
 )]
 pub struct Nullifier(pub H256);
 
@@ -119,7 +148,17 @@ impl Nullifier {
 
 /// State root representing a snapshot of all presence data.
 #[derive(
-    Clone, Copy, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, MaxEncodedLen, TypeInfo, RuntimeDebug, Default,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    MaxEncodedLen,
+    TypeInfo,
+    RuntimeDebug,
+    Default,
 )]
 pub struct StateRoot(pub H256);
 
@@ -153,7 +192,16 @@ impl StateRoot {
 }
 
 /// Presence proof combining commitment and Merkle proof.
-#[derive(Clone, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, RuntimeDebug)]
+#[derive(
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    RuntimeDebug,
+)]
 pub struct PresenceProof {
     pub commitment: Commitment,
     pub merkle_proof: MerkleProof,
@@ -168,7 +216,16 @@ impl PresenceProof {
 }
 
 /// ZK statement for presence verification.
-#[derive(Clone, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, RuntimeDebug)]
+#[derive(
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    RuntimeDebug,
+)]
 pub struct PresenceStatement {
     pub epoch_id: u64,
     pub state_root: StateRoot,
@@ -184,10 +241,28 @@ pub struct PresenceWitness {
 }
 
 /// Shamir secret sharing types for key distribution.
-#[derive(Clone, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, RuntimeDebug)]
+#[derive(
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    RuntimeDebug,
+)]
 pub struct ShareIndex(pub u8);
 
-#[derive(Clone, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, RuntimeDebug)]
+#[derive(
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    RuntimeDebug,
+)]
 pub struct Share {
     pub index: ShareIndex,
     pub value: [u8; 32],
@@ -339,7 +414,16 @@ impl ShamirScheme {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, RuntimeDebug)]
+#[derive(
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    RuntimeDebug,
+)]
 pub struct VssCommitment {
     pub coefficients: Vec<H256>,
 }
@@ -369,7 +453,12 @@ impl FeldmanVSS {
 
         let shares = ShamirScheme::split(secret, threshold, total)?;
 
-        Some((shares, VssCommitment { coefficients: coefficients_hash }))
+        Some((
+            shares,
+            VssCommitment {
+                coefficients: coefficients_hash,
+            },
+        ))
     }
 
     pub fn verify_share_against_commitments(
