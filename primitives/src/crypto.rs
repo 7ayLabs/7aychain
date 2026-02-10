@@ -363,37 +363,41 @@ impl ShamirScheme {
     }
 
     fn reconstruct_inner(shares: &[Share]) -> [u8; 32] {
-        let n = shares.len();
         let mut secret = [0u8; 32];
 
-        for byte_idx in 0..32 {
+        for (byte_idx, secret_byte) in secret.iter_mut().enumerate() {
             let mut result: i128 = 0;
 
-            for i in 0..n {
-                let xi = shares[i].index.0 as i128;
-                let yi = shares[i].value[byte_idx] as i128;
+            for (i, share_i) in shares.iter().enumerate() {
+                let xi = share_i.index.0 as i128;
+                let yi = share_i.value[byte_idx] as i128;
 
-                let mut num: i128 = 1;
-                let mut den: i128 = 1;
-
-                for j in 0..n {
-                    if i != j {
-                        let xj = shares[j].index.0 as i128;
-                        num = num * (0 - xj);
-                        den = den * (xi - xj);
-                    }
-                }
+                let (num, den) = Self::compute_lagrange_coefficient(shares, i, xi);
 
                 if den != 0 {
                     result += yi * num / den;
                 }
             }
 
-            let normalized = ((result % 251) + 251) % 251;
-            secret[byte_idx] = normalized as u8;
+            *secret_byte = result.rem_euclid(251) as u8;
         }
 
         secret
+    }
+
+    fn compute_lagrange_coefficient(shares: &[Share], i: usize, xi: i128) -> (i128, i128) {
+        let mut num: i128 = 1;
+        let mut den: i128 = 1;
+
+        for (j, share_j) in shares.iter().enumerate() {
+            if i != j {
+                let xj = share_j.index.0 as i128;
+                num *= -xj;
+                den *= xi - xj;
+            }
+        }
+
+        (num, den)
     }
 
     pub fn verify_share(share: &Share, commitment: &H256) -> bool {
@@ -508,6 +512,7 @@ impl ShareIndex {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
 
