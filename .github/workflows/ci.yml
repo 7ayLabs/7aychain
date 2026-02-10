@@ -144,10 +144,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cargo/bin/cargo-audit
-          key: cargo-audit-0.18
+          key: cargo-audit-0.21
 
       - name: Install cargo-audit
-        run: cargo install cargo-audit --version 0.18.3 || true
+        run: cargo install cargo-audit --version 0.21.2 || true
 
       - name: Run security audit
         run: cargo audit --deny warnings
