@@ -21,6 +21,7 @@ use crate::traits::EpochBound;
     Hash,
     Encode,
     Decode,
+    parity_scale_codec::DecodeWithMemTracking,
     MaxEncodedLen,
     TypeInfo,
     RuntimeDebug,
@@ -60,6 +61,7 @@ impl From<[u8; 32]> for ActorId {
     Hash,
     Encode,
     Decode,
+    parity_scale_codec::DecodeWithMemTracking,
     MaxEncodedLen,
     TypeInfo,
     RuntimeDebug,
@@ -93,6 +95,7 @@ impl From<H256> for ValidatorId {
     Hash,
     Encode,
     Decode,
+    parity_scale_codec::DecodeWithMemTracking,
     MaxEncodedLen,
     TypeInfo,
     RuntimeDebug,
@@ -133,7 +136,17 @@ impl From<u64> for EpochId {
 
 /// State: None -> Declared -> Validated -> Finalized | Slashed
 #[derive(
-    Clone, Copy, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug, Default,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    MaxEncodedLen,
+    TypeInfo,
+    RuntimeDebug,
+    Default,
 )]
 pub enum PresenceState {
     #[default]
@@ -167,7 +180,17 @@ impl PresenceState {
 
 /// State: Scheduled -> Active -> Closed -> Finalized
 #[derive(
-    Clone, Copy, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug, Default,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    MaxEncodedLen,
+    TypeInfo,
+    RuntimeDebug,
+    Default,
 )]
 pub enum EpochState {
     #[default]
@@ -200,7 +223,17 @@ impl EpochState {
 // Records
 // =============================================================================
 
-#[derive(Clone, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+#[derive(
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    MaxEncodedLen,
+    TypeInfo,
+    RuntimeDebug,
+)]
 pub struct PresenceRecord<BlockNumber> {
     pub actor: ActorId,
     pub epoch: EpochId,
@@ -252,7 +285,17 @@ impl<BlockNumber> EpochBound for PresenceRecord<BlockNumber> {
 // =============================================================================
 
 #[derive(
-    Clone, Copy, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug, Default,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    MaxEncodedLen,
+    TypeInfo,
+    RuntimeDebug,
+    Default,
 )]
 pub enum ValidatorStatus {
     #[default]
@@ -268,7 +311,18 @@ impl ValidatorStatus {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+#[derive(
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    MaxEncodedLen,
+    TypeInfo,
+    RuntimeDebug,
+)]
 pub enum ViolationType {
     Minor,    // 5%
     Moderate, // 20%
@@ -291,7 +345,18 @@ impl ViolationType {
 // Quorum
 // =============================================================================
 
-#[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+#[derive(
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    MaxEncodedLen,
+    TypeInfo,
+    RuntimeDebug,
+)]
 pub struct QuorumConfig {
     pub threshold: u32,
     pub total: u32,
@@ -325,7 +390,18 @@ impl Default for QuorumConfig {
 // Block Reference (INV43: Chain Binding)
 // =============================================================================
 
-#[derive(Clone, Copy, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+#[derive(
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    MaxEncodedLen,
+    TypeInfo,
+    RuntimeDebug,
+)]
 pub struct BlockRef {
     pub number: u64,
     pub hash: H256,
@@ -341,7 +417,17 @@ impl BlockRef {
 // Vote
 // =============================================================================
 
-#[derive(Clone, PartialEq, Eq, Encode, Decode, MaxEncodedLen, TypeInfo, RuntimeDebug)]
+#[derive(
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    MaxEncodedLen,
+    TypeInfo,
+    RuntimeDebug,
+)]
 pub struct Vote {
     pub validator: ValidatorId,
     pub actor: ActorId,

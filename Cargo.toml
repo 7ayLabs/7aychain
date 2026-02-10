@@ -9,6 +9,22 @@
 resolver = "2"
 members = [
     "primitives",
+    "pallets/presence",
+    "pallets/epoch",
+    "pallets/validator",
+    "pallets/dispute",
+    "pallets/governance",
+    "pallets/semantic",
+    "pallets/boomerang",
+    "pallets/autonomous",
+    "pallets/octopus",
+    "pallets/device",
+    "pallets/vault",
+    "pallets/zk",
+    "pallets/storage",
+    "pallets/lifecycle",
+    "runtime",
+    "node",
 ]
 
 [workspace.package]
@@ -28,29 +44,48 @@ categories = ["cryptography", "blockchain"]
 # Internal Crates
 # =============================================================================
 seveny-primitives = { path = "primitives", default-features = false }
+pallet-presence = { path = "pallets/presence", default-features = false }
+pallet-epoch = { path = "pallets/epoch", default-features = false }
+pallet-validator = { path = "pallets/validator", default-features = false }
+pallet-dispute = { path = "pallets/dispute", default-features = false }
+pallet-governance = { path = "pallets/governance", default-features = false }
+pallet-semantic = { path = "pallets/semantic", default-features = false }
+pallet-boomerang = { path = "pallets/boomerang", default-features = false }
+pallet-autonomous = { path = "pallets/autonomous", default-features = false }
+pallet-octopus = { path = "pallets/octopus", default-features = false }
+pallet-device = { path = "pallets/device", default-features = false }
+pallet-vault = { path = "pallets/vault", default-features = false }
+pallet-zk = { path = "pallets/zk", default-features = false }
+pallet-storage = { path = "pallets/storage", default-features = false }
+pallet-lifecycle = { path = "pallets/lifecycle", default-features = false }
+seveny-runtime = { path = "runtime", default-features = false }
+
+# =============================================================================
+# FRAME Pallets
+# =============================================================================
+pallet-balances = { version = "46.0.0", default-features = false }
 
 # =============================================================================
 # Codec & Serialization
 # =============================================================================
 parity-scale-codec = { version = "3.6", default-features = false, features = ["derive"] }
-scale-info = { version = "2.10", default-features = false, features = ["derive"] }
+scale-info = { version = "2.11", default-features = false, features = ["derive"] }
 
 # =============================================================================
-# Substrate Primitives (polkadot-stable2409)
+# Substrate Primitives (polkadot-stable2503)
 # =============================================================================
-sp-core = { version = "31.0.0", default-features = false }
-sp-runtime = { version = "34.0.0", default-features = false }
-sp-std = { version = "14.0.0", default-features = false }
-sp-io = { version = "33.0.0", default-features = false }
-sp-api = { version = "29.0.0", default-features = false }
-sp-arithmetic = { version = "26.0.0", default-features = false }
+sp-core = { version = "39.0.0", default-features = false }
+sp-runtime = { version = "45.0.0", default-features = false }
+sp-io = { version = "44.0.0", default-features = false }
+sp-api = { version = "40.0.0", default-features = false }
+sp-arithmetic = { version = "28.0.0", default-features = false }
 
 # =============================================================================
 # FRAME Dependencies
 # =============================================================================
-frame-support = { version = "31.0.0", default-features = false }
-frame-system = { version = "31.0.0", default-features = false }
-frame-benchmarking = { version = "31.0.0", default-features = false }
+frame-support = { version = "45.1.0", default-features = false }
+frame-system = { version = "45.0.0", default-features = false }
+frame-benchmarking = { version = "45.0.0", default-features = false }
 
 # =============================================================================
 # Cryptography

@@ -1,0 +1,66 @@
+[package]
+name = "seveny-node"
+description = "7aychain Node - Substrate-based Proof of Presence Protocol"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+build = "build.rs"
+
+[[bin]]
+name = "seveny-node"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+futures = { version = "0.3", features = ["thread-pool"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+jsonrpsee = { version = "0.24", features = ["server"] }
+
+sc-cli = { version = "0.57.0" }
+sc-client-api = { version = "44.0.0" }
+sc-consensus = { version = "0.54.0" }
+sc-consensus-aura = { version = "0.55.0" }
+sc-consensus-grandpa = { version = "0.40.0" }
+sc-executor = { version = "0.47.0" }
+sc-network = { version = "0.55.1" }
+sc-offchain = { version = "50.0.0" }
+sc-rpc-api = { version = "0.54.0" }
+sc-service = { version = "0.56.0" }
+sc-telemetry = { version = "30.0.0" }
+sc-transaction-pool = { version = "44.1.0" }
+sc-transaction-pool-api = { version = "43.0.0" }
+sc-basic-authorship = { version = "0.53.0" }
+sc-chain-spec = { version = "48.0.0" }
+sc-keystore = { version = "39.0.0" }
+
+sp-api = { workspace = true, features = ["std"] }
+sp-block-builder = { version = "40.0.0" }
+sp-blockchain = { version = "43.0.0" }
+sp-consensus = { version = "0.46.0" }
+sp-consensus-aura = { version = "0.46.0" }
+sp-consensus-grandpa = { version = "27.0.0" }
+sp-core = { workspace = true, features = ["std"] }
+sp-inherents = { version = "40.0.0" }
+sp-io = { workspace = true, features = ["std"] }
+sp-keyring = { version = "45.0.0" }
+sp-runtime = { workspace = true, features = ["std"] }
+sp-timestamp = { version = "40.0.0" }
+
+frame-system = { workspace = true, features = ["std"] }
+pallet-transaction-payment = { version = "45.0.0" }
+pallet-transaction-payment-rpc = { version = "48.0.0" }
+substrate-frame-rpc-system = { version = "49.0.0" }
+
+seveny-runtime = { path = "../runtime" }
+
+[build-dependencies]
+substrate-build-script-utils = { version = "11.0.0" }
+
+[features]
+default = []
+runtime-benchmarks = ["seveny-runtime/runtime-benchmarks"]
+try-runtime = ["seveny-runtime/try-runtime"]

@@ -8,30 +8,48 @@ on:
       - 'primitives/**'
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
 
 jobs:
   benchmark:
     name: Run Benchmarks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            protobuf-compiler \
+            libclang-dev
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: rust-src
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
 
       - name: Build with benchmarks
-        run: cargo build --release --features runtime-benchmarks
+        run: cargo build --release --features runtime-benchmarks -p seveny-node
         continue-on-error: true
 
       - name: Run benchmarks
         run: |
-          if [ -f "./target/release/7aychain" ]; then
-            ./target/release/7aychain benchmark pallet \
+          if [ -f "./target/release/seveny-node" ]; then
+            ./target/release/seveny-node benchmark pallet \
               --chain dev \
               --pallet "*" \
               --extrinsic "*" \
@@ -56,7 +74,8 @@ jobs:
     needs: benchmark
     if: github.event_name == 'pull_request'
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Download weights
         uses: actions/download-artifact@v4
