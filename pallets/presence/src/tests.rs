@@ -57,7 +57,6 @@ parameter_types! {
 }
 
 impl pallet_presence::Config for Test {
-    type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type MaxVotesPerPresence = MaxVotesPerPresence;
     type DefaultQuorumThreshold = DefaultQuorumThreshold;
@@ -547,7 +546,7 @@ fn run_to_block(n: u64) {
 fn compute_test_commitment(actor: &ActorId, epoch: &EpochId, secret: &[u8; 32], randomness: &[u8; 32]) -> Commitment {
     use seveny_primitives::crypto::DOMAIN_PRESENCE;
 
-    let mut preimage = sp_std::vec::Vec::with_capacity(DOMAIN_PRESENCE.len() + 32 + 8 + 32 + 32);
+    let mut preimage = Vec::with_capacity(DOMAIN_PRESENCE.len() + 32 + 8 + 32 + 32);
     preimage.extend_from_slice(DOMAIN_PRESENCE);
     preimage.extend_from_slice(actor.as_bytes());
     preimage.extend_from_slice(&epoch.inner().to_le_bytes());

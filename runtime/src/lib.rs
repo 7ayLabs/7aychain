@@ -219,7 +219,6 @@ parameter_types! {
 }
 
 impl pallet_presence::Config for Runtime {
-    type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type MaxVotesPerPresence = MaxVotesPerPresence;
     type DefaultQuorumThreshold = DefaultQuorumThreshold;
@@ -236,7 +235,6 @@ parameter_types! {
 }
 
 impl pallet_epoch::Config for Runtime {
-    type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type EpochDuration = EpochDuration;
     type MinEpochDuration = MinEpochDuration;
@@ -252,7 +250,6 @@ parameter_types! {
 }
 
 impl pallet_validator::Config for Runtime {
-    type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type Currency = Balances;
     type MinStake = MinStake;
@@ -270,7 +267,6 @@ parameter_types! {
 }
 
 impl pallet_dispute::Config for Runtime {
-    type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type MaxEvidencePerDispute = MaxEvidencePerDispute;
     type DisputeResolutionPeriod = DisputeResolutionPeriod;
@@ -287,7 +283,6 @@ parameter_types! {
 }
 
 impl pallet_governance::Config for Runtime {
-    type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type MaxCapabilitiesPerActor = MaxCapabilitiesPerActor;
     type MaxDelegationDepth = MaxDelegationDepth;
@@ -304,7 +299,6 @@ parameter_types! {
 }
 
 impl pallet_semantic::Config for Runtime {
-    type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type MaxRelationshipsPerActor = MaxRelationshipsPerActor;
     type MaxDiscoveryResults = MaxDiscoveryResults;
@@ -321,7 +315,6 @@ parameter_types! {
 }
 
 impl pallet_boomerang::Config for Runtime {
-    type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type BoomerangTimeoutBlocks = BoomerangTimeoutBlocks;
     type MaxExtensionBlocks = MaxExtensionBlocks;
@@ -338,7 +331,6 @@ parameter_types! {
 }
 
 impl pallet_autonomous::Config for Runtime {
-    type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type PatternThreshold = PatternThreshold;
     type MaxBehaviorsPerActor = MaxBehaviorsPerActor;
@@ -357,7 +349,6 @@ parameter_types! {
 }
 
 impl pallet_octopus::Config for Runtime {
-    type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type ActivationThreshold = ActivationThreshold;
     type DeactivationThreshold = DeactivationThreshold;
@@ -374,7 +365,6 @@ parameter_types! {
 }
 
 impl pallet_device::Config for Runtime {
-    type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type MaxDevicesPerActor = MaxDevicesPerActor;
     type AttestationValidityBlocks = AttestationValidityBlocks;
@@ -390,7 +380,6 @@ parameter_types! {
 }
 
 impl pallet_vault::Config for Runtime {
-    type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type MinThreshold = MinThreshold;
     type MinRingSize = MinRingSize;
@@ -405,7 +394,6 @@ parameter_types! {
 }
 
 impl pallet_zk::Config for Runtime {
-    type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type MaxProofSize = MaxProofSize;
     type MaxVerificationsPerBlock = MaxVerificationsPerBlock;
@@ -419,7 +407,6 @@ parameter_types! {
 }
 
 impl pallet_storage::Config for Runtime {
-    type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type MaxDataSize = MaxDataSize;
     type MaxEntriesPerActor = MaxEntriesPerActor;
@@ -434,7 +421,6 @@ parameter_types! {
 }
 
 impl pallet_lifecycle::Config for Runtime {
-    type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type KeyDestructionTimeoutBlocks = KeyDestructionTimeoutBlocks;
     type MinDestructionAttestations = MinDestructionAttestations;

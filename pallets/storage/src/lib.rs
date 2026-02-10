@@ -115,8 +115,7 @@ pub mod pallet {
     pub struct Pallet<T>(_);
 
     #[pallet::config]
-    pub trait Config: frame_system::Config {
-        type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
+    pub trait Config: frame_system::Config<RuntimeEvent: From<Event<Self>>> {
         type WeightInfo: WeightInfo;
 
         #[pallet::constant]
@@ -467,10 +466,8 @@ pub mod pallet {
     impl<T: Config> Pallet<T> {
         fn account_to_actor(account: T::AccountId) -> ActorId {
             let encoded = account.encode();
-            let mut bytes = [0u8; 32];
-            let len = encoded.len().min(32);
-            bytes[..len].copy_from_slice(&encoded[..len]);
-            ActorId::from_raw(bytes)
+            let hash = sp_core::blake2_256(&encoded);
+            ActorId::from_raw(hash)
         }
 
         fn check_actor_quota(actor: ActorId, additional_bytes: u32) -> DispatchResult {
@@ -549,7 +546,7 @@ pub mod pallet {
 
         fn cleanup_expired_entries(current_block: BlockNumberFor<T>) -> Weight {
             let mut cleaned = 0u32;
-            let max_cleanup = 10u32;
+            let max_cleanup = 50u32;
 
             for ((epoch, actor, key), entry) in EphemeralData::<T>::iter() {
                 if cleaned >= max_cleanup {

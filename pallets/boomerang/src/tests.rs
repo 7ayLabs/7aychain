@@ -58,7 +58,6 @@ parameter_types! {
 }
 
 impl pallet_boomerang::Config for Test {
-    type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type BoomerangTimeoutBlocks = BoomerangTimeoutBlocks;
     type MaxExtensionBlocks = MaxExtensionBlocks;

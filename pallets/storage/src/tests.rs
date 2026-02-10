@@ -53,7 +53,6 @@ parameter_types! {
 }
 
 impl pallet_storage::Config for Test {
-    type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type MaxDataSize = MaxDataSize;
     type MaxEntriesPerActor = MaxEntriesPerActor;
@@ -80,6 +79,13 @@ fn create_key(seed: u8) -> DataKey {
 
 fn create_hash(seed: u8) -> H256 {
     H256([seed; 32])
+}
+
+fn account_to_actor(account: u64) -> ActorId {
+    use parity_scale_codec::Encode;
+    let encoded = account.encode();
+    let hash = sp_core::blake2_256(&encoded);
+    ActorId::from_raw(hash)
 }
 
 #[test]
@@ -358,9 +364,7 @@ fn entry_retrieval() {
             RetentionPolicy::Persistent
         ));
 
-        let mut bytes = [0u8; 32];
-        bytes[0] = 1;
-        let actor = ActorId::from_raw(bytes);
+        let actor = account_to_actor(1);
 
         let entry = Storage::get_entry(epoch, actor, key).expect("entry should exist");
         assert_eq!(entry.data_hash, data_hash);
@@ -389,9 +393,7 @@ fn actor_entry_count() {
             ));
         }
 
-        let mut bytes = [0u8; 32];
-        bytes[0] = 1;
-        let actor = ActorId::from_raw(bytes);
+        let actor = account_to_actor(1);
 
         assert_eq!(Storage::get_actor_entry_count(actor), 5);
     });

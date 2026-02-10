@@ -395,7 +395,7 @@ impl FeldmanVSS {
         let expected_hash = hash_with_domain(DOMAIN_VSS, &expected_input);
         let share_hash = hash_with_domain(DOMAIN_VSS, share_commitment.as_bytes());
 
-        expected_hash.as_bytes()[..8] == share_hash.as_bytes()[..8]
+        expected_hash.ct_eq(&share_hash)
     }
 
     pub fn verify_share_count(shares: &[Share], threshold: u8) -> bool {

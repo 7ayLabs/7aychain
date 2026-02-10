@@ -62,7 +62,6 @@ parameter_types! {
 }
 
 impl pallet_octopus::Config for Test {
-    type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type ActivationThreshold = ActivationThreshold;
     type DeactivationThreshold = DeactivationThreshold;

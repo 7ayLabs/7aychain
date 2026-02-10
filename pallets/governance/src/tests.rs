@@ -59,7 +59,6 @@ parameter_types! {
 }
 
 impl pallet_governance::Config for Test {
-    type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type MaxCapabilitiesPerActor = MaxCapabilitiesPerActor;
     type MaxDelegationDepth = MaxDelegationDepth;

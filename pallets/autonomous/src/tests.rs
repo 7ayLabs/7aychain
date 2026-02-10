@@ -57,7 +57,6 @@ parameter_types! {
 }
 
 impl pallet_autonomous::Config for Test {
-    type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type PatternThreshold = PatternThreshold;
     type MaxBehaviorsPerActor = MaxBehaviorsPerActor;

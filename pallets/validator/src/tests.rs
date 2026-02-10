@@ -64,6 +64,7 @@ impl pallet_balances::Config for Test {
     type MaxFreezes = ConstU32<0>;
     type RuntimeHoldReason = ();
     type RuntimeFreezeReason = ();
+    type DoneSlashHandler = ();
 }
 
 parameter_types! {
@@ -74,7 +75,6 @@ parameter_types! {
 }
 
 impl pallet_validator::Config for Test {
-    type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type Currency = Balances;
     type MinStake = MinStake;
@@ -101,6 +101,7 @@ fn new_test_ext() -> sp_io::TestExternalities {
             (9, 100_000),
             (10, 100_000),
         ],
+        dev_accounts: None,
     }
     .assimilate_storage(&mut t)
     .expect("balances genesis build failed");
@@ -128,6 +129,7 @@ fn new_test_ext_with_validators() -> sp_io::TestExternalities {
             (9, 100_000),
             (10, 100_000),
         ],
+        dev_accounts: None,
     }
     .assimilate_storage(&mut t)
     .expect("balances genesis build failed");

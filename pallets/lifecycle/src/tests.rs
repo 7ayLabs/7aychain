@@ -52,7 +52,6 @@ parameter_types! {
 }
 
 impl pallet_lifecycle::Config for Test {
-    type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type KeyDestructionTimeoutBlocks = KeyDestructionTimeoutBlocks;
     type MinDestructionAttestations = MinDestructionAttestations;
@@ -73,9 +72,10 @@ fn create_key_hash(seed: u8) -> H256 {
 }
 
 fn account_to_actor(account: u64) -> ActorId {
-    let mut bytes = [0u8; 32];
-    bytes[0] = account as u8;
-    ActorId::from_raw(bytes)
+    use parity_scale_codec::Encode;
+    let encoded = account.encode();
+    let hash = sp_core::blake2_256(&encoded);
+    ActorId::from_raw(hash)
 }
 
 fn register_and_activate(account: u64, key_hash: H256) {

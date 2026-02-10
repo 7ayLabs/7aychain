@@ -56,7 +56,6 @@ parameter_types! {
 }
 
 impl pallet_epoch::Config for Test {
-    type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type EpochDuration = EpochDuration;
     type MinEpochDuration = MinEpochDuration;

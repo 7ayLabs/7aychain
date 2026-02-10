@@ -57,7 +57,6 @@ parameter_types! {
 }
 
 impl pallet_dispute::Config for Test {
-    type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type MaxEvidencePerDispute = MaxEvidencePerDispute;
     type DisputeResolutionPeriod = DisputeResolutionPeriod;

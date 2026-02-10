@@ -60,7 +60,6 @@ parameter_types! {
 }
 
 impl pallet_semantic::Config for Test {
-    type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type MaxRelationshipsPerActor = MaxRelationshipsPerActor;
     type MaxDiscoveryResults = MaxDiscoveryResults;

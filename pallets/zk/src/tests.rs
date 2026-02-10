@@ -51,7 +51,6 @@ parameter_types! {
 }
 
 impl pallet_zk::Config for Test {
-    type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type MaxProofSize = MaxProofSize;
     type MaxVerificationsPerBlock = MaxVerificationsPerBlock;
@@ -64,6 +63,13 @@ fn new_test_ext() -> sp_io::TestExternalities {
     let mut ext = sp_io::TestExternalities::new(t);
     ext.execute_with(|| System::set_block_number(1));
     ext
+}
+
+fn account_to_actor(account: u64) -> ActorId {
+    use parity_scale_codec::Encode;
+    let encoded = account.encode();
+    let hash = sp_core::blake2_256(&encoded);
+    ActorId::from_raw(hash)
 }
 
 fn create_share_witness() -> ShareWitness {
@@ -275,9 +281,7 @@ fn consume_nullifier_requires_trusted_verifier() {
 fn consume_nullifier_success() {
     new_test_ext().execute_with(|| {
         let verifier_account = 1u64;
-        let mut bytes = [0u8; 32];
-        bytes[0] = 1;
-        let verifier = ActorId::from_raw(bytes);
+        let verifier = account_to_actor(verifier_account);
 
         assert_ok!(Zk::add_trusted_verifier(RuntimeOrigin::root(), verifier));
 
@@ -295,9 +299,7 @@ fn consume_nullifier_success() {
 fn cannot_consume_nullifier_twice() {
     new_test_ext().execute_with(|| {
         let verifier_account = 1u64;
-        let mut bytes = [0u8; 32];
-        bytes[0] = 1;
-        let verifier = ActorId::from_raw(bytes);
+        let verifier = account_to_actor(verifier_account);
 
         assert_ok!(Zk::add_trusted_verifier(RuntimeOrigin::root(), verifier));
 

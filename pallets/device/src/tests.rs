@@ -54,7 +54,6 @@ parameter_types! {
 }
 
 impl pallet_device::Config for Test {
-    type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type MaxDevicesPerActor = MaxDevicesPerActor;
     type AttestationValidityBlocks = AttestationValidityBlocks;
