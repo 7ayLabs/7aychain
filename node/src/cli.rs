@@ -1,6 +1,12 @@
 use sc_cli::RunCmd;
 
 #[derive(Debug, clap::Parser)]
+#[command(
+    author,
+    version,
+    about = "7aychain Node - Substrate-based Proof of Presence Protocol",
+    propagate_version = true
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub subcommand: Option<Subcommand>,
