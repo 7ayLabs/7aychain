@@ -29,7 +29,7 @@ cd 7aychain
 cargo build --release
 ```
 
-The binary is located at `./target/release/7aychain`.
+The binary is located at `./target/release/seveny-node`.
 
 ### Running Tests
 
@@ -49,16 +49,16 @@ The build produces the following binary:
 
 | Command | Description |
 |---------|-------------|
-| `7aychain` | Main blockchain node implementing the PoP protocol. Runs as validator, full node, or archive node. |
+| `seveny-node` | Main blockchain node implementing the PoP protocol. Runs as validator, full node, or archive node. |
 
-## Running `7aychain`
+## Running `seveny-node`
 
 ### Development Mode
 
 By far the most common scenario is running a local development node for testing:
 
 ```shell
-./target/release/7aychain --dev
+./target/release/seveny-node --dev
 ```
 
 This starts a single-node development chain with temporary storage. The development account `Alice` is pre-funded and can be used for testing.
@@ -66,7 +66,7 @@ This starts a single-node development chain with temporary storage. The developm
 For detailed logging:
 
 ```shell
-RUST_LOG=debug ./target/release/7aychain --dev
+RUST_LOG=debug ./target/release/seveny-node --dev
 ```
 
 ### Full Node
@@ -74,7 +74,7 @@ RUST_LOG=debug ./target/release/7aychain --dev
 To run a full node connecting to the 7aychain network:
 
 ```shell
-./target/release/7aychain \
+./target/release/seveny-node \
   --chain mainnet \
   --name "my-node" \
   --base-path /data/7aychain
@@ -85,7 +85,7 @@ To run a full node connecting to the 7aychain network:
 Running a validator requires staking and registration. See the [Validator Guide](https://docs.7aylabs.com/validators) for setup instructions.
 
 ```shell
-./target/release/7aychain \
+./target/release/seveny-node \
   --chain mainnet \
   --validator \
   --name "my-validator" \
