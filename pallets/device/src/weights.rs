@@ -18,6 +18,7 @@ pub trait WeightInfo {
     fn update_trust_score() -> Weight;
     fn record_activity() -> Weight;
     fn reactivate_device() -> Weight;
+    fn record_heartbeat() -> Weight;
 }
 
 pub struct SubstrateWeight<T>(PhantomData<T>);
@@ -76,6 +77,12 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
             .saturating_add(T::DbWeight::get().reads(1))
             .saturating_add(T::DbWeight::get().writes(2))
     }
+
+    fn record_heartbeat() -> Weight {
+        Weight::from_parts(30_000_000, 0)
+            .saturating_add(T::DbWeight::get().reads(2))
+            .saturating_add(T::DbWeight::get().writes(3))
+    }
 }
 
 impl WeightInfo for () {
@@ -131,5 +138,11 @@ impl WeightInfo for () {
         Weight::from_parts(25_000_000, 0)
             .saturating_add(RocksDbWeight::get().reads(1))
             .saturating_add(RocksDbWeight::get().writes(2))
+    }
+
+    fn record_heartbeat() -> Weight {
+        Weight::from_parts(30_000_000, 0)
+            .saturating_add(RocksDbWeight::get().reads(2))
+            .saturating_add(RocksDbWeight::get().writes(3))
     }
 }
