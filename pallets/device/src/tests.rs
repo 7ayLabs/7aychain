@@ -51,6 +51,10 @@ parameter_types! {
     pub const MaxDevicesPerActor: u32 = 10;
     pub const AttestationValidityBlocks: u64 = 1000;
     pub const InitialTrustScore: u8 = 50;
+    pub const HeartbeatTimeoutBlocks: u64 = 10;
+    pub const MaxConsecutiveMisses: u32 = 3;
+    pub const HealthScoreDecay: u8 = 10;
+    pub const HealthScoreRecovery: u8 = 5;
 }
 
 impl pallet_device::Config for Test {
@@ -58,6 +62,10 @@ impl pallet_device::Config for Test {
     type MaxDevicesPerActor = MaxDevicesPerActor;
     type AttestationValidityBlocks = AttestationValidityBlocks;
     type InitialTrustScore = InitialTrustScore;
+    type HeartbeatTimeoutBlocks = HeartbeatTimeoutBlocks;
+    type MaxConsecutiveMisses = MaxConsecutiveMisses;
+    type HealthScoreDecay = HealthScoreDecay;
+    type HealthScoreRecovery = HealthScoreRecovery;
 }
 
 fn new_test_ext() -> sp_io::TestExternalities {

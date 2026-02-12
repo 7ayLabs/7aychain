@@ -23,6 +23,7 @@ members = [
     "pallets/zk",
     "pallets/storage",
     "pallets/lifecycle",
+    "pallets/triangulation",
     "runtime",
     "node",
 ]
@@ -58,6 +59,7 @@ pallet-vault = { path = "pallets/vault", default-features = false }
 pallet-zk = { path = "pallets/zk", default-features = false }
 pallet-storage = { path = "pallets/storage", default-features = false }
 pallet-lifecycle = { path = "pallets/lifecycle", default-features = false }
+pallet-triangulation = { path = "pallets/triangulation", default-features = false }
 seveny-runtime = { path = "runtime", default-features = false }
 
 # =============================================================================
