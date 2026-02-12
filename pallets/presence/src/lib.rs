@@ -278,6 +278,7 @@ pub mod pallet {
         AlreadyRevealed,
         NotInCommitPhase,
         NotInRevealPhase,
+        BlockRefConversionFailed,
     }
 
     #[pallet::genesis_config]
@@ -359,10 +360,14 @@ pub mod pallet {
             Self::ensure_epoch_active(&epoch)?;
             Self::ensure_no_duplicate_presence(&epoch, &actor)?;
 
-            let block_ref = BlockRef::new(
-                block_number.try_into().unwrap_or(0),
-                sp_core::H256(block_hash.as_ref().try_into().unwrap_or([0u8; 32])),
-            );
+            let block_num: u64 = block_number
+                .try_into()
+                .map_err(|_| Error::<T>::BlockRefConversionFailed)?;
+            let hash_bytes: [u8; 32] = block_hash
+                .as_ref()
+                .try_into()
+                .map_err(|_| Error::<T>::BlockRefConversionFailed)?;
+            let block_ref = BlockRef::new(block_num, sp_core::H256(hash_bytes));
 
             let declaration = Declaration {
                 commitment,
@@ -429,10 +434,14 @@ pub mod pallet {
             Self::ensure_not_terminal(&record.state)?;
             Self::ensure_valid_vote_state(&record.state)?;
 
-            let block_ref = BlockRef::new(
-                block_number.try_into().unwrap_or(0),
-                sp_core::H256(block_hash.as_ref().try_into().unwrap_or([0u8; 32])),
-            );
+            let block_num: u64 = block_number
+                .try_into()
+                .map_err(|_| Error::<T>::BlockRefConversionFailed)?;
+            let hash_bytes: [u8; 32] = block_hash
+                .as_ref()
+                .try_into()
+                .map_err(|_| Error::<T>::BlockRefConversionFailed)?;
+            let block_ref = BlockRef::new(block_num, sp_core::H256(hash_bytes));
 
             let vote = Vote {
                 validator,
@@ -638,12 +647,20 @@ pub mod pallet {
     impl<T: Config> Pallet<T> {
         fn account_to_actor(account: &T::AccountId) -> ActorId {
             let hash = T::Hashing::hash_of(account);
-            ActorId::from(sp_core::H256(hash.as_ref().try_into().unwrap_or([0u8; 32])))
+            let hash_bytes: [u8; 32] = hash
+                .as_ref()
+                .try_into()
+                .expect("runtime hash must be 32 bytes");
+            ActorId::from(sp_core::H256(hash_bytes))
         }
 
         fn account_to_validator(account: &T::AccountId) -> ValidatorId {
             let hash = T::Hashing::hash_of(account);
-            ValidatorId::from(sp_core::H256(hash.as_ref().try_into().unwrap_or([0u8; 32])))
+            let hash_bytes: [u8; 32] = hash
+                .as_ref()
+                .try_into()
+                .expect("runtime hash must be 32 bytes");
+            ValidatorId::from(sp_core::H256(hash_bytes))
         }
 
         fn ensure_epoch_active(epoch: &EpochId) -> DispatchResult {
@@ -744,7 +761,11 @@ pub mod pallet {
             preimage.extend_from_slice(randomness);
 
             let hash = T::Hashing::hash(&preimage);
-            Commitment(sp_core::H256(hash.as_ref().try_into().unwrap_or([0u8; 32])))
+            let hash_bytes: [u8; 32] = hash
+                .as_ref()
+                .try_into()
+                .expect("runtime hash must be 32 bytes");
+            Commitment(sp_core::H256(hash_bytes))
         }
 
         pub fn is_in_commit_phase(epoch: EpochId) -> bool {
