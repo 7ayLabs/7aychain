@@ -20,8 +20,8 @@ pub mod pallet {
     use frame_system::pallet_prelude::*;
     use seveny_primitives::{
         constants::{
-            EVIDENCE_REWARD_MAX, MAX_STAKE_RATIO, MIN_VALIDATORS, SLASH_CRITICAL, SLASH_MINOR,
-            SLASH_MODERATE, SLASH_SEVERE,
+            EVIDENCE_REWARD_MAX, MAX_STAKE_RATIO, SLASH_CRITICAL, SLASH_MINOR, SLASH_MODERATE,
+            SLASH_SEVERE,
         },
         types::{ValidatorId, ViolationType},
     };
@@ -49,6 +49,9 @@ pub mod pallet {
 
         #[pallet::constant]
         type MaxValidators: Get<u32>;
+
+        #[pallet::constant]
+        type MinValidators: Get<u32>;
 
         #[pallet::constant]
         type BondingDuration: Get<BlockNumberFor<Self>>;
@@ -236,8 +239,11 @@ pub mod pallet {
 
             for (controller, stake) in &self.initial_validators {
                 let hash = T::Hashing::hash_of(controller);
-                let validator_id =
-                    ValidatorId::from(sp_core::H256(hash.as_ref().try_into().unwrap_or([0u8; 32])));
+                let hash_bytes: [u8; 32] = hash
+                    .as_ref()
+                    .try_into()
+                    .expect("runtime hash must be 32 bytes in genesis");
+                let validator_id = ValidatorId::from(sp_core::H256(hash_bytes));
 
                 let info = ValidatorInfo {
                     id: validator_id,
@@ -370,7 +376,7 @@ pub mod pallet {
 
             let active_count = ActiveValidatorCount::<T>::get();
             ensure!(
-                active_count > MIN_VALIDATORS,
+                active_count > T::MinValidators::get(),
                 Error::<T>::MinValidatorsRequired
             );
 
@@ -508,11 +514,11 @@ pub mod pallet {
             });
 
             if violation == ViolationType::Critical {
-                let mut info_mut = info;
-                info_mut.status = ValidatorStatus::Slashed;
-                Validators::<T>::insert(validator, info_mut);
+                if info.status != ValidatorStatus::Slashed {
+                    let mut info_mut = info;
+                    info_mut.status = ValidatorStatus::Slashed;
+                    Validators::<T>::insert(validator, info_mut);
 
-                if ActiveValidatorCount::<T>::get() > 0 {
                     ActiveValidatorCount::<T>::mutate(|count| {
                         *count = count.saturating_sub(1);
                     });
@@ -634,7 +640,11 @@ pub mod pallet {
         fn account_to_validator(account: &T::AccountId) -> ValidatorId {
             use sp_runtime::traits::Hash;
             let hash = T::Hashing::hash_of(account);
-            ValidatorId::from(sp_core::H256(hash.as_ref().try_into().unwrap_or([0u8; 32])))
+            let hash_bytes: [u8; 32] = hash
+                .as_ref()
+                .try_into()
+                .expect("runtime hash must be 32 bytes");
+            ValidatorId::from(sp_core::H256(hash_bytes))
         }
 
         fn ensure_stake_ratio_valid(stake: BalanceOf<T>) -> DispatchResult {
