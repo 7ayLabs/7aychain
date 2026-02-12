@@ -196,9 +196,14 @@ impl ZkVerifier for SimpleHashVerifier {
         if proof.len() < 65 {
             return false;
         }
-        let share_value: [u8; 32] = proof[0..32].try_into().unwrap_or([0u8; 32]);
+
+        let Ok(share_value): Result<[u8; 32], _> = proof[0..32].try_into() else {
+            return false;
+        };
         let share_index = proof[32];
-        let randomness: [u8; 32] = proof[33..65].try_into().unwrap_or([0u8; 32]);
+        let Ok(randomness): Result<[u8; 32], _> = proof[33..65].try_into() else {
+            return false;
+        };
 
         let mut input = Vec::with_capacity(DOMAIN_SHARE_PROOF.len() + 65);
         input.extend_from_slice(DOMAIN_SHARE_PROOF);
@@ -214,8 +219,13 @@ impl ZkVerifier for SimpleHashVerifier {
         if proof.len() < 80 {
             return false;
         }
-        let secret: [u8; 32] = proof[0..32].try_into().unwrap_or([0u8; 32]);
-        let nonce_bytes: [u8; 8] = proof[64..72].try_into().unwrap_or([0u8; 8]);
+
+        let Ok(secret): Result<[u8; 32], _> = proof[0..32].try_into() else {
+            return false;
+        };
+        let Ok(nonce_bytes): Result<[u8; 8], _> = proof[64..72].try_into() else {
+            return false;
+        };
         let nonce = u64::from_le_bytes(nonce_bytes);
 
         let derived_nullifier = Nullifier::derive(&secret, statement.epoch_id, nonce);
@@ -227,9 +237,16 @@ impl ZkVerifier for SimpleHashVerifier {
         if proof.len() < 68 {
             return false;
         }
-        let actor_bytes: [u8; 32] = proof[0..32].try_into().unwrap_or([0u8; 32]);
-        let ring_position_bytes: [u8; 4] = proof[32..36].try_into().unwrap_or([0u8; 4]);
-        let membership: [u8; 32] = proof[36..68].try_into().unwrap_or([0u8; 32]);
+
+        let Ok(actor_bytes): Result<[u8; 32], _> = proof[0..32].try_into() else {
+            return false;
+        };
+        let Ok(ring_position_bytes): Result<[u8; 4], _> = proof[32..36].try_into() else {
+            return false;
+        };
+        let Ok(membership): Result<[u8; 32], _> = proof[36..68].try_into() else {
+            return false;
+        };
 
         let mut input = Vec::with_capacity(DOMAIN_ACCESS_PROOF.len() + 76);
         input.extend_from_slice(DOMAIN_ACCESS_PROOF);
