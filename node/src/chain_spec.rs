@@ -94,6 +94,33 @@ pub fn local_testnet_config() -> Result<ChainSpec, String> {
     .build())
 }
 
+pub fn mainnet_config() -> Result<ChainSpec, String> {
+    Ok(ChainSpec::builder(
+        WASM_BINARY.ok_or_else(|| "Mainnet wasm not available".to_string())?,
+        None,
+    )
+    .with_name("7aychain Mainnet")
+    .with_id("seveny_mainnet")
+    .with_chain_type(ChainType::Live)
+    .with_genesis_config_patch(mainnet_genesis())
+    .with_protocol_id("seveny")
+    .build())
+}
+
+fn mainnet_genesis() -> serde_json::Value {
+    serde_json::json!({
+        "balances": {
+            "balances": Vec::<(AccountId, u128)>::new()
+        },
+        "aura": {
+            "authorities": Vec::<AuraId>::new()
+        },
+        "grandpa": {
+            "authorities": Vec::<(GrandpaId, u64)>::new()
+        }
+    })
+}
+
 fn testnet_genesis(
     initial_authorities: Vec<(AuraId, GrandpaId)>,
     root_key: AccountId,
