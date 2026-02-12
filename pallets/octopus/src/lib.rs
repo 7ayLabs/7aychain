@@ -158,6 +158,9 @@ pub struct Subnode<T: Config> {
     pub activated_at: Option<BlockNumberFor<T>>,
     pub deactivation_started: Option<BlockNumberFor<T>>,
     pub processed_count: u64,
+    pub last_heartbeat: BlockNumberFor<T>,
+    pub consecutive_misses: u8,
+    pub health_score: u8,
 }
 
 #[derive(
@@ -231,6 +234,18 @@ pub mod pallet {
 
         #[pallet::constant]
         type ScalingCooldownBlocks: Get<BlockNumberFor<Self>>;
+
+        #[pallet::constant]
+        type HeartbeatTimeoutBlocks: Get<BlockNumberFor<Self>>;
+
+        #[pallet::constant]
+        type MaxConsecutiveMisses: Get<u8>;
+
+        #[pallet::constant]
+        type HealthScoreDecay: Get<u8>;
+
+        #[pallet::constant]
+        type HealthScoreRecovery: Get<u8>;
     }
 
     #[pallet::storage]
@@ -322,6 +337,25 @@ pub mod pallet {
             old_status: ClusterStatus,
             new_status: ClusterStatus,
         },
+        HeartbeatReceived {
+            subnode_id: SubnodeId,
+            health_score: u8,
+        },
+        SubnodeFailed {
+            subnode_id: SubnodeId,
+            cluster_id: ClusterId,
+            consecutive_misses: u8,
+        },
+        AutoHealingInitiated {
+            cluster_id: ClusterId,
+            failed_count: u32,
+            active_remaining: u32,
+        },
+        SubnodeHealthUpdated {
+            subnode_id: SubnodeId,
+            old_score: u8,
+            new_score: u8,
+        },
     }
 
     #[pallet::error]
@@ -340,12 +374,16 @@ pub mod pallet {
         MinSubnodesRequired,
         SubnodeAlreadyDeactivating,
         DeactivationNotComplete,
+        SubnodeFailed,
+        HeartbeatTooFrequent,
     }
 
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
         fn on_initialize(n: BlockNumberFor<T>) -> Weight {
             Self::process_deactivations(n);
+            Self::detect_failed_nodes(n);
+            Self::auto_heal_clusters(n);
             T::DbWeight::get().reads(1)
         }
     }
@@ -408,6 +446,9 @@ pub mod pallet {
                 activated_at: None,
                 deactivation_started: None,
                 processed_count: 0,
+                last_heartbeat: block_number,
+                consecutive_misses: 0,
+                health_score: 100,
             };
 
             Subnodes::<T>::insert(subnode_id, subnode);
@@ -590,6 +631,43 @@ pub mod pallet {
                 Ok(())
             })
         }
+
+        #[pallet::call_index(7)]
+        #[pallet::weight(T::WeightInfo::activate_subnode())]
+        pub fn record_heartbeat(origin: OriginFor<T>, subnode_id: SubnodeId) -> DispatchResult {
+            ensure_signed(origin)?;
+
+            let block_number = frame_system::Pallet::<T>::block_number();
+
+            Subnodes::<T>::try_mutate(subnode_id, |subnode| -> DispatchResult {
+                let s = subnode.as_mut().ok_or(Error::<T>::SubnodeNotFound)?;
+
+                ensure!(
+                    s.status == SubnodeStatus::Active,
+                    Error::<T>::SubnodeNotActive
+                );
+
+                let old_score = s.health_score;
+                s.last_heartbeat = block_number;
+                s.consecutive_misses = 0;
+                s.health_score = old_score.saturating_add(T::HealthScoreRecovery::get()).min(100);
+
+                Self::deposit_event(Event::HeartbeatReceived {
+                    subnode_id,
+                    health_score: s.health_score,
+                });
+
+                if old_score != s.health_score {
+                    Self::deposit_event(Event::SubnodeHealthUpdated {
+                        subnode_id,
+                        old_score,
+                        new_score: s.health_score,
+                    });
+                }
+
+                Ok(())
+            })
+        }
     }
 
     impl<T: Config> Pallet<T> {
@@ -695,6 +773,107 @@ pub mod pallet {
         pub fn is_scaling_needed(cluster_id: ClusterId) -> Option<ScalingDecision> {
             Clusters::<T>::get(cluster_id)
                 .map(|c| Self::compute_scaling_decision(c.total_throughput, c.active_subnodes))
+        }
+
+        #[allow(clippy::excessive_nesting)]
+        fn detect_failed_nodes(block_number: BlockNumberFor<T>) {
+            let timeout = T::HeartbeatTimeoutBlocks::get();
+            let max_misses = T::MaxConsecutiveMisses::get();
+            let decay = T::HealthScoreDecay::get();
+
+            for (subnode_id, mut subnode) in Subnodes::<T>::iter() {
+                if subnode.status != SubnodeStatus::Active {
+                    continue;
+                }
+
+                let blocks_since = block_number.saturating_sub(subnode.last_heartbeat);
+                if blocks_since < timeout {
+                    continue;
+                }
+
+                let old_score = subnode.health_score;
+                subnode.consecutive_misses = subnode.consecutive_misses.saturating_add(1);
+                subnode.health_score = subnode.health_score.saturating_sub(decay);
+                subnode.last_heartbeat = block_number;
+
+                if old_score != subnode.health_score {
+                    Self::deposit_event(Event::SubnodeHealthUpdated {
+                        subnode_id,
+                        old_score,
+                        new_score: subnode.health_score,
+                    });
+                }
+
+                if subnode.consecutive_misses >= max_misses {
+                    let cluster_id = subnode.cluster;
+                    subnode.status = SubnodeStatus::Failed;
+
+                    Subnodes::<T>::insert(subnode_id, subnode.clone());
+
+                    Clusters::<T>::mutate(cluster_id, |cluster| {
+                        if let Some(ref mut c) = cluster {
+                            c.active_subnodes = c.active_subnodes.saturating_sub(1);
+                            if c.active_subnodes < T::MinSubnodes::get() {
+                                c.status = ClusterStatus::Degraded;
+                            }
+                        }
+                    });
+
+                    ActiveSubnodeCount::<T>::mutate(|count| {
+                        *count = count.saturating_sub(1)
+                    });
+
+                    Self::deposit_event(Event::SubnodeFailed {
+                        subnode_id,
+                        cluster_id,
+                        consecutive_misses: subnode.consecutive_misses,
+                    });
+                } else {
+                    Subnodes::<T>::insert(subnode_id, subnode);
+                }
+            }
+        }
+
+        fn auto_heal_clusters(block_number: BlockNumberFor<T>) {
+            for (cluster_id, cluster) in Clusters::<T>::iter() {
+                if cluster.status != ClusterStatus::Degraded {
+                    continue;
+                }
+
+                let min_subnodes = T::MinSubnodes::get();
+                if cluster.active_subnodes >= min_subnodes {
+                    Clusters::<T>::mutate(cluster_id, |c| {
+                        if let Some(ref mut cluster) = c {
+                            cluster.status = ClusterStatus::Running;
+                        }
+                    });
+                    continue;
+                }
+
+                let failed_count = ClusterSubnodes::<T>::iter_prefix(cluster_id)
+                    .filter_map(|(subnode_id, _)| Subnodes::<T>::get(subnode_id))
+                    .filter(|s| s.status == SubnodeStatus::Failed)
+                    .count() as u32;
+
+                Self::deposit_event(Event::AutoHealingInitiated {
+                    cluster_id,
+                    failed_count,
+                    active_remaining: cluster.active_subnodes,
+                });
+
+                for (subnode_id, _) in ClusterSubnodes::<T>::iter_prefix(cluster_id) {
+                    Subnodes::<T>::mutate(subnode_id, |subnode| {
+                        if let Some(ref mut s) = subnode {
+                            if s.status == SubnodeStatus::Failed {
+                                s.status = SubnodeStatus::Inactive;
+                                s.consecutive_misses = 0;
+                                s.health_score = 50;
+                                s.last_heartbeat = block_number;
+                            }
+                        }
+                    });
+                }
+            }
         }
 
         pub fn get_total_active_subnodes() -> u32 {

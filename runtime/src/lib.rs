@@ -347,6 +347,10 @@ parameter_types! {
     pub const MaxSubnodesPerCluster: u32 = 8;
     pub const MinSubnodes: u32 = 2;
     pub const ScalingCooldownBlocks: BlockNumber = 50;
+    pub const HeartbeatTimeoutBlocks: BlockNumber = 10;
+    pub const MaxConsecutiveMisses: u8 = 3;
+    pub const HealthScoreDecay: u8 = 10;
+    pub const HealthScoreRecovery: u8 = 5;
 }
 
 impl pallet_octopus::Config for Runtime {
@@ -357,6 +361,10 @@ impl pallet_octopus::Config for Runtime {
     type MaxSubnodesPerCluster = MaxSubnodesPerCluster;
     type MinSubnodes = MinSubnodes;
     type ScalingCooldownBlocks = ScalingCooldownBlocks;
+    type HeartbeatTimeoutBlocks = HeartbeatTimeoutBlocks;
+    type MaxConsecutiveMisses = MaxConsecutiveMisses;
+    type HealthScoreDecay = HealthScoreDecay;
+    type HealthScoreRecovery = HealthScoreRecovery;
 }
 
 parameter_types! {
