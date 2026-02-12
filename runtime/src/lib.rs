@@ -132,7 +132,7 @@ impl frame_system::Config for Runtime {
 }
 
 parameter_types! {
-    pub const MinimumPeriod: u64 = 3000;
+    pub const MinimumPeriod: u64 = 1750;
 }
 
 impl pallet_timestamp::Config for Runtime {
@@ -215,8 +215,8 @@ parameter_types! {
     pub const MaxVotesPerPresence: u32 = 100;
     pub const DefaultQuorumThreshold: u32 = 2;
     pub const DefaultQuorumTotal: u32 = 3;
-    pub const CommitRevealDelay: BlockNumber = 10;
-    pub const RevealWindow: BlockNumber = 20;
+    pub const CommitRevealDelay: BlockNumber = 2;
+    pub const RevealWindow: BlockNumber = 4;
 }
 
 impl pallet_presence::Config for Runtime {
@@ -229,10 +229,10 @@ impl pallet_presence::Config for Runtime {
 }
 
 parameter_types! {
-    pub const EpochDuration: BlockNumber = 100;
-    pub const MinEpochDuration: BlockNumber = 10;
+    pub const EpochDuration: BlockNumber = 60;
+    pub const MinEpochDuration: BlockNumber = 4;
     pub const MaxEpochDuration: BlockNumber = 1000;
-    pub const GracePeriod: BlockNumber = 10;
+    pub const GracePeriod: BlockNumber = 2;
 }
 
 impl pallet_epoch::Config for Runtime {
