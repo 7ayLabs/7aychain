@@ -98,6 +98,10 @@ impl MerkleProof {
             index >>= 1;
         }
 
+        if index != 0 {
+            return false;
+        }
+
         current.ct_eq(root)
     }
 
@@ -316,11 +320,11 @@ pub mod gf256 {
     }
 
     #[inline]
-    pub fn div(a: u8, b: u8) -> u8 {
+    pub fn div(a: u8, b: u8) -> Option<u8> {
         if b == 0 {
-            return 0;
+            return None;
         }
-        mul(a, inv(b))
+        Some(mul(a, inv(b)))
     }
 
     pub fn pow(base: u8, exp: u8) -> u8 {
@@ -408,10 +412,10 @@ impl ShamirScheme {
             return None;
         }
 
-        Some(Self::reconstruct_inner(&shares[..threshold as usize]))
+        Self::reconstruct_inner(&shares[..threshold as usize])
     }
 
-    fn reconstruct_inner(shares: &[Share]) -> [u8; 32] {
+    fn reconstruct_inner(shares: &[Share]) -> Option<[u8; 32]> {
         let mut secret = [0u8; 32];
 
         for byte_idx in 0..32 {
@@ -420,17 +424,17 @@ impl ShamirScheme {
             for (i, share_i) in shares.iter().enumerate() {
                 let xi = share_i.index.0;
                 let yi = share_i.value[byte_idx];
-                let li = Self::compute_lagrange_basis_at_zero(shares, i, xi);
+                let li = Self::compute_lagrange_basis_at_zero(shares, i, xi)?;
                 result = gf256::add(result, gf256::mul(yi, li));
             }
 
             secret[byte_idx] = result;
         }
 
-        secret
+        Some(secret)
     }
 
-    fn compute_lagrange_basis_at_zero(shares: &[Share], i: usize, xi: u8) -> u8 {
+    fn compute_lagrange_basis_at_zero(shares: &[Share], i: usize, xi: u8) -> Option<u8> {
         let mut result: u8 = 1;
 
         for (j, share_j) in shares.iter().enumerate() {
@@ -439,14 +443,15 @@ impl ShamirScheme {
                 let denominator = gf256::sub(xi, xj);
 
                 if denominator == 0 {
-                    continue;
+                    return None;
                 }
 
-                result = gf256::mul(result, gf256::div(xj, denominator));
+                let div_result = gf256::div(xj, denominator)?;
+                result = gf256::mul(result, div_result);
             }
         }
 
-        result
+        Some(result)
     }
 
     pub fn verify_share(share: &Share, commitment: &H256) -> bool {
@@ -597,11 +602,18 @@ mod tests {
     #[test]
     fn gf256_div() {
         for a in 1..=255u8 {
-            assert_eq!(gf256::div(a, a), 1);
+            assert_eq!(gf256::div(a, a), Some(1));
         }
         for a in 0..=255u8 {
-            assert_eq!(gf256::div(a, 1), a);
+            assert_eq!(gf256::div(a, 1), Some(a));
         }
+    }
+
+    #[test]
+    fn gf256_div_by_zero_returns_none() {
+        assert!(gf256::div(0, 0).is_none());
+        assert!(gf256::div(1, 0).is_none());
+        assert!(gf256::div(255, 0).is_none());
     }
 
     #[test]
@@ -849,5 +861,49 @@ mod tests {
         for (i, share) in shares.iter().enumerate() {
             assert_eq!(share.index.0, (i + 1) as u8);
         }
+    }
+
+    #[test]
+    fn shamir_duplicate_indices_fails() {
+        let secret = [42u8; 32];
+        let shares = ShamirScheme::split(&secret, 2, 3).expect("split failed");
+
+        let duplicate_shares = vec![
+            Share::new(shares[0].index.0, shares[0].value),
+            Share::new(shares[0].index.0, shares[1].value),
+        ];
+
+        let result = ShamirScheme::reconstruct(&duplicate_shares, 2);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn merkle_proof_incomplete_path_rejected() {
+        let left = H256::repeat_byte(0x01);
+        let right = H256::repeat_byte(0x02);
+        let root = hash_pair(&left, &right);
+
+        let proof = MerkleProof {
+            leaf_index: 4,
+            siblings: vec![right],
+        };
+        assert!(!proof.verify(&root, &left));
+    }
+
+    #[test]
+    fn merkle_proof_extra_siblings_accepted_if_root_matches() {
+        let leaf = H256::repeat_byte(0x01);
+
+        let proof = MerkleProof {
+            leaf_index: 0,
+            siblings: vec![],
+        };
+        assert!(proof.verify(&leaf, &leaf));
+
+        let proof_extra = MerkleProof {
+            leaf_index: 0,
+            siblings: vec![H256::repeat_byte(0x02)],
+        };
+        assert!(!proof_extra.verify(&leaf, &leaf));
     }
 }
