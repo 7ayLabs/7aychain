@@ -59,6 +59,10 @@ parameter_types! {
     pub const MaxSubnodesPerCluster: u32 = 8;
     pub const MinSubnodes: u32 = 1;
     pub const ScalingCooldownBlocks: u64 = 10;
+    pub const HeartbeatTimeoutBlocks: u64 = 10;
+    pub const MaxConsecutiveMisses: u8 = 3;
+    pub const HealthScoreDecay: u8 = 10;
+    pub const HealthScoreRecovery: u8 = 5;
 }
 
 impl pallet_octopus::Config for Test {
@@ -69,6 +73,10 @@ impl pallet_octopus::Config for Test {
     type MaxSubnodesPerCluster = MaxSubnodesPerCluster;
     type MinSubnodes = MinSubnodes;
     type ScalingCooldownBlocks = ScalingCooldownBlocks;
+    type HeartbeatTimeoutBlocks = HeartbeatTimeoutBlocks;
+    type MaxConsecutiveMisses = MaxConsecutiveMisses;
+    type HealthScoreDecay = HealthScoreDecay;
+    type HealthScoreRecovery = HealthScoreRecovery;
 }
 
 fn new_test_ext() -> sp_io::TestExternalities {
