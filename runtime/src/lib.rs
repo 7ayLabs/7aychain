@@ -132,7 +132,7 @@ impl frame_system::Config for Runtime {
 }
 
 parameter_types! {
-    pub const MinimumPeriod: u64 = 1750;
+    pub const MinimumPeriod: u64 = 3500;
 }
 
 impl pallet_timestamp::Config for Runtime {
@@ -244,10 +244,11 @@ impl pallet_epoch::Config for Runtime {
 }
 
 parameter_types! {
-    pub const MinStake: Balance = 100_000;
+    pub const MinStake: Balance = 1_000_000;
     pub const MaxValidators: u32 = 100;
-    pub const BondingDuration: BlockNumber = 100_800;
-    pub const SlashDeferDuration: BlockNumber = 14_400;
+    pub const MinValidators: u32 = 50;
+    pub const BondingDuration: BlockNumber = 345_600;
+    pub const SlashDeferDuration: BlockNumber = 86_400;
 }
 
 impl pallet_validator::Config for Runtime {
@@ -255,6 +256,7 @@ impl pallet_validator::Config for Runtime {
     type Currency = Balances;
     type MinStake = MinStake;
     type MaxValidators = MaxValidators;
+    type MinValidators = MinValidators;
     type BondingDuration = BondingDuration;
     type SlashDeferDuration = SlashDeferDuration;
 }

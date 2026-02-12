@@ -1,10 +1,10 @@
 use sp_arithmetic::Perbill;
 
-pub const MIN_VALIDATORS: u32 = 21;
+pub const MIN_VALIDATORS: u32 = 50;
 pub const MAX_STAKE_RATIO: Perbill = Perbill::from_percent(33);
-pub const DEFAULT_MIN_STAKE: u128 = 100_000;
-pub const BONDING_DURATION_BLOCKS: u64 = 100_800;
-pub const SLASH_DEFER_DURATION_BLOCKS: u64 = 14_400;
+pub const DEFAULT_MIN_STAKE: u128 = 1_000_000;
+pub const BONDING_DURATION_BLOCKS: u64 = 345_600;
+pub const SLASH_DEFER_DURATION_BLOCKS: u64 = 86_400;
 
 pub const SLASH_MINOR: Perbill = Perbill::from_percent(5);
 pub const SLASH_MODERATE: Perbill = Perbill::from_percent(20);
