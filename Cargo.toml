@@ -24,6 +24,7 @@ members = [
     "pallets/storage",
     "pallets/lifecycle",
     "pallets/triangulation",
+    "pallets/device-scanner",
     "runtime",
     "node",
 ]
@@ -60,7 +61,14 @@ pallet-zk = { path = "pallets/zk", default-features = false }
 pallet-storage = { path = "pallets/storage", default-features = false }
 pallet-lifecycle = { path = "pallets/lifecycle", default-features = false }
 pallet-triangulation = { path = "pallets/triangulation", default-features = false }
+pallet-device-scanner = { path = "pallets/device-scanner", default-features = false }
 seveny-runtime = { path = "runtime", default-features = false }
+
+# =============================================================================
+# Scanner Dependencies (node-side only)
+# =============================================================================
+async-trait = "0.1"
+log = { version = "0.4", default-features = false }
 
 # =============================================================================
 # FRAME Pallets

@@ -371,6 +371,10 @@ parameter_types! {
     pub const MaxDevicesPerActor: u32 = 10;
     pub const AttestationValidityBlocks: BlockNumber = 1000;
     pub const InitialTrustScore: u8 = 50;
+    pub const DeviceHeartbeatTimeoutBlocks: BlockNumber = 10;
+    pub const DeviceMaxConsecutiveMisses: u32 = 3;
+    pub const DeviceHealthScoreDecay: u8 = 10;
+    pub const DeviceHealthScoreRecovery: u8 = 5;
 }
 
 impl pallet_device::Config for Runtime {
@@ -378,6 +382,10 @@ impl pallet_device::Config for Runtime {
     type MaxDevicesPerActor = MaxDevicesPerActor;
     type AttestationValidityBlocks = AttestationValidityBlocks;
     type InitialTrustScore = InitialTrustScore;
+    type HeartbeatTimeoutBlocks = DeviceHeartbeatTimeoutBlocks;
+    type MaxConsecutiveMisses = DeviceMaxConsecutiveMisses;
+    type HealthScoreDecay = DeviceHealthScoreDecay;
+    type HealthScoreRecovery = DeviceHealthScoreRecovery;
 }
 
 parameter_types! {
@@ -436,6 +444,41 @@ impl pallet_lifecycle::Config for Runtime {
     type RotationCooldownBlocks = RotationCooldownBlocks;
 }
 
+parameter_types! {
+    pub const MaxReporters: u32 = 100;
+    pub const MaxReadingsPerDevice: u32 = 50;
+    pub const MaxHistoryEntries: u32 = 1000;
+    pub const InactiveTimeoutBlocks: BlockNumber = 10;
+    pub const LostTimeoutBlocks: BlockNumber = 100;
+    pub const MinReadingsForActive: u32 = 3;
+    pub const SignalRetentionBlocks: BlockNumber = 1000;
+}
+
+impl pallet_triangulation::Config for Runtime {
+    type WeightInfo = ();
+    type MaxReporters = MaxReporters;
+    type MaxReadingsPerDevice = MaxReadingsPerDevice;
+    type MaxHistoryEntries = MaxHistoryEntries;
+    type InactiveTimeoutBlocks = InactiveTimeoutBlocks;
+    type LostTimeoutBlocks = LostTimeoutBlocks;
+    type MinReadingsForActive = MinReadingsForActive;
+    type SignalRetentionBlocks = SignalRetentionBlocks;
+}
+
+parameter_types! {
+    pub const MaxTrackedDevices: u32 = 10_000;
+    pub const DeviceStaleBlocks: BlockNumber = 600;
+    pub const MaxHistoryPerDevice: u32 = 100;
+}
+
+impl pallet_device_scanner::Config for Runtime {
+    type RuntimeEvent = RuntimeEvent;
+    type WeightInfo = ();
+    type MaxTrackedDevices = MaxTrackedDevices;
+    type DeviceStaleBlocks = DeviceStaleBlocks;
+    type MaxHistoryPerDevice = MaxHistoryPerDevice;
+}
+
 construct_runtime!(
     pub enum Runtime {
         System: frame_system,
@@ -460,6 +503,8 @@ construct_runtime!(
         Zk: pallet_zk,
         Storage: pallet_storage,
         Lifecycle: pallet_lifecycle,
+        Triangulation: pallet_triangulation,
+        DeviceScanner: pallet_device_scanner,
     }
 );
 

@@ -60,6 +60,8 @@ pallet-vault = { workspace = true }
 pallet-zk = { workspace = true }
 pallet-storage = { workspace = true }
 pallet-lifecycle = { workspace = true }
+pallet-triangulation = { workspace = true }
+pallet-device-scanner = { workspace = true }
 
 [build-dependencies]
 substrate-wasm-builder = { version = "31.1.0", optional = true }
@@ -111,6 +113,8 @@ std = [
     "pallet-zk/std",
     "pallet-storage/std",
     "pallet-lifecycle/std",
+    "pallet-triangulation/std",
+    "pallet-device-scanner/std",
     "substrate-wasm-builder",
 ]
 runtime-benchmarks = [

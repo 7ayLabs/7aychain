@@ -57,10 +57,18 @@ substrate-frame-rpc-system = { version = "49.0.0" }
 
 seveny-runtime = { path = "../runtime" }
 
+# Scanner dependencies
+tokio = { version = "1.0", features = ["sync", "time", "rt-multi-thread"] }
+async-trait = "0.1"
+log = "0.4"
+parity-scale-codec = { workspace = true, features = ["std"] }
+btleplug = { version = "0.11", optional = true }
+
 [build-dependencies]
 substrate-build-script-utils = { version = "11.0.0" }
 
 [features]
-default = []
+default = ["bluetooth"]
+bluetooth = ["btleplug"]
 runtime-benchmarks = ["seveny-runtime/runtime-benchmarks"]
 try-runtime = ["seveny-runtime/try-runtime"]

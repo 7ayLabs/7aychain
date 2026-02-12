@@ -11,6 +11,11 @@ use seveny_runtime::{self, opaque::Block, RuntimeApi};
 use sp_consensus_aura::sr25519::AuthorityPair as AuraPair;
 use std::sync::Arc;
 
+use crate::scanner::{
+    create_scan_results_handle, start_scanner_task, DeviceScanInherentDataProvider,
+    ScanResultsHandle, ScannerConfig,
+};
+
 pub type FullClient =
     sc_service::TFullClient<Block, RuntimeApi, WasmExecutor<sp_io::SubstrateHostFunctions>>;
 type FullBackend = sc_service::TFullBackend<Block>;
@@ -135,6 +140,9 @@ pub fn new_full(config: Configuration) -> Result<TaskManager, ServiceError> {
         other: (block_import, grandpa_link, mut telemetry),
     } = new_partial(&config)?;
 
+    // Create scan results handle for device scanner
+    let scan_results: ScanResultsHandle = create_scan_results_handle();
+
     let mut net_config = sc_network::config::FullNetworkConfiguration::<
         Block,
         <Block as sp_runtime::traits::Block>::Hash,
@@ -241,6 +249,11 @@ pub fn new_full(config: Configuration) -> Result<TaskManager, ServiceError> {
     })?;
 
     if role.is_authority() {
+        // Start the device scanner task
+        let scanner_config = ScannerConfig::default();
+        start_scanner_task(&task_manager, scanner_config, scan_results.clone());
+        log::info!("Device scanner initialized for block authoring");
+
         let proposer_factory = sc_basic_authorship::ProposerFactory::new(
             task_manager.spawn_handle(),
             client.clone(),
@@ -251,6 +264,9 @@ pub fn new_full(config: Configuration) -> Result<TaskManager, ServiceError> {
 
         let slot_duration = sc_consensus_aura::slot_duration(&*client)?;
 
+        // Clone scan_results for the closure
+        let scan_results_for_aura = scan_results.clone();
+
         let aura = sc_consensus_aura::start_aura::<AuraPair, _, _, _, _, _, _, _, _, _, _>(
             StartAuraParams {
                 slot_duration,
@@ -258,16 +274,26 @@ pub fn new_full(config: Configuration) -> Result<TaskManager, ServiceError> {
                 select_chain,
                 block_import,
                 proposer_factory,
-                create_inherent_data_providers: move |_, ()| async move {
-                    let timestamp = sp_timestamp::InherentDataProvider::from_system_time();
+                create_inherent_data_providers: move |_, ()| {
+                    let scan_results = scan_results_for_aura.clone();
+                    async move {
+                        let timestamp = sp_timestamp::InherentDataProvider::from_system_time();
 
-                    let slot =
-                        sp_consensus_aura::inherents::InherentDataProvider::from_timestamp_and_slot_duration(
-                            *timestamp,
-                            slot_duration,
+                        let slot =
+                            sp_consensus_aura::inherents::InherentDataProvider::from_timestamp_and_slot_duration(
+                                *timestamp,
+                                slot_duration,
+                            );
+
+                        // Create device scanner inherent data provider
+                        let device_scanner = DeviceScanInherentDataProvider::new(
+                            scan_results,
+                            Default::default(), // reporter_position
+                            100,                // max_devices
                         );
 
-                    Ok((slot, timestamp))
+                        Ok((slot, timestamp, device_scanner))
+                    }
                 },
                 force_authoring,
                 backoff_authoring_blocks,
