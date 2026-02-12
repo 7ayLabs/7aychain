@@ -244,10 +244,10 @@ impl pallet_epoch::Config for Runtime {
 }
 
 parameter_types! {
-    pub const MinStake: Balance = 10_000;
+    pub const MinStake: Balance = 100_000;
     pub const MaxValidators: u32 = 100;
-    pub const BondingDuration: BlockNumber = 100;
-    pub const SlashDeferDuration: BlockNumber = 50;
+    pub const BondingDuration: BlockNumber = 100_800;
+    pub const SlashDeferDuration: BlockNumber = 14_400;
 }
 
 impl pallet_validator::Config for Runtime {
