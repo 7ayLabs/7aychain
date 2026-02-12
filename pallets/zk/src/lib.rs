@@ -193,7 +193,8 @@ pub struct SimpleHashVerifier;
 
 impl ZkVerifier for SimpleHashVerifier {
     fn verify_share_proof(statement: &ShareStatement, proof: &[u8]) -> bool {
-        if proof.len() < 65 {
+        const SHARE_PROOF_SIZE: usize = 65;
+        if proof.len() != SHARE_PROOF_SIZE {
             return false;
         }
 
@@ -216,7 +217,8 @@ impl ZkVerifier for SimpleHashVerifier {
     }
 
     fn verify_presence_proof(statement: &PresenceStatement, proof: &[u8]) -> bool {
-        if proof.len() < 80 {
+        const PRESENCE_PROOF_SIZE: usize = 80;
+        if proof.len() != PRESENCE_PROOF_SIZE {
             return false;
         }
 
@@ -234,7 +236,8 @@ impl ZkVerifier for SimpleHashVerifier {
     }
 
     fn verify_access_proof(statement: &AccessStatement, proof: &[u8]) -> bool {
-        if proof.len() < 68 {
+        const ACCESS_PROOF_SIZE: usize = 68;
+        if proof.len() != ACCESS_PROOF_SIZE {
             return false;
         }
 
