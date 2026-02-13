@@ -128,7 +128,7 @@ pub fn new_partial(
     })
 }
 
-pub fn new_full(config: Configuration) -> Result<TaskManager, ServiceError> {
+pub fn new_full(config: Configuration, scanner_config: Option<ScannerConfig>) -> Result<TaskManager, ServiceError> {
     let sc_service::PartialComponents {
         client,
         backend,
@@ -249,9 +249,8 @@ pub fn new_full(config: Configuration) -> Result<TaskManager, ServiceError> {
     })?;
 
     if role.is_authority() {
-        // Start the device scanner task
-        let scanner_config = ScannerConfig::default();
-        start_scanner_task(&task_manager, scanner_config, scan_results.clone());
+        let scanner_cfg = scanner_config.unwrap_or_default();
+        start_scanner_task(&task_manager, scanner_cfg, scan_results.clone());
         log::info!("Device scanner initialized for block authoring");
 
         let proposer_factory = sc_basic_authorship::ProposerFactory::new(

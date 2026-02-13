@@ -12,7 +12,34 @@ pub struct Cli {
     pub subcommand: Option<Subcommand>,
 
     #[clap(flatten)]
-    pub run: RunCmd,
+    pub run: ExtendedRunCmd,
+}
+
+#[derive(Debug, clap::Parser)]
+pub struct ExtendedRunCmd {
+    #[clap(flatten)]
+    pub base: RunCmd,
+
+    #[arg(long, default_value = "real")]
+    pub scanner_mode: String,
+
+    #[arg(long, default_value = "15")]
+    pub mock_devices: u32,
+
+    #[arg(long, default_value = "0")]
+    pub scanner_pos_x: i64,
+
+    #[arg(long, default_value = "0")]
+    pub scanner_pos_y: i64,
+
+    #[arg(long, default_value = "0")]
+    pub scanner_pos_z: i64,
+
+    #[arg(long, default_value = "6")]
+    pub scan_interval: u64,
+
+    #[arg(long, default_value = "42")]
+    pub mock_seed: u64,
 }
 
 #[derive(Debug, clap::Subcommand)]
