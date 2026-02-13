@@ -8,7 +8,9 @@ extern crate alloc;
 pub mod constants;
 pub mod crypto;
 pub mod errors;
+pub mod fusion;
 pub mod traits;
+pub mod triangulation;
 pub mod types;
 
 pub use constants::*;
@@ -26,4 +28,15 @@ pub use crypto::{
 pub use traits::{
     AggregateSignature, ChainBound, Commitment, ConstantTimeEq, CryptoHash, DomainSeparatedHash,
     EpochBound, Invariant, MerkleTree, SecretSharing, Signature, StateTransition, ZkProof,
+};
+
+pub use fusion::{
+    DeviceCommitment, DeviceReveal, FusedHealthMetrics, FusionConfig, FusionWeights,
+    HealingReason, NodeObservation, Position, TriangulationProof,
+    DOMAIN_DEVICE_COMMITMENT, DOMAIN_DEVICE_REVEAL,
+};
+
+pub use triangulation::{
+    calculate_weighted_centroid, multilateration, rssi_to_distance_cm,
+    DeviceTrack, SignalObservation, TriangulatedPosition, TriangulationConfig, Velocity,
 };
