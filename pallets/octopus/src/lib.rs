@@ -2,7 +2,13 @@
 extern crate alloc;
 
 pub use pallet::*;
+pub mod fusion;
 pub mod weights;
+
+pub use fusion::{
+    FusedHealthMetrics, FusionWeights, HealingAction, HealingTrigger,
+    Position as FusionPosition,
+};
 
 #[cfg(test)]
 mod tests;
@@ -283,6 +289,15 @@ pub mod pallet {
     #[pallet::getter(fn active_subnode_count)]
     pub type ActiveSubnodeCount<T> = StorageValue<_, u32, ValueQuery>;
 
+    #[pallet::storage]
+    #[pallet::getter(fn fused_health)]
+    pub type FusedHealth<T: Config> =
+        StorageMap<_, Blake2_128Concat, SubnodeId, FusedHealthMetrics>;
+
+    #[pallet::storage]
+    #[pallet::getter(fn fusion_weights)]
+    pub type GlobalFusionWeights<T> = StorageValue<_, FusionWeights, ValueQuery>;
+
     #[pallet::genesis_config]
     #[derive(frame_support::DefaultNoBound)]
     pub struct GenesisConfig<T: Config> {
@@ -296,6 +311,7 @@ pub mod pallet {
             SubnodeCount::<T>::put(0u64);
             ClusterCount::<T>::put(0u64);
             ActiveSubnodeCount::<T>::put(0u32);
+            GlobalFusionWeights::<T>::put(FusionWeights::default_weights());
         }
     }
 
@@ -356,6 +372,28 @@ pub mod pallet {
             old_score: u8,
             new_score: u8,
         },
+        FusedHealthUpdated {
+            subnode_id: SubnodeId,
+            heartbeat_component: u8,
+            device_component: u8,
+            position_component: u8,
+            fused_score: u8,
+        },
+        DeviceObservationRecorded {
+            subnode_id: SubnodeId,
+            device_count: u8,
+            commitment: sp_core::H256,
+        },
+        PositionConfirmed {
+            subnode_id: SubnodeId,
+            position: FusionPosition,
+            variance: u32,
+        },
+        FusionHealingTriggered {
+            subnode_id: SubnodeId,
+            trigger: HealingTrigger,
+            previous_score: u8,
+        },
     }
 
     #[pallet::error]
@@ -376,6 +414,9 @@ pub mod pallet {
         DeactivationNotComplete,
         SubnodeFailed,
         HeartbeatTooFrequent,
+        InvalidCommitment,
+        NoFusedHealthRecord,
+        InvalidFusionWeights,
     }
 
     #[pallet::hooks]
@@ -668,6 +709,182 @@ pub mod pallet {
                 Ok(())
             })
         }
+
+        #[pallet::call_index(8)]
+        #[pallet::weight(T::WeightInfo::activate_subnode())]
+        pub fn record_device_observation(
+            origin: OriginFor<T>,
+            subnode_id: SubnodeId,
+            device_count: u8,
+            commitment: sp_core::H256,
+        ) -> DispatchResult {
+            ensure_signed(origin)?;
+
+            let block_number = frame_system::Pallet::<T>::block_number();
+            let block_u64: u64 = block_number
+                .try_into()
+                .map_err(|_| Error::<T>::SubnodeNotFound)?;
+
+            Subnodes::<T>::get(subnode_id).ok_or(Error::<T>::SubnodeNotFound)?;
+
+            let weights = GlobalFusionWeights::<T>::get();
+
+            FusedHealth::<T>::mutate(subnode_id, |maybe_health| {
+                let health = maybe_health.get_or_insert_with(|| {
+                    FusedHealthMetrics::new(FusionPosition::default())
+                });
+
+                health.record_device_observation(device_count, block_u64, commitment, &weights);
+
+                Self::deposit_event(Event::DeviceObservationRecorded {
+                    subnode_id,
+                    device_count,
+                    commitment,
+                });
+
+                Self::deposit_event(Event::FusedHealthUpdated {
+                    subnode_id,
+                    heartbeat_component: health.heartbeat_score,
+                    device_component: health.device_metrics.device_score(),
+                    position_component: health.position_metrics.position_score(),
+                    fused_score: health.fused_score,
+                });
+            });
+
+            Ok(())
+        }
+
+        #[pallet::call_index(9)]
+        #[pallet::weight(T::WeightInfo::activate_subnode())]
+        pub fn record_position_confirmation(
+            origin: OriginFor<T>,
+            subnode_id: SubnodeId,
+            position_x: i64,
+            position_y: i64,
+            position_z: i64,
+        ) -> DispatchResult {
+            ensure_signed(origin)?;
+
+            let block_number = frame_system::Pallet::<T>::block_number();
+            let block_u64: u64 = block_number
+                .try_into()
+                .map_err(|_| Error::<T>::SubnodeNotFound)?;
+
+            Subnodes::<T>::get(subnode_id).ok_or(Error::<T>::SubnodeNotFound)?;
+
+            let position = FusionPosition::new(position_x, position_y, position_z);
+            let weights = GlobalFusionWeights::<T>::get();
+
+            FusedHealth::<T>::mutate(subnode_id, |maybe_health| {
+                let health = maybe_health.get_or_insert_with(|| {
+                    FusedHealthMetrics::new(position.clone())
+                });
+
+                health.record_position_confirmation(position.clone(), block_u64, &weights);
+
+                Self::deposit_event(Event::PositionConfirmed {
+                    subnode_id,
+                    position,
+                    variance: health.position_metrics.position_variance,
+                });
+
+                Self::deposit_event(Event::FusedHealthUpdated {
+                    subnode_id,
+                    heartbeat_component: health.heartbeat_score,
+                    device_component: health.device_metrics.device_score(),
+                    position_component: health.position_metrics.position_score(),
+                    fused_score: health.fused_score,
+                });
+            });
+
+            Ok(())
+        }
+
+        #[pallet::call_index(10)]
+        #[pallet::weight(T::WeightInfo::activate_subnode())]
+        pub fn heartbeat_with_device_proof(
+            origin: OriginFor<T>,
+            subnode_id: SubnodeId,
+            device_count: u8,
+            commitment: sp_core::H256,
+        ) -> DispatchResult {
+            ensure_signed(origin)?;
+
+            let block_number = frame_system::Pallet::<T>::block_number();
+            let block_u64: u64 = block_number
+                .try_into()
+                .map_err(|_| Error::<T>::SubnodeNotFound)?;
+
+            Subnodes::<T>::try_mutate(subnode_id, |subnode| -> DispatchResult {
+                let s = subnode.as_mut().ok_or(Error::<T>::SubnodeNotFound)?;
+
+                ensure!(
+                    s.status == SubnodeStatus::Active,
+                    Error::<T>::SubnodeNotActive
+                );
+
+                let old_score = s.health_score;
+                s.last_heartbeat = block_number;
+                s.consecutive_misses = 0;
+                s.health_score = old_score.saturating_add(T::HealthScoreRecovery::get()).min(100);
+
+                Self::deposit_event(Event::HeartbeatReceived {
+                    subnode_id,
+                    health_score: s.health_score,
+                });
+
+                Ok(())
+            })?;
+
+            let weights = GlobalFusionWeights::<T>::get();
+
+            FusedHealth::<T>::mutate(subnode_id, |maybe_health| {
+                let health = maybe_health.get_or_insert_with(|| {
+                    FusedHealthMetrics::new(FusionPosition::default())
+                });
+
+                let new_heartbeat_score = Subnodes::<T>::get(subnode_id)
+                    .map(|s| s.health_score)
+                    .unwrap_or(100);
+
+                health.update_heartbeat(new_heartbeat_score, block_u64, &weights);
+                health.record_device_observation(device_count, block_u64, commitment, &weights);
+
+                Self::deposit_event(Event::DeviceObservationRecorded {
+                    subnode_id,
+                    device_count,
+                    commitment,
+                });
+
+                Self::deposit_event(Event::FusedHealthUpdated {
+                    subnode_id,
+                    heartbeat_component: health.heartbeat_score,
+                    device_component: health.device_metrics.device_score(),
+                    position_component: health.position_metrics.position_score(),
+                    fused_score: health.fused_score,
+                });
+            });
+
+            Ok(())
+        }
+
+        #[pallet::call_index(11)]
+        #[pallet::weight(T::WeightInfo::update_throughput())]
+        pub fn set_fusion_weights(
+            origin: OriginFor<T>,
+            heartbeat_weight: u8,
+            device_weight: u8,
+            position_weight: u8,
+        ) -> DispatchResult {
+            ensure_root(origin)?;
+
+            let weights = FusionWeights::new(heartbeat_weight, device_weight, position_weight)
+                .ok_or(Error::<T>::InvalidFusionWeights)?;
+
+            GlobalFusionWeights::<T>::put(weights);
+
+            Ok(())
+        }
     }
 
     impl<T: Config> Pallet<T> {
@@ -835,6 +1052,12 @@ pub mod pallet {
         }
 
         fn auto_heal_clusters(block_number: BlockNumberFor<T>) {
+            let block_u64: u64 = block_number
+                .try_into()
+                .unwrap_or(0);
+
+            Self::check_fusion_healing_triggers(block_u64);
+
             for (cluster_id, cluster) in Clusters::<T>::iter() {
                 if cluster.status != ClusterStatus::Degraded {
                     continue;
@@ -872,6 +1095,57 @@ pub mod pallet {
                             }
                         }
                     });
+
+                    FusedHealth::<T>::mutate(subnode_id, |maybe_health| {
+                        if let Some(ref mut health) = maybe_health {
+                            let weights = GlobalFusionWeights::<T>::get();
+                            health.update_heartbeat(50, block_u64, &weights);
+                        }
+                    });
+                }
+            }
+        }
+
+        fn check_fusion_healing_triggers(current_block: u64) {
+            for (subnode_id, health) in FusedHealth::<T>::iter() {
+                if let Some(trigger) = fusion::should_trigger_healing(&health, current_block) {
+                    let previous_score = health.fused_score;
+
+                    Self::deposit_event(Event::FusionHealingTriggered {
+                        subnode_id,
+                        trigger,
+                        previous_score,
+                    });
+
+                    if health.is_critical() {
+                        Subnodes::<T>::mutate(subnode_id, |subnode| {
+                            if let Some(ref mut s) = subnode {
+                                if s.status == SubnodeStatus::Active {
+                                    s.status = SubnodeStatus::Failed;
+                                    s.health_score = 0;
+
+                                    Clusters::<T>::mutate(s.cluster, |cluster| {
+                                        if let Some(ref mut c) = cluster {
+                                            c.active_subnodes = c.active_subnodes.saturating_sub(1);
+                                            if c.active_subnodes < T::MinSubnodes::get() {
+                                                c.status = ClusterStatus::Degraded;
+                                            }
+                                        }
+                                    });
+
+                                    ActiveSubnodeCount::<T>::mutate(|count| {
+                                        *count = count.saturating_sub(1)
+                                    });
+
+                                    Self::deposit_event(Event::SubnodeFailed {
+                                        subnode_id,
+                                        cluster_id: s.cluster,
+                                        consecutive_misses: s.consecutive_misses,
+                                    });
+                                }
+                            }
+                        });
+                    }
                 }
             }
         }
