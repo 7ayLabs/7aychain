@@ -19,6 +19,13 @@ services:
       - "--rpc-external"
       - "--rpc-methods=unsafe"
       - "--node-key=0000000000000000000000000000000000000000000000000000000000000001"
+      - "--scanner-mode=mock"
+      - "--mock-devices=15"
+      - "--scanner-pos-x=0"
+      - "--scanner-pos-y=0"
+      - "--scanner-pos-z=0"
+      - "--scan-interval=6"
+      - "--mock-seed=42"
     networks:
       - seveny-net
     restart: unless-stopped
@@ -44,6 +51,13 @@ services:
       - "--rpc-methods=unsafe"
       - "--node-key=0000000000000000000000000000000000000000000000000000000000000002"
       - "--bootnodes=/dns/alice/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp"
+      - "--scanner-mode=mock"
+      - "--mock-devices=12"
+      - "--scanner-pos-x=10000"
+      - "--scanner-pos-y=0"
+      - "--scanner-pos-z=0"
+      - "--scan-interval=6"
+      - "--mock-seed=123"
     networks:
       - seveny-net
     depends_on:
@@ -57,7 +71,7 @@ services:
     container_name: seveny-charlie
     ports:
       - "9946:9944"
-      - "9935:9933"
+      - "9934:9933"
       - "30335:30333"
     volumes:
       - charlie-data:/node/data
@@ -71,6 +85,13 @@ services:
       - "--rpc-methods=unsafe"
       - "--node-key=0000000000000000000000000000000000000000000000000000000000000003"
       - "--bootnodes=/dns/alice/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp"
+      - "--scanner-mode=mock"
+      - "--mock-devices=10"
+      - "--scanner-pos-x=5000"
+      - "--scanner-pos-y=8660"
+      - "--scanner-pos-z=0"
+      - "--scan-interval=6"
+      - "--mock-seed=456"
     networks:
       - seveny-net
     depends_on:

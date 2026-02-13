@@ -5,6 +5,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     clang \
     libclang-dev \
     protobuf-compiler \
+    libdbus-1-dev \
+    pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 # Add wasm target and rust-src for WASM runtime compilation
@@ -22,6 +24,7 @@ FROM docker.io/library/ubuntu:24.04
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         libssl3 \
+        libdbus-1-3 \
         ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
