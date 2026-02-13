@@ -63,6 +63,8 @@ async-trait = "0.1"
 log = "0.4"
 parity-scale-codec = { workspace = true, features = ["std"] }
 btleplug = { version = "0.11", optional = true }
+rand = "0.8"
+rand_chacha = "0.3"
 
 [build-dependencies]
 substrate-build-script-utils = { version = "11.0.0" }
