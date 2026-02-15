@@ -73,6 +73,10 @@ pub fn local_testnet_config() -> Result<ChainSpec, String> {
         vec![
             authority_keys_from_seed("Alice"),
             authority_keys_from_seed("Bob"),
+            authority_keys_from_seed("Charlie"),
+            authority_keys_from_seed("Dave"),
+            authority_keys_from_seed("Eve"),
+            authority_keys_from_seed("Ferdie"),
         ],
         get_account_id_from_seed::<sr25519::Public>("Alice"),
         vec![

@@ -1,8 +1,12 @@
+x-node-build: &node-build
+  build:
+    context: ..
+    dockerfile: devnet/Dockerfile
+  image: seveny-node:latest
+
 services:
   alice:
-    build:
-      context: ..
-      dockerfile: devnet/Dockerfile
+    <<: *node-build
     container_name: seveny-alice
     ports:
       - "9944:9944"
@@ -31,9 +35,7 @@ services:
     restart: unless-stopped
 
   bob:
-    build:
-      context: ..
-      dockerfile: devnet/Dockerfile
+    image: seveny-node:latest
     container_name: seveny-bob
     ports:
       - "9945:9944"
@@ -65,9 +67,7 @@ services:
     restart: unless-stopped
 
   charlie:
-    build:
-      context: ..
-      dockerfile: devnet/Dockerfile
+    image: seveny-node:latest
     container_name: seveny-charlie
     ports:
       - "9946:9944"
@@ -99,9 +99,7 @@ services:
     restart: unless-stopped
 
   dave:
-    build:
-      context: ..
-      dockerfile: devnet/Dockerfile
+    image: seveny-node:latest
     container_name: seveny-dave
     ports:
       - "9947:9944"
@@ -133,9 +131,7 @@ services:
     restart: unless-stopped
 
   eve:
-    build:
-      context: ..
-      dockerfile: devnet/Dockerfile
+    image: seveny-node:latest
     container_name: seveny-eve
     ports:
       - "9948:9944"
@@ -167,9 +163,7 @@ services:
     restart: unless-stopped
 
   ferdie:
-    build:
-      context: ..
-      dockerfile: devnet/Dockerfile
+    image: seveny-node:latest
     container_name: seveny-ferdie
     ports:
       - "9949:9944"
