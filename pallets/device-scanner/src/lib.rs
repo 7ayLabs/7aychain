@@ -96,6 +96,15 @@ pub struct TrackedScannedDevice<BlockNumber> {
     pub last_position: Position,
 }
 
+/// Reason for device removal from tracking
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+pub enum RemovalReason {
+    /// Device became stale (not seen for DeviceStaleBlocks)
+    Stale,
+    /// Device evicted due to capacity limits (LRU)
+    CapacityEviction,
+}
+
 #[derive(Encode, sp_runtime::RuntimeDebug)]
 #[cfg_attr(feature = "std", derive(Decode))]
 pub enum InherentError {
@@ -203,6 +212,11 @@ pub mod pallet {
         DeviceStale {
             mac_hash: H256,
             last_seen: BlockNumberFor<T>,
+        },
+        /// Device was removed from tracking
+        DeviceRemoved {
+            mac_hash: H256,
+            reason: RemovalReason,
         },
         ScanProcessed {
             device_count: u32,
@@ -329,19 +343,42 @@ pub mod pallet {
     }
 
     impl<T: Config> Pallet<T> {
+        /// Clean up stale devices that haven't been seen for DeviceStaleBlocks.
+        /// Bounded to 50 removals per invocation to prevent DoS.
         fn cleanup_stale_devices(current_block: BlockNumberFor<T>) {
             let stale_threshold = T::DeviceStaleBlocks::get();
+            let max_removals: u32 = 50;
+            let mut to_remove: Vec<H256> = Vec::with_capacity(max_removals as usize);
 
+            // Collect stale device hashes (bounded iteration)
             for (mac_hash, device) in TrackedDevices::<T>::iter() {
+                if to_remove.len() >= max_removals as usize {
+                    break;
+                }
                 let blocks_since = current_block.saturating_sub(device.last_seen);
-
                 if blocks_since >= stale_threshold {
+                    to_remove.push(mac_hash);
+                }
+            }
+
+            // Actually remove the stale devices
+            for mac_hash in to_remove {
+                if let Some(device) = TrackedDevices::<T>::take(mac_hash) {
+                    // Update device type count
+                    DeviceTypeCount::<T>::mutate(device.device_type, |c| *c = c.saturating_sub(1));
+                    // Update active device count
+                    ActiveDeviceCount::<T>::mutate(|c| *c = c.saturating_sub(1));
+
+                    // Emit stale event (for backwards compatibility)
                     Self::deposit_event(Event::DeviceStale {
                         mac_hash,
                         last_seen: device.last_seen,
                     });
-
-                    ActiveDeviceCount::<T>::mutate(|c| *c = c.saturating_sub(1));
+                    // Emit removal event
+                    Self::deposit_event(Event::DeviceRemoved {
+                        mac_hash,
+                        reason: RemovalReason::Stale,
+                    });
                 }
             }
         }
