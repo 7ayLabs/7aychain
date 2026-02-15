@@ -98,6 +98,108 @@ services:
       - alice
     restart: unless-stopped
 
+  dave:
+    build:
+      context: ..
+      dockerfile: devnet/Dockerfile
+    container_name: seveny-dave
+    ports:
+      - "9947:9944"
+      - "9936:9933"
+      - "30336:30333"
+    volumes:
+      - dave-data:/node/data
+    command:
+      - "--dave"
+      - "--validator"
+      - "--chain=local"
+      - "--base-path=/node/data"
+      - "--rpc-cors=all"
+      - "--rpc-external"
+      - "--rpc-methods=unsafe"
+      - "--node-key=0000000000000000000000000000000000000000000000000000000000000004"
+      - "--bootnodes=/dns/alice/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp"
+      - "--scanner-mode=mock"
+      - "--mock-devices=20"
+      - "--scanner-pos-x=15000"
+      - "--scanner-pos-y=5000"
+      - "--scanner-pos-z=0"
+      - "--scan-interval=4"
+      - "--mock-seed=789"
+    networks:
+      - seveny-net
+    depends_on:
+      - alice
+    restart: unless-stopped
+
+  eve:
+    build:
+      context: ..
+      dockerfile: devnet/Dockerfile
+    container_name: seveny-eve
+    ports:
+      - "9948:9944"
+      - "9937:9933"
+      - "30337:30333"
+    volumes:
+      - eve-data:/node/data
+    command:
+      - "--eve"
+      - "--validator"
+      - "--chain=local"
+      - "--base-path=/node/data"
+      - "--rpc-cors=all"
+      - "--rpc-external"
+      - "--rpc-methods=unsafe"
+      - "--node-key=0000000000000000000000000000000000000000000000000000000000000005"
+      - "--bootnodes=/dns/alice/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp"
+      - "--scanner-mode=mock"
+      - "--mock-devices=25"
+      - "--scanner-pos-x=7500"
+      - "--scanner-pos-y=12990"
+      - "--scanner-pos-z=0"
+      - "--scan-interval=3"
+      - "--mock-seed=101112"
+    networks:
+      - seveny-net
+    depends_on:
+      - alice
+    restart: unless-stopped
+
+  ferdie:
+    build:
+      context: ..
+      dockerfile: devnet/Dockerfile
+    container_name: seveny-ferdie
+    ports:
+      - "9949:9944"
+      - "9938:9933"
+      - "30338:30333"
+    volumes:
+      - ferdie-data:/node/data
+    command:
+      - "--ferdie"
+      - "--validator"
+      - "--chain=local"
+      - "--base-path=/node/data"
+      - "--rpc-cors=all"
+      - "--rpc-external"
+      - "--rpc-methods=unsafe"
+      - "--node-key=0000000000000000000000000000000000000000000000000000000000000006"
+      - "--bootnodes=/dns/alice/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp"
+      - "--scanner-mode=mock"
+      - "--mock-devices=30"
+      - "--scanner-pos-x=20000"
+      - "--scanner-pos-y=10000"
+      - "--scanner-pos-z=500"
+      - "--scan-interval=2"
+      - "--mock-seed=131415"
+    networks:
+      - seveny-net
+    depends_on:
+      - alice
+    restart: unless-stopped
+
 networks:
   seveny-net:
     driver: bridge
@@ -106,3 +208,6 @@ volumes:
   alice-data:
   bob-data:
   charlie-data:
+  dave-data:
+  eve-data:
+  ferdie-data:
