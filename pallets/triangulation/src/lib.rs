@@ -339,6 +339,11 @@ pub mod pallet {
             position: Position,
             confidence: u8,
         },
+        /// Signal history was cleaned up
+        HistoryCleanedUp {
+            entries_removed: u32,
+            cutoff_block: BlockNumberFor<T>,
+        },
     }
 
     #[pallet::error]
@@ -603,7 +608,37 @@ pub mod pallet {
             }
         }
 
-        fn cleanup_old_history(_current_block: BlockNumberFor<T>) {
+        /// Clean up old signal history entries beyond the retention period.
+        /// Bounded to 100 removals per invocation to prevent DoS.
+        fn cleanup_old_history(current_block: BlockNumberFor<T>) {
+            let retention = T::SignalRetentionBlocks::get();
+            let cutoff = current_block.saturating_sub(retention);
+            let max_cleanups: u32 = 100;
+            let mut cleaned: u32 = 0;
+            let mut to_remove: Vec<(H256, BlockNumberFor<T>)> = Vec::with_capacity(max_cleanups as usize);
+
+            // Collect old history entries (bounded iteration)
+            for (mac_hash, block, _) in SignalHistory::<T>::iter() {
+                if cleaned >= max_cleanups {
+                    break;
+                }
+                if block < cutoff {
+                    to_remove.push((mac_hash, block));
+                    cleaned += 1;
+                }
+            }
+
+            // Actually remove the old entries
+            for (mac_hash, block) in to_remove.iter() {
+                SignalHistory::<T>::remove(mac_hash, block);
+            }
+
+            if cleaned > 0 {
+                Self::deposit_event(Event::HistoryCleanedUp {
+                    entries_removed: cleaned,
+                    cutoff_block: cutoff,
+                });
+            }
         }
 
         pub fn get_device_history(mac_hash: H256) -> Vec<(BlockNumberFor<T>, SignalHistoryEntry<BlockNumberFor<T>>)> {
