@@ -71,7 +71,7 @@ services:
     container_name: seveny-charlie
     ports:
       - "9946:9944"
-      - "9934:9933"
+      - "9935:9933"
       - "30335:30333"
     volumes:
       - charlie-data:/node/data
