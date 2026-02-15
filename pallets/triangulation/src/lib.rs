@@ -205,6 +205,121 @@ pub struct GhostEvent<BlockNumber> {
     pub previous_state: DeviceState,
 }
 
+/// Status of a fraud case
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
+pub enum FraudCaseStatus {
+    /// Case is pending review
+    Pending,
+    /// Reporter was found guilty and slashed
+    Slashed,
+    /// Case was dismissed (false accusation)
+    Dismissed,
+}
+
+impl Default for FraudCaseStatus {
+    fn default() -> Self {
+        Self::Pending
+    }
+}
+
+/// A conflicting signal reading used as evidence in fraud proofs
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
+pub struct ConflictingReading {
+    /// Device MAC hash
+    pub device_hash: H256,
+    /// RSSI claimed by the accused reporter
+    pub claimed_rssi: i8,
+    /// Expected RSSI based on position/distance
+    pub expected_rssi: i8,
+    /// Distance in centimeters from reporter to expected position
+    pub distance_cm: u32,
+    /// Block when the reading was recorded
+    pub block_number: u64,
+}
+
+/// Maximum conflicting readings per fraud proof
+pub type MaxConflictingReadings = ConstU32<10>;
+
+/// A fraud proof against a reporter with Z-score validation
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
+pub struct FraudProof {
+    /// The reporter being accused
+    pub accused_reporter: ReporterId,
+    /// Evidence: conflicting readings with statistical anomalies
+    pub conflicting_readings: BoundedVec<ConflictingReading, MaxConflictingReadings>,
+    /// Z-score scaled by 100 (e.g., 350 = 3.5 sigma)
+    pub z_score_scaled: u32,
+    /// Number of samples used in calculation
+    pub sample_size: u32,
+}
+
+impl FraudProof {
+    /// Calculate Z-score: |claimed - expected| / sigma, scaled by 100
+    pub fn calculate_z_score(claimed: i8, expected: i8, sigma: u8) -> u32 {
+        let diff = (claimed as i32 - expected as i32).abs() as u32;
+        (diff * 100) / (sigma.max(1) as u32)
+    }
+
+    /// Validate the fraud proof: requires min 3 readings and Z >= 3.5 (350 scaled)
+    pub fn is_valid(&self) -> bool {
+        self.conflicting_readings.len() >= 3 && self.z_score_scaled >= 350
+    }
+}
+
+/// A fraud case filed against a reporter
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
+pub struct FraudCase<BlockNumber> {
+    /// Who submitted the fraud proof
+    pub submitter: ReporterId,
+    /// The fraud proof evidence
+    pub proof: FraudProof,
+    /// When the case was submitted
+    pub submitted_at: BlockNumber,
+    /// Current status of the case
+    pub status: FraudCaseStatus,
+}
+
 #[frame_support::pallet]
 pub mod pallet {
     use super::*;
@@ -278,6 +393,11 @@ pub mod pallet {
     #[pallet::getter(fn ghost_count)]
     pub type GhostCount<T> = StorageValue<_, u32, ValueQuery>;
 
+    /// Fraud cases filed against reporters
+    #[pallet::storage]
+    #[pallet::getter(fn fraud_cases)]
+    pub type FraudCases<T: Config> = StorageMap<_, Blake2_128Concat, ReporterId, FraudCase<BlockNumberFor<T>>>;
+
     #[pallet::genesis_config]
     #[derive(frame_support::DefaultNoBound)]
     pub struct GenesisConfig<T: Config> {
@@ -344,6 +464,20 @@ pub mod pallet {
             entries_removed: u32,
             cutoff_block: BlockNumberFor<T>,
         },
+        /// A fraud proof was submitted against a reporter
+        FraudProofSubmitted {
+            accused_reporter: ReporterId,
+            submitter: ReporterId,
+            z_score_scaled: u32,
+        },
+        /// A reporter was slashed for fraudulent behavior
+        ReporterSlashed {
+            reporter_id: ReporterId,
+        },
+        /// A fraud case was dismissed
+        FraudCaseDismissed {
+            reporter_id: ReporterId,
+        },
     }
 
     #[pallet::error]
@@ -355,6 +489,12 @@ pub mod pallet {
         ReporterNotActive,
         InvalidRssi,
         MaxReadingsReached,
+        /// Fraud proof is invalid (min 3 readings with Z >= 3.5 required)
+        InvalidFraudProof,
+        /// A fraud case already exists for this reporter
+        FraudCaseAlreadyExists,
+        /// No fraud case found for this reporter
+        FraudCaseNotFound,
     }
 
     #[pallet::call]
@@ -529,6 +669,87 @@ pub mod pallet {
             Reporters::<T>::try_mutate(reporter_id, |reporter| -> DispatchResult {
                 let r = reporter.as_mut().ok_or(Error::<T>::ReporterNotFound)?;
                 r.position = new_position;
+                Ok(())
+            })
+        }
+
+        /// Submit a fraud proof against a reporter.
+        /// Requires minimum 3 conflicting readings with Z-score >= 3.5 (99.9% confidence).
+        #[pallet::call_index(4)]
+        #[pallet::weight(Weight::from_parts(50_000, 0))]
+        pub fn submit_fraud_proof(
+            origin: OriginFor<T>,
+            submitter_id: ReporterId,
+            proof: FraudProof,
+        ) -> DispatchResult {
+            ensure_signed(origin)?;
+
+            // Validate the submitter exists and is active
+            let submitter = Reporters::<T>::get(submitter_id).ok_or(Error::<T>::ReporterNotFound)?;
+            ensure!(submitter.active, Error::<T>::ReporterNotActive);
+
+            // Validate the accused reporter exists
+            ensure!(Reporters::<T>::contains_key(proof.accused_reporter), Error::<T>::ReporterNotFound);
+
+            // Validate the fraud proof (min 3 readings, Z >= 3.5)
+            ensure!(proof.is_valid(), Error::<T>::InvalidFraudProof);
+
+            // Ensure no existing fraud case
+            ensure!(!FraudCases::<T>::contains_key(proof.accused_reporter), Error::<T>::FraudCaseAlreadyExists);
+
+            let block_number = frame_system::Pallet::<T>::block_number();
+            let z_score = proof.z_score_scaled;
+            let accused = proof.accused_reporter;
+
+            let fraud_case = FraudCase {
+                submitter: submitter_id,
+                proof,
+                submitted_at: block_number,
+                status: FraudCaseStatus::Pending,
+            };
+
+            FraudCases::<T>::insert(accused, fraud_case);
+
+            Self::deposit_event(Event::FraudProofSubmitted {
+                accused_reporter: accused,
+                submitter: submitter_id,
+                z_score_scaled: z_score,
+            });
+
+            Ok(())
+        }
+
+        /// Resolve a fraud case (root only).
+        /// If guilty=true, the reporter is slashed (deactivated).
+        #[pallet::call_index(5)]
+        #[pallet::weight(Weight::from_parts(30_000, 0))]
+        pub fn resolve_fraud_case(
+            origin: OriginFor<T>,
+            reporter_id: ReporterId,
+            guilty: bool,
+        ) -> DispatchResult {
+            ensure_root(origin)?;
+
+            FraudCases::<T>::try_mutate(reporter_id, |case| -> DispatchResult {
+                let c = case.as_mut().ok_or(Error::<T>::FraudCaseNotFound)?;
+
+                if guilty {
+                    // Slash the reporter (deactivate them)
+                    Reporters::<T>::mutate(reporter_id, |r| {
+                        if let Some(reporter) = r {
+                            reporter.active = false;
+                        }
+                    });
+
+                    c.status = FraudCaseStatus::Slashed;
+
+                    Self::deposit_event(Event::ReporterSlashed { reporter_id });
+                } else {
+                    c.status = FraudCaseStatus::Dismissed;
+
+                    Self::deposit_event(Event::FraudCaseDismissed { reporter_id });
+                }
+
                 Ok(())
             })
         }
