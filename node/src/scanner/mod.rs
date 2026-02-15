@@ -1,46 +1,117 @@
+//! Device scanning module for 7aychain presence verification.
+//!
+//! # Architecture (v0.8.11+)
+//!
+//! The scanner system has transitioned from WiFi/Bluetooth hardware scanning
+//! to network latency-based presence verification:
+//!
+//! ## New Architecture: Presence-Based Triangulation (PBT)
+//!
+//! 1. **Position Claims**: Nodes claim their geographic position
+//! 2. **Witness Attestations**: Validators attest to other nodes' presence
+//!    using network RTT measurements
+//! 3. **Triangulation**: Multiple witness attestations triangulate a node's
+//!    position using weighted latency circles
+//!
+//! ## Benefits of PBT over Hardware Scanning
+//!
+//! - **Privacy-safe**: No scanning of external user devices
+//! - **No hardware requirements**: Works on any network-connected node
+//! - **Cross-platform**: Same implementation on all platforms
+//! - **Decentralized**: Validators verify each other, no central authority
+//!
+//! ## Deprecated Modules
+//!
+//! The following modules are deprecated but retained for backward compatibility:
+//! - `wifi` - WiFi device scanning (use `latency` instead)
+//! - `bluetooth` - Bluetooth device scanning (use `latency` instead)
+//!
+//! ## Usage
+//!
+//! ```ignore
+//! // Default: Network latency-based scanning
+//! let config = ScannerConfig { mode: ScannerMode::Latency, ..Default::default() };
+//! ```
+
+#[deprecated(
+    since = "0.8.11",
+    note = "Use latency-based scanning instead of WiFi/Bluetooth"
+)]
 pub mod bluetooth;
 pub mod inherent;
+pub mod latency;
 pub mod mock;
 pub mod oui;
 pub mod types;
+#[deprecated(
+    since = "0.8.11",
+    note = "Use latency-based scanning instead of WiFi/Bluetooth"
+)]
 pub mod wifi;
 
 pub use inherent::{DeviceScanInherentDataProvider, ScanResultsHandle};
+pub use latency::{LatencyScanner, LatencyScannerConfig, PeerLatency, LatencyStatistics};
 pub use mock::{MockConfig, MockScanner};
 pub use types::*;
 
+#[allow(deprecated)]
 use bluetooth::BluetoothScanner;
+#[allow(deprecated)]
 use wifi::WifiScanner;
 
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
 
+/// Scanner mode for presence verification.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ScannerMode {
+    /// Network latency-based scanning (recommended - no hardware required)
+    Latency,
+    /// Real WiFi/Bluetooth scanning (deprecated - requires hardware)
+    #[deprecated(note = "Use Latency mode instead for privacy-safe scanning")]
     Real,
+    /// Mock scanning for testing
     Mock,
+    /// Linux-specific scanning (deprecated)
+    #[deprecated(note = "Use Latency mode instead")]
     Linux,
+    /// Scanner disabled
     Disabled,
 }
 
 impl Default for ScannerMode {
     fn default() -> Self {
-        Self::Real
+        Self::Latency
     }
 }
 
 impl std::str::FromStr for ScannerMode {
     type Err = String;
 
+    #[allow(deprecated)]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "real" => Ok(Self::Real),
+            "latency" | "network" => Ok(Self::Latency),
+            "real" | "wifi" | "bluetooth" => Ok(Self::Real),
             "mock" => Ok(Self::Mock),
             "linux" => Ok(Self::Linux),
             "disabled" | "off" | "none" => Ok(Self::Disabled),
             _ => Err(format!("Unknown scanner mode: {}", s)),
         }
+    }
+}
+
+impl ScannerMode {
+    /// Whether this mode requires special hardware.
+    #[allow(deprecated)]
+    pub fn requires_hardware(&self) -> bool {
+        matches!(self, Self::Real | Self::Linux)
+    }
+
+    /// Whether this mode is privacy-safe (doesn't scan external devices).
+    pub fn is_privacy_safe(&self) -> bool {
+        matches!(self, Self::Latency | Self::Mock | Self::Disabled)
     }
 }
 
@@ -77,6 +148,7 @@ pub fn create_scan_results_handle() -> ScanResultsHandle {
     Arc::new(RwLock::new(ScanResults::default()))
 }
 
+#[allow(deprecated)]
 pub async fn run_scanner(config: ScannerConfig, scan_results: ScanResultsHandle) {
     match config.mode {
         ScannerMode::Disabled => {
@@ -86,9 +158,41 @@ pub async fn run_scanner(config: ScannerConfig, scan_results: ScanResultsHandle)
         ScannerMode::Mock => {
             run_mock_scanner(config, scan_results).await;
         }
+        ScannerMode::Latency => {
+            run_latency_scanner(config, scan_results).await;
+        }
         ScannerMode::Real | ScannerMode::Linux => {
+            log::warn!("WiFi/Bluetooth scanning is deprecated. Consider using --scanner-mode=latency");
             run_real_scanner(config, scan_results).await;
         }
+    }
+}
+
+async fn run_latency_scanner(config: ScannerConfig, scan_results: ScanResultsHandle) {
+    let scan_interval = Duration::from_secs(config.scan_interval_secs);
+
+    log::info!(
+        "Latency-based scanner started - Interval: {}s, Position: ({}, {}, {})",
+        config.scan_interval_secs,
+        config.reporter_position.x,
+        config.reporter_position.y,
+        config.reporter_position.z
+    );
+
+    // In a real implementation, this would integrate with the network layer
+    // to measure RTT to connected peers. For now, we log that it's running.
+    loop {
+        // The latency measurements will come from the network layer via callbacks.
+        // This loop just keeps the scanner task alive and logs status.
+        {
+            let guard = scan_results.read().await;
+            log::debug!(
+                "Latency scanner active - {} measurements",
+                guard.devices.len()
+            );
+        }
+
+        tokio::time::sleep(scan_interval).await;
     }
 }
 

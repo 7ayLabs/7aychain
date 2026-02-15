@@ -1,3 +1,10 @@
+//! Bluetooth device scanner (DEPRECATED).
+//!
+//! This module is deprecated in favor of network latency-based presence verification.
+//! Bluetooth scanning requires hardware access and may violate user privacy.
+//!
+//! Use `ScannerMode::Latency` instead for privacy-safe node triangulation.
+
 use super::oui::{infer_device_type_from_name, lookup_device_type, lookup_vendor, name_to_bytes, vendor_to_bytes};
 use super::types::{DetectedDeviceType, ScanError, ScanSignalType, ScannedDevice};
 use sp_core::{blake2_256, H256};
