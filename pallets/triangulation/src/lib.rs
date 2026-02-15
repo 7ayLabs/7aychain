@@ -37,6 +37,8 @@ impl ReporterId {
     }
 }
 
+/// Scanner types for presence verification.
+/// Replaces WiFi/Bluetooth with privacy-preserving network-based methods.
 #[derive(
     Clone,
     Copy,
@@ -50,19 +52,58 @@ impl ReporterId {
     MaxEncodedLen,
 )]
 pub enum SignalType {
+    /// Network latency-based distance estimation
+    NetworkLatency,
+    /// P2P connection topology
+    PeerTopology,
+    /// Block propagation timing
+    BlockPropagation,
+    /// IP-based geolocation
+    IPGeolocation,
+    /// User-provided GPS (opt-in)
+    GPSConsent,
+    /// Consensus witness attestation
+    ConsensusWitness,
+    /// Legacy types (deprecated)
+    #[deprecated(note = "Use NetworkLatency instead")]
     Wifi,
+    #[deprecated(note = "Use NetworkLatency instead")]
     Bluetooth,
+    #[deprecated(note = "Use NetworkLatency instead")]
     Ble,
+    #[deprecated(note = "Use NetworkLatency instead")]
     Zigbee,
+    /// Unknown/default
     Unknown,
 }
 
 impl Default for SignalType {
     fn default() -> Self {
-        Self::Unknown
+        Self::NetworkLatency
     }
 }
 
+impl SignalType {
+    /// Whether this type is privacy-preserving (no external device scanning).
+    pub const fn is_privacy_safe(&self) -> bool {
+        matches!(
+            self,
+            Self::NetworkLatency
+                | Self::PeerTopology
+                | Self::BlockPropagation
+                | Self::IPGeolocation
+                | Self::GPSConsent
+                | Self::ConsensusWitness
+        )
+    }
+
+    /// Whether this type requires special hardware.
+    pub const fn requires_hardware(&self) -> bool {
+        matches!(self, Self::GPSConsent)
+    }
+}
+
+/// State of a tracked node/entity.
 #[derive(
     Clone,
     Copy,
@@ -76,18 +117,41 @@ impl Default for SignalType {
     MaxEncodedLen,
 )]
 pub enum DeviceState {
+    /// Node is actively participating
     Active,
+    /// Node has reduced activity
     LowPower,
+    /// Node is temporarily inactive
     Sleeping,
-    Shielded,
-    TurnedOff,
+    /// Node's position cannot be verified
+    Unverifiable,
+    /// Node is offline
+    Offline,
+    /// Node has suspicious behavior (position mismatch)
     Suspicious,
+    /// Node has been lost (no recent attestations)
     Lost,
+    /// Position verified by witnesses
+    Verified,
+    /// Position disputed
+    Disputed,
 }
 
 impl Default for DeviceState {
     fn default() -> Self {
         Self::Active
+    }
+}
+
+impl DeviceState {
+    /// Whether this state indicates the node is reachable.
+    pub const fn is_reachable(&self) -> bool {
+        matches!(self, Self::Active | Self::Verified | Self::LowPower)
+    }
+
+    /// Whether this state indicates a problem.
+    pub const fn is_problematic(&self) -> bool {
+        matches!(self, Self::Suspicious | Self::Lost | Self::Disputed | Self::Unverifiable)
     }
 }
 
@@ -627,7 +691,7 @@ pub mod pallet {
                             });
                         }
 
-                        if matches!(old_state, DeviceState::Lost | DeviceState::Shielded | DeviceState::TurnedOff) {
+                        if matches!(old_state, DeviceState::Lost | DeviceState::Unverifiable | DeviceState::Offline) {
                             GhostEvents::<T>::remove(mac_hash);
                             GhostCount::<T>::mutate(|c| *c = c.saturating_sub(1));
 
@@ -810,7 +874,7 @@ pub mod pallet {
                         device.consecutive_misses = device.consecutive_misses.saturating_add(1);
 
                         device.state = if device.consecutive_misses >= 3 {
-                            DeviceState::Shielded
+                            DeviceState::Unverifiable
                         } else {
                             DeviceState::Sleeping
                         };
