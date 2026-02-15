@@ -217,6 +217,9 @@ parameter_types! {
     pub const DefaultQuorumTotal: u32 = 3;
     pub const CommitRevealDelay: BlockNumber = 2;
     pub const RevealWindow: BlockNumber = 4;
+    // Position-Based Triangulation
+    pub const MinWitnessesForVerification: u32 = 3;
+    pub const PositionToleranceMeters: u32 = 1000;
 }
 
 impl pallet_presence::Config for Runtime {
@@ -226,6 +229,8 @@ impl pallet_presence::Config for Runtime {
     type DefaultQuorumTotal = DefaultQuorumTotal;
     type CommitRevealDelay = CommitRevealDelay;
     type RevealWindow = RevealWindow;
+    type MinWitnessesForVerification = MinWitnessesForVerification;
+    type PositionToleranceMeters = PositionToleranceMeters;
 }
 
 parameter_types! {

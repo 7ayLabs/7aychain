@@ -54,6 +54,8 @@ parameter_types! {
     pub const DefaultQuorumTotal: u32 = 5;
     pub const CommitRevealDelay: u64 = 10;
     pub const RevealWindow: u64 = 20;
+    pub const MinWitnessesForVerification: u32 = 3;
+    pub const PositionToleranceMeters: u32 = 1000;
 }
 
 impl pallet_presence::Config for Test {
@@ -63,6 +65,8 @@ impl pallet_presence::Config for Test {
     type DefaultQuorumTotal = DefaultQuorumTotal;
     type CommitRevealDelay = CommitRevealDelay;
     type RevealWindow = RevealWindow;
+    type MinWitnessesForVerification = MinWitnessesForVerification;
+    type PositionToleranceMeters = PositionToleranceMeters;
 }
 
 fn new_test_ext() -> sp_io::TestExternalities {
