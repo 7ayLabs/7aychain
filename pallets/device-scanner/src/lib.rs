@@ -96,6 +96,13 @@ pub struct TrackedScannedDevice<BlockNumber> {
     pub last_position: Position,
 }
 
+/// Reason for device eviction from tracking
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+pub enum EvictionReason {
+    /// Device evicted due to capacity limits (LRU - least recently used)
+    CapacityLRU,
+}
+
 #[derive(Encode, sp_runtime::RuntimeDebug)]
 #[cfg_attr(feature = "std", derive(Decode))]
 pub enum InherentError {
@@ -204,6 +211,11 @@ pub mod pallet {
             mac_hash: H256,
             last_seen: BlockNumberFor<T>,
         },
+        /// Device was evicted due to capacity limits
+        DeviceEvicted {
+            mac_hash: H256,
+            reason: EvictionReason,
+        },
         ScanProcessed {
             device_count: u32,
             timestamp: u64,
@@ -237,6 +249,25 @@ pub mod pallet {
                 let is_new = !TrackedDevices::<T>::contains_key(device.mac_hash);
 
                 if is_new {
+                    // Enforce MaxTrackedDevices with LRU eviction
+                    let current_count = ActiveDeviceCount::<T>::get();
+                    if current_count >= T::MaxTrackedDevices::get() {
+                        // Find and evict the least recently used device
+                        if let Some((oldest_hash, oldest_device)) = TrackedDevices::<T>::iter()
+                            .min_by_key(|(_, d)| d.last_seen)
+                        {
+                            // Remove the oldest device
+                            TrackedDevices::<T>::remove(oldest_hash);
+                            DeviceTypeCount::<T>::mutate(oldest_device.device_type, |c| *c = c.saturating_sub(1));
+                            ActiveDeviceCount::<T>::mutate(|c| *c = c.saturating_sub(1));
+
+                            Self::deposit_event(Event::DeviceEvicted {
+                                mac_hash: oldest_hash,
+                                reason: EvictionReason::CapacityLRU,
+                            });
+                        }
+                    }
+
                     let tracked = TrackedScannedDevice {
                         mac_hash: device.mac_hash,
                         device_type: device.device_type,
