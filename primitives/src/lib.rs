@@ -12,6 +12,7 @@ pub mod fusion;
 pub mod traits;
 pub mod triangulation;
 pub mod types;
+pub mod witness;
 
 pub use constants::*;
 pub use errors::{ProtocolError, ProtocolResult};
@@ -39,4 +40,10 @@ pub use fusion::{
 pub use triangulation::{
     calculate_weighted_centroid, multilateration, rssi_to_distance_cm,
     DeviceTrack, SignalObservation, TriangulatedPosition, TriangulationConfig, Velocity,
+};
+
+pub use witness::{
+    triangulate_from_witnesses, LatencyMeasurement, PositionClaim, ScannerType,
+    TriangulationResult, WitnessAttestation, WitnessCircle,
+    MAX_VALID_LATENCY_MS, MIN_WITNESSES_FOR_TRIANGULATION, NETWORK_SPEED_KM_PER_MS,
 };

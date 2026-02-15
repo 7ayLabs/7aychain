@@ -279,7 +279,7 @@ pub struct NodeObservation {
     pub block_number: u64,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
 pub struct Position {
     pub x: i32,
     pub y: i32,
