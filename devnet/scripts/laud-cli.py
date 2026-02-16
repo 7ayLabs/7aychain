@@ -13,10 +13,6 @@ Requirements:
 import sys, os, time, json, hashlib, secrets, argparse
 from datetime import datetime
 
-# ═══════════════════════════════════════════════════════════════════
-#  Dependency Check
-# ═══════════════════════════════════════════════════════════════════
-
 SUBSTRATE_OK = False
 try:
     from substrateinterface import SubstrateInterface, Keypair
@@ -24,10 +20,6 @@ try:
     SUBSTRATE_OK = True
 except ImportError:
     pass
-
-# ═══════════════════════════════════════════════════════════════════
-#  Terminal Colors
-# ═══════════════════════════════════════════════════════════════════
 
 class C:
     B   = "\033[94m"
@@ -40,32 +32,6 @@ class C:
     DIM = "\033[2m"
     R   = "\033[0m"
 
-def clear():
-    os.system('cls' if os.name == 'nt' else 'clear')
-
-# ═══════════════════════════════════════════════════════════════════
-#  Branding
-# ═══════════════════════════════════════════════════════════════════
-
-def print_banner():
-    clear()
-    print(f"""
-  {C.BB}██╗      █████╗ ██╗   ██╗██████╗
-  ██║     ██╔══██╗██║   ██║██╔══██╗
-  ██║     ███████║██║   ██║██║  ██║
-  ██║     ██╔══██║██║   ██║██║  ██║
-  ███████╗██║  ██║╚██████╔╝██████╔╝
-  ╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚═════╝{C.R}
-  {C.B}N E T W O R K S{C.R}    {C.DIM}a 7aylabs product{C.R}
-  {C.DIM}─────────────────────────────────────{C.R}
-  {C.W}PoP Protocol Testing Suite{C.R}  {C.DIM}v0.9.0{C.R}
-""")
-
-
-# ═══════════════════════════════════════════════════════════════════
-#  Main CLI Class
-# ═══════════════════════════════════════════════════════════════════
-
 class LaudCLI:
 
     def __init__(self, url="ws://127.0.0.1:9944"):
@@ -73,13 +39,10 @@ class LaudCLI:
         self.substrate = None
         self.keypairs = {}
         self.connected = False
-        # Context state (persistent across commands)
         self._ctx_epoch = None
         self._ctx_account = 'alice'
         self._nav_stack = []
         self._history_file = os.path.expanduser('~/.laud_history')
-
-    # ── Connection ─────────────────────────────────────────────────
 
     def connect(self, url=None):
         url = url or self.url
@@ -135,8 +98,6 @@ class LaudCLI:
             return False
         return True
 
-    # ── readline ────────────────────────────────────────────────
-
     def _setup_readline(self):
         try:
             import readline
@@ -151,7 +112,7 @@ class LaudCLI:
             import atexit
             atexit.register(readline.write_history_file, self._history_file)
         except ImportError:
-            pass  # Windows fallback
+            pass
 
     _CMD_NAMES = [
         'help', 'use', 'status', 'menu', 'back', 'exit', 'bootstrap', 'connect',
@@ -187,8 +148,6 @@ class LaudCLI:
         except Exception:
             return None
 
-    # ── Submission ──────────────────────────────────────────────
-
     def _submit(self, module, fn, params, signer='alice', sudo=False):
         if not self._ensure():
             return None
@@ -204,14 +163,12 @@ class LaudCLI:
                 self._info(f"{tag}{C.W}{module}.{fn}{C.R} {C.DIM}as{C.R} {C.Y}{signer}{C.R}")
                 receipt = self.substrate.submit_extrinsic(ext, wait_for_inclusion=True)
                 if receipt.is_success:
-                    # Resolve block number for cleaner output
                     blk_num = ""
                     try:
                         hdr = self.substrate.get_block_header(block_hash=receipt.block_hash)
                         blk_num = f"#{hdr['header']['number']}"
                     except Exception:
                         blk_num = str(receipt.block_hash)[:16]
-                    # Collect pallet events (skip system noise)
                     pallet_events = []
                     for ev in receipt.triggered_events:
                         ev_val = ev.value
@@ -315,16 +272,12 @@ class LaudCLI:
         else:
             print(f"    {C.W}{val}{C.R}")
 
-    # ── ID Derivation ──────────────────────────────────────────────
-
     def _actor_id(self, name):
         kp = self.keypairs[name]
         return '0x' + hashlib.blake2b(kp.public_key, digest_size=32).hexdigest()
 
     def _validator_id(self, name):
         return self._actor_id(name)
-
-    # ── Prompt Helpers ─────────────────────────────────────────────
 
     def _prompt(self, text, default=None):
         suffix = f" [{C.DIM}{default}{C.R}]" if default else ""
@@ -388,8 +341,6 @@ class LaudCLI:
         idx = self._prompt_int(label, 1) - 1
         return options[max(0, min(idx, len(options) - 1))]
 
-    # ── Print Helpers ──────────────────────────────────────────────
-
     def _ok(self, msg):
         print(f"  {C.G}[OK]{C.R} {msg}")
 
@@ -413,15 +364,12 @@ class LaudCLI:
         if not rows:
             print(f"  {C.DIM}(no data){C.R}")
             return
-        # Calculate column widths from headers and data
         widths = [len(str(h)) for h in headers]
         for row in rows:
             for i, cell in enumerate(row):
                 if i < len(widths):
                     widths[i] = max(widths[i], len(str(cell)))
-        # Cap columns at 32 chars
         widths = [min(w, 32) for w in widths]
-        # Header
         hdr = "  "
         sep = "  "
         for i, h in enumerate(headers):
@@ -430,7 +378,6 @@ class LaudCLI:
             sep += f"{C.DIM}{'─' * w}{C.R}  "
         print(hdr)
         print(sep)
-        # Rows
         for row in rows:
             line = "  "
             for i, cell in enumerate(row):
@@ -468,11 +415,7 @@ class LaudCLI:
         return self._prompt("", "0")
 
     def _pause(self):
-        pass  # no-op: output flows continuously
-
-    # ══════════════════════════════════════════════════════════════
-    #  1. CHAIN STATUS
-    # ══════════════════════════════════════════════════════════════
+        pass
 
     def menu_chain(self, _direct=None):
         self._nav_stack.append('chain')
@@ -538,10 +481,6 @@ class LaudCLI:
             except Exception as e:
                 self._err(str(e))
             self._pause()
-
-    # ══════════════════════════════════════════════════════════════
-    #  2. PRESENCE PROTOCOL
-    # ══════════════════════════════════════════════════════════════
 
     def menu_presence(self, _direct=None):
         self._check_epoch()
@@ -653,10 +592,6 @@ class LaudCLI:
                 self._val("Reveals", self._query("Presence", "RevealCount", [e]))
             self._pause()
 
-    # ══════════════════════════════════════════════════════════════
-    #  3. EPOCH MANAGEMENT
-    # ══════════════════════════════════════════════════════════════
-
     def menu_epoch(self, _direct=None):
         self._nav_stack.append('epoch')
         _opts = [
@@ -728,10 +663,6 @@ class LaudCLI:
             elif c == "d":
                 self._val("Schedule", self._query("Epoch", "EpochSchedule"))
             self._pause()
-
-    # ══════════════════════════════════════════════════════════════
-    #  4. VALIDATOR OPERATIONS
-    # ══════════════════════════════════════════════════════════════
 
     def menu_validator(self, _direct=None):
         self._nav_stack.append('validator')
@@ -806,10 +737,6 @@ class LaudCLI:
                 for k, v in self._query_map("Validator", "PendingSlashes")[:10]:
                     print(f"    {C.DIM}#{k.value if hasattr(k,'value') else k}: {v.value if hasattr(v,'value') else v}{C.R}")
             self._pause()
-
-    # ══════════════════════════════════════════════════════════════
-    #  5. POSITION-BASED TRIANGULATION (PBT)
-    # ══════════════════════════════════════════════════════════════
 
     def menu_pbt(self, _direct=None):
         self._check_epoch()
@@ -940,7 +867,6 @@ class LaudCLI:
         epoch = self._next_test_epoch()
         alice_id = self._actor_id('alice')
 
-        # Claim at centroid of witnesses for geometrically exact match
         claim = {"x": 16666, "y": 28867, "z": 0}
 
         self._header("PBT TEST FLOW")
@@ -949,7 +875,6 @@ class LaudCLI:
         self._submit("Presence", "claim_position",
                      {"epoch": epoch, "position": claim}, "alice")
 
-        # Equal latency → equal weight → centroid matches claim
         for w in ['bob', 'charlie', 'dave']:
             self._info(f"{w} attesting (10ms RTT → 750km → weight 1)...")
             self._submit("Presence", "submit_witness_attestation",
@@ -970,8 +895,6 @@ class LaudCLI:
                 self._val("Verified", v)
                 self._val("Confidence", f"{c}%")
         self._ok("PBT test complete!")
-
-    # ── Error Hints ───────────────────────────────────────────────
 
     ERROR_HINTS = {
         'EpochNotActive': 'Run "bootstrap" to set up the devnet first',
@@ -996,8 +919,6 @@ class LaudCLI:
             if key in err_str:
                 return hint
         return None
-
-    # ── Context Commands ────────────────────────────────────────────
 
     def _cmd_use(self, args):
         """Handle the 'use' command for setting context."""
@@ -1044,8 +965,6 @@ class LaudCLI:
         parts.append(f"account: {C.W}{acct}{C.R}{sudo_tag}")
         print(f"  {'  '.join(parts)}")
 
-    # ── Bootstrap ─────────────────────────────────────────────────
-
     def bootstrap(self):
         """Bootstrap devnet: activate epoch 1, register 6 validators, hexagonal positions."""
         self._auto_setup_validators()
@@ -1087,10 +1006,6 @@ class LaudCLI:
                              {"epoch": e, "active": True}, sudo=True)
                 return e
         return 2
-
-    # ══════════════════════════════════════════════════════════════
-    #  6. DISPUTE RESOLUTION
-    # ══════════════════════════════════════════════════════════════
 
     def menu_dispute(self, _direct=None):
         self._nav_stack.append('dispute')
@@ -1148,10 +1063,6 @@ class LaudCLI:
             elif c == "b":
                 self._val("Open", self._query("Dispute", "OpenDisputes"))
             self._pause()
-
-    # ══════════════════════════════════════════════════════════════
-    #  7. SIGNAL TRIANGULATION
-    # ══════════════════════════════════════════════════════════════
 
     def menu_triangulation(self, _direct=None):
         self._nav_stack.append('triangulation')
@@ -1238,10 +1149,6 @@ class LaudCLI:
                     print(f"    {C.DIM}#{k.value if hasattr(k,'value') else k}{C.R}")
             self._pause()
 
-    # ══════════════════════════════════════════════════════════════
-    #  8. DEVICE MANAGEMENT
-    # ══════════════════════════════════════════════════════════════
-
     def menu_device(self, _direct=None):
         self._nav_stack.append('device')
         _opts = [
@@ -1319,10 +1226,6 @@ class LaudCLI:
                           [self._prompt_int("ID", 0)]))
             self._pause()
 
-    # ══════════════════════════════════════════════════════════════
-    #  9. LIFECYCLE MANAGEMENT
-    # ══════════════════════════════════════════════════════════════
-
     def menu_lifecycle(self, _direct=None):
         self._nav_stack.append('lifecycle')
         _opts = [
@@ -1395,10 +1298,6 @@ class LaudCLI:
                 self._val("Active", self._query("Lifecycle", "ActiveActors"))
             self._pause()
 
-    # ══════════════════════════════════════════════════════════════
-    #  10. CRYPTOGRAPHIC VAULT
-    # ══════════════════════════════════════════════════════════════
-
     def menu_vault(self, _direct=None):
         self._nav_stack.append('vault')
         _opts = [
@@ -1465,10 +1364,6 @@ class LaudCLI:
                 self._val("Vault", self._query("Vault", "Vaults",
                           [self._prompt_int("ID", 0)]))
             self._pause()
-
-    # ══════════════════════════════════════════════════════════════
-    #  11. ZERO-KNOWLEDGE PROOFS
-    # ══════════════════════════════════════════════════════════════
 
     def menu_zk(self, _direct=None):
         self._nav_stack.append('zk')
@@ -1547,10 +1442,6 @@ class LaudCLI:
                 self._val("Count", self._query("Zk", "VerificationCount"))
             self._pause()
 
-    # ══════════════════════════════════════════════════════════════
-    #  12. GOVERNANCE
-    # ══════════════════════════════════════════════════════════════
-
     def menu_governance(self, _direct=None):
         self._nav_stack.append('governance')
         _opts = [
@@ -1610,10 +1501,6 @@ class LaudCLI:
                 self._val("Cap", self._query("Governance", "Capabilities",
                           [self._prompt_int("ID", 0)]))
             self._pause()
-
-    # ══════════════════════════════════════════════════════════════
-    #  13. SEMANTIC RELATIONSHIPS
-    # ══════════════════════════════════════════════════════════════
 
     def menu_semantic(self, _direct=None):
         self._nav_stack.append('semantic')
@@ -1683,10 +1570,6 @@ class LaudCLI:
                           [self._prompt_int("ID", 0)]))
             self._pause()
 
-    # ══════════════════════════════════════════════════════════════
-    #  14. BOOMERANG ROUTING
-    # ══════════════════════════════════════════════════════════════
-
     def menu_boomerang(self, _direct=None):
         self._nav_stack.append('boomerang')
         _opts = [
@@ -1741,10 +1624,6 @@ class LaudCLI:
             elif c == "b":
                 self._val("Active", self._query("Boomerang", "ActivePaths"))
             self._pause()
-
-    # ══════════════════════════════════════════════════════════════
-    #  15. AUTONOMOUS BEHAVIORS
-    # ══════════════════════════════════════════════════════════════
 
     def menu_autonomous(self, _direct=None):
         self._nav_stack.append('autonomous')
@@ -1830,10 +1709,6 @@ class LaudCLI:
             elif c == "b":
                 self._val("Patterns", self._query("Autonomous", "PatternCount"))
             self._pause()
-
-    # ══════════════════════════════════════════════════════════════
-    #  16. OCTOPUS CLUSTERS
-    # ══════════════════════════════════════════════════════════════
 
     def menu_octopus(self, _direct=None):
         self._nav_stack.append('octopus')
@@ -1940,10 +1815,6 @@ class LaudCLI:
                 self._val("Count", self._query("Octopus", "ClusterCount"))
             self._pause()
 
-    # ══════════════════════════════════════════════════════════════
-    #  17. STORAGE OPERATIONS
-    # ══════════════════════════════════════════════════════════════
-
     def menu_storage(self, _direct=None):
         self._nav_stack.append('storage')
         _opts = [
@@ -2008,10 +1879,6 @@ class LaudCLI:
             elif c == "a":
                 self._val("Entries", self._query("Storage", "EntryCount"))
             self._pause()
-
-    # ══════════════════════════════════════════════════════════════
-    #  19. BLOCK EXPLORER
-    # ══════════════════════════════════════════════════════════════
 
     def menu_block_explorer(self, _direct=None):
         self._nav_stack.append('blocks')
@@ -2158,10 +2025,6 @@ class LaudCLI:
                 self._err(str(e))
             self._pause()
 
-    # ══════════════════════════════════════════════════════════════
-    #  20. STORAGE INSPECTOR
-    # ══════════════════════════════════════════════════════════════
-
     def menu_storage_inspector(self, _direct=None):
         self._nav_stack.append('inspect')
         _opts = [
@@ -2276,10 +2139,6 @@ class LaudCLI:
             except Exception as e:
                 self._err(str(e))
             self._pause()
-
-    # ══════════════════════════════════════════════════════════════
-    #  21. RUNTIME INSPECTOR
-    # ══════════════════════════════════════════════════════════════
 
     def menu_runtime_inspector(self, _direct=None):
         self._nav_stack.append('runtime')
@@ -2406,10 +2265,6 @@ class LaudCLI:
                 self._err(str(e))
             self._pause()
 
-    # ══════════════════════════════════════════════════════════════
-    #  22. NETWORK & PEERS
-    # ══════════════════════════════════════════════════════════════
-
     def menu_network(self, _direct=None):
         self._nav_stack.append('network')
         _opts = [
@@ -2494,10 +2349,6 @@ class LaudCLI:
             except Exception as e:
                 self._err(str(e))
             self._pause()
-
-    # ══════════════════════════════════════════════════════════════
-    #  23. CRYPTO TOOLBOX
-    # ══════════════════════════════════════════════════════════════
 
     def menu_crypto(self, _direct=None):
         self._nav_stack.append('crypto')
@@ -2667,10 +2518,6 @@ class LaudCLI:
                 self._err(str(e))
             self._pause()
 
-    # ══════════════════════════════════════════════════════════════
-    #  24. ACCOUNT INSPECTOR
-    # ══════════════════════════════════════════════════════════════
-
     def menu_account_inspector(self, _direct=None):
         self._nav_stack.append('accounts')
         _opts = [
@@ -2768,10 +2615,6 @@ class LaudCLI:
             except Exception as e:
                 self._err(str(e))
             self._pause()
-
-    # ══════════════════════════════════════════════════════════════
-    #  25. EVENT DECODER
-    # ══════════════════════════════════════════════════════════════
 
     def menu_events(self, _direct=None):
         self._nav_stack.append('events')
@@ -2884,10 +2727,6 @@ class LaudCLI:
                 self._err(str(e))
             self._pause()
 
-    # ══════════════════════════════════════════════════════════════
-    #  AUTOMATED TEST: FULL PoP LIFECYCLE
-    # ══════════════════════════════════════════════════════════════
-
     def test_full_lifecycle(self):
         """Full Proof-of-Presence lifecycle: declare → vote → finalize.
 
@@ -2899,38 +2738,28 @@ class LaudCLI:
         self._header("FULL PoP LIFECYCLE TEST")
         epoch = self._next_test_epoch()
 
-        # 1. Validators already active from bootstrap
         self._info(f"Step 1: Using epoch {epoch} (validators active from bootstrap)")
 
-        # 2. Declare presence
         self._info("Step 2: Eve declares presence")
         self._submit("Presence", "declare_presence", {"epoch": epoch}, "eve")
 
-        # 3. Validators vote
         eve_id = self._actor_id('eve')
         self._info("Step 3: Validators vote on Eve (3 of 6 → quorum)")
         for voter in ['alice', 'bob', 'charlie']:
             self._submit("Presence", "vote_presence",
                          {"actor": eve_id, "epoch": epoch, "approve": True}, voter)
 
-        # 4. Check vote count
         vc = self._query("Presence", "VoteCount", [epoch, eve_id])
         self._val("Eve votes", vc)
 
-        # 5. Finalize
         self._info("Step 4: Finalize Eve's presence")
         self._submit("Presence", "finalize_presence",
                      {"actor": eve_id, "epoch": epoch}, "alice")
 
-        # 6. Verify on-chain state
         r = self._query("Presence", "Presences", [epoch, eve_id])
         self._val("Final state", r)
         self._ok("Full lifecycle test complete!")
         self._pause()
-
-    # ══════════════════════════════════════════════════════════════
-    #  AUTOMATED TEST: COMMIT-REVEAL
-    # ══════════════════════════════════════════════════════════════
 
     def test_commit_reveal(self):
         """Commit-reveal test: commitment = blake2b(secret ‖ randomness).
@@ -2943,10 +2772,8 @@ class LaudCLI:
         self._header("COMMIT-REVEAL TEST")
         epoch = self._next_test_epoch()
 
-        # Generate 32-byte secret and 32-byte randomness
         sec = secrets.token_hex(32)
         rnd = secrets.token_hex(32)
-        # Commitment = blake2b-256(secret ‖ randomness)
         h = hashlib.blake2b(bytes.fromhex(sec + rnd), digest_size=32).hexdigest()
 
         self._info(f"Committing (hash: 0x{h[:16]}...)")
@@ -2963,14 +2790,6 @@ class LaudCLI:
         self._val("Reveals", self._query("Presence", "RevealCount", [epoch]))
         self._ok("Commit-reveal test complete!")
         self._pause()
-
-    # ══════════════════════════════════════════════════════════════
-    #  MAIN MENU
-    # ══════════════════════════════════════════════════════════════
-
-    # ══════════════════════════════════════════════════════════════
-    #  COMPACT MENU & HELP
-    # ══════════════════════════════════════════════════════════════
 
     def _show_compact_menu(self):
         print(f"""
@@ -3141,11 +2960,6 @@ class LaudCLI:
      All pre-funded with 10M UNIT on devnet{C.R}
 """)
 
-    # ══════════════════════════════════════════════════════════════
-    #  COMMAND DISPATCH
-    # ══════════════════════════════════════════════════════════════
-
-    # Maps aliases/numbers to canonical menu handler names
     _MENU_ALIASES = {
         '1': '_cmd_connect', 'connect': '_cmd_connect', 'reconnect': '_cmd_connect',
         'b': 'bootstrap', 'boot': 'bootstrap', 'bootstrap': 'bootstrap',
@@ -3177,7 +2991,6 @@ class LaudCLI:
         '?': 'show_guide',
     }
 
-    # Maps parent command → { sub-alias → submenu-number }
     _SUB_ALIASES = {
         'menu_presence': {
             'declare': '1', 'd': '1', 'commit': '2', 'cm': '2', 'reveal': '3', 'rv': '3',
@@ -3219,7 +3032,6 @@ class LaudCLI:
             return
         cmd = parts[0].lower()
 
-        # Special commands
         if cmd in ('exit', 'quit', '0'):
             raise SystemExit
         if cmd == 'help' or cmd == 'h':
@@ -3239,7 +3051,6 @@ class LaudCLI:
                 self._nav_stack.pop()
             return
 
-        # Test aliases: "test pop", "test pbt", "test commit"
         if cmd == 'test' and len(parts) > 1:
             sub = parts[1].lower()
             test_map = {'pop': 'test_full_lifecycle', '1': 'test_full_lifecycle',
@@ -3250,20 +3061,17 @@ class LaudCLI:
                 getattr(self, handler_name)()
                 return
 
-        # Two-word commands: "presence declare", "pbt test", etc.
         handler_name = self._MENU_ALIASES.get(cmd)
         if handler_name and len(parts) > 1:
             sub_map = self._SUB_ALIASES.get(handler_name, {})
             sub_alias = parts[1].lower()
             sub_num = sub_map.get(sub_alias)
             if sub_num:
-                # Call the menu method with a pre-set choice
                 handler = getattr(self, handler_name, None)
                 if handler:
                     handler(_direct=sub_num)
                     return
 
-        # Single-word command / number
         if handler_name:
             handler = getattr(self, handler_name, None)
             if handler:
@@ -3271,10 +3079,6 @@ class LaudCLI:
                 return
 
         self._err(f"Unknown: '{line}'. Type 'help' or 'menu'.")
-
-    # ══════════════════════════════════════════════════════════════
-    #  RUN
-    # ══════════════════════════════════════════════════════════════
 
     def _print_welcome(self):
         print(f"""
@@ -3313,11 +3117,6 @@ class LaudCLI:
             except EOFError:
                 print(f"\n  {C.DIM}LAUD NETWORKS{C.R}\n")
                 break
-
-
-# ═══════════════════════════════════════════════════════════════════
-#  Entry Point
-# ═══════════════════════════════════════════════════════════════════
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
