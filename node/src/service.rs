@@ -22,8 +22,89 @@ type FullBackend = sc_service::TFullBackend<Block>;
 type FullSelectChain = sc_consensus::LongestChain<FullBackend, Block>;
 type FullPool = BasicPool<FullChainApi<FullClient, Block>, Block>;
 
+/// Block sealing strategy.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SealingMode {
+    /// Aura consensus — continuous block production every slot (7 s).
+    Aura,
+    /// Instant seal — produce a block only when the tx-pool is non-empty.
+    Instant,
+}
+
+impl Default for SealingMode {
+    fn default() -> Self {
+        Self::Aura
+    }
+}
+
+impl std::str::FromStr for SealingMode {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "aura" => Ok(Self::Aura),
+            "instant" => Ok(Self::Instant),
+            other => Err(format!("Unknown sealing mode '{}'. Use 'aura' or 'instant'.", other)),
+        }
+    }
+}
+
+// ── Partial components (Aura import queue — used by subcommands) ─────────
+
 pub fn new_partial(
     config: &Configuration,
+) -> Result<
+    sc_service::PartialComponents<
+        FullClient,
+        FullBackend,
+        FullSelectChain,
+        sc_consensus::DefaultImportQueue<Block>,
+        FullPool,
+        (
+            sc_consensus_grandpa::GrandpaBlockImport<
+                FullBackend,
+                Block,
+                FullClient,
+                FullSelectChain,
+            >,
+            sc_consensus_grandpa::LinkHalf<Block, FullClient, FullSelectChain>,
+            Option<Telemetry>,
+        ),
+    >,
+    ServiceError,
+> {
+    new_partial_inner(config, false)
+}
+
+// ── Partial components (instant-seal import queue) ───────────────────────
+
+pub fn new_partial_dev(
+    config: &Configuration,
+) -> Result<
+    sc_service::PartialComponents<
+        FullClient,
+        FullBackend,
+        FullSelectChain,
+        sc_consensus::DefaultImportQueue<Block>,
+        FullPool,
+        (
+            sc_consensus_grandpa::GrandpaBlockImport<
+                FullBackend,
+                Block,
+                FullClient,
+                FullSelectChain,
+            >,
+            sc_consensus_grandpa::LinkHalf<Block, FullClient, FullSelectChain>,
+            Option<Telemetry>,
+        ),
+    >,
+    ServiceError,
+> {
+    new_partial_inner(config, true)
+}
+
+fn new_partial_inner(
+    config: &Configuration,
+    instant_seal: bool,
 ) -> Result<
     sc_service::PartialComponents<
         FullClient,
@@ -90,31 +171,38 @@ pub fn new_partial(
         telemetry.as_ref().map(|t: &Telemetry| t.handle()),
     )?;
 
-    let slot_duration = sc_consensus_aura::slot_duration(&*client)?;
-
-    let import_queue = sc_consensus_aura::import_queue::<AuraPair, _, _, _, _, _>(
-        ImportQueueParams {
-            block_import: grandpa_block_import.clone(),
-            justification_import: Some(Box::new(grandpa_block_import.clone())),
-            client: client.clone(),
-            create_inherent_data_providers: move |_, ()| async move {
-                let timestamp = sp_timestamp::InherentDataProvider::from_system_time();
-
-                let slot =
-                    sp_consensus_aura::inherents::InherentDataProvider::from_timestamp_and_slot_duration(
-                        *timestamp,
-                        slot_duration,
-                    );
-
-                Ok((slot, timestamp))
+    let import_queue = if instant_seal {
+        // Instant-seal: no Aura slot verification — blocks are accepted as-is.
+        sc_consensus_manual_seal::import_queue(
+            Box::new(client.clone()),
+            &task_manager.spawn_essential_handle(),
+            config.prometheus_registry(),
+        )
+    } else {
+        // Aura: validate slots + timestamps on import.
+        let slot_duration = sc_consensus_aura::slot_duration(&*client)?;
+        sc_consensus_aura::import_queue::<AuraPair, _, _, _, _, _>(
+            ImportQueueParams {
+                block_import: grandpa_block_import.clone(),
+                justification_import: Some(Box::new(grandpa_block_import.clone())),
+                client: client.clone(),
+                create_inherent_data_providers: move |_, ()| async move {
+                    let timestamp = sp_timestamp::InherentDataProvider::from_system_time();
+                    let slot =
+                        sp_consensus_aura::inherents::InherentDataProvider::from_timestamp_and_slot_duration(
+                            *timestamp,
+                            slot_duration,
+                        );
+                    Ok((slot, timestamp))
+                },
+                spawner: &task_manager.spawn_essential_handle(),
+                registry: config.prometheus_registry(),
+                check_for_equivocation: Default::default(),
+                telemetry: telemetry.as_ref().map(|t: &Telemetry| t.handle()),
+                compatibility_mode: Default::default(),
             },
-            spawner: &task_manager.spawn_essential_handle(),
-            registry: config.prometheus_registry(),
-            check_for_equivocation: Default::default(),
-            telemetry: telemetry.as_ref().map(|t: &Telemetry| t.handle()),
-            compatibility_mode: Default::default(),
-        },
-    )?;
+        )?
+    };
 
     Ok(sc_service::PartialComponents {
         client,
@@ -128,7 +216,15 @@ pub fn new_partial(
     })
 }
 
-pub fn new_full(config: Configuration, scanner_config: Option<ScannerConfig>) -> Result<TaskManager, ServiceError> {
+// ── Full node ────────────────────────────────────────────────────────────
+
+pub fn new_full(
+    config: Configuration,
+    scanner_config: Option<ScannerConfig>,
+    sealing: SealingMode,
+) -> Result<TaskManager, ServiceError> {
+    let instant_seal = sealing == SealingMode::Instant;
+
     let sc_service::PartialComponents {
         client,
         backend,
@@ -138,7 +234,11 @@ pub fn new_full(config: Configuration, scanner_config: Option<ScannerConfig>) ->
         select_chain,
         transaction_pool,
         other: (block_import, grandpa_link, mut telemetry),
-    } = new_partial(&config)?;
+    } = if instant_seal {
+        new_partial_dev(&config)?
+    } else {
+        new_partial(&config)?
+    };
 
     // Create scan results handle for device scanner
     let scan_results: ScanResultsHandle = create_scan_results_handle();
@@ -216,7 +316,7 @@ pub fn new_full(config: Configuration, scanner_config: Option<ScannerConfig>) ->
     let force_authoring = config.force_authoring;
     let backoff_authoring_blocks: Option<()> = None;
     let name = config.network.node_name.clone();
-    let enable_grandpa = !config.disable_grandpa;
+    let enable_grandpa = !config.disable_grandpa && !instant_seal;
     let prometheus_registry = config.prometheus_registry().cloned();
 
     let rpc_extensions_builder = {
@@ -263,52 +363,87 @@ pub fn new_full(config: Configuration, scanner_config: Option<ScannerConfig>) ->
 
         let slot_duration = sc_consensus_aura::slot_duration(&*client)?;
 
-        // Clone scan_results for the closure
-        let scan_results_for_aura = scan_results.clone();
+        if instant_seal {
+            // ── Instant Seal ─────────────────────────────────────────
+            // Blocks are created only when the transaction pool is non-empty.
+            log::info!("⚡ Instant-seal mode: blocks produced on extrinsic only");
 
-        let aura = sc_consensus_aura::start_aura::<AuraPair, _, _, _, _, _, _, _, _, _, _>(
-            StartAuraParams {
-                slot_duration,
-                client: client.clone(),
-                select_chain,
-                block_import,
-                proposer_factory,
-                create_inherent_data_providers: move |_, ()| {
-                    let scan_results = scan_results_for_aura.clone();
-                    async move {
-                        let timestamp = sp_timestamp::InherentDataProvider::from_system_time();
-
+            let instant = sc_consensus_manual_seal::run_instant_seal(
+                sc_consensus_manual_seal::InstantSealParams {
+                    block_import: client.clone(),
+                    env: proposer_factory,
+                    consensus_data_provider: Some(Box::new(
+                        sc_consensus_manual_seal::consensus::aura::AuraConsensusDataProvider::new(
+                            client.clone(),
+                        ),
+                    )),
+                    client,
+                    pool: transaction_pool.clone(),
+                    select_chain,
+                    create_inherent_data_providers: move |_, ()| async move {
+                        let timestamp =
+                            sp_timestamp::InherentDataProvider::from_system_time();
                         let slot =
                             sp_consensus_aura::inherents::InherentDataProvider::from_timestamp_and_slot_duration(
                                 *timestamp,
                                 slot_duration,
                             );
-
-                        // Create device scanner inherent data provider
-                        let device_scanner = DeviceScanInherentDataProvider::new(
-                            scan_results,
-                            Default::default(), // reporter_position
-                            100,                // max_devices
-                        );
-
-                        Ok((slot, timestamp, device_scanner))
-                    }
+                        Ok((slot, timestamp))
+                    },
                 },
-                force_authoring,
-                backoff_authoring_blocks,
-                keystore: keystore_container.keystore(),
-                sync_oracle: sync_service.clone(),
-                justification_sync_link: sync_service.clone(),
-                block_proposal_slot_portion: SlotProportion::new(2f32 / 3f32),
-                max_block_proposal_slot_portion: None,
-                telemetry: telemetry.as_ref().map(|t: &Telemetry| t.handle()),
-                compatibility_mode: Default::default(),
-            },
-        )?;
+            );
 
-        task_manager
-            .spawn_essential_handle()
-            .spawn_blocking("aura", Some("block-authoring"), aura);
+            task_manager
+                .spawn_essential_handle()
+                .spawn_blocking("instant-seal", Some("block-authoring"), instant);
+        } else {
+            // ── Aura ─────────────────────────────────────────────────
+            let scan_results_for_aura = scan_results.clone();
+
+            let aura = sc_consensus_aura::start_aura::<AuraPair, _, _, _, _, _, _, _, _, _, _>(
+                StartAuraParams {
+                    slot_duration,
+                    client: client.clone(),
+                    select_chain,
+                    block_import,
+                    proposer_factory,
+                    create_inherent_data_providers: move |_, ()| {
+                        let scan_results = scan_results_for_aura.clone();
+                        async move {
+                            let timestamp =
+                                sp_timestamp::InherentDataProvider::from_system_time();
+
+                            let slot =
+                                sp_consensus_aura::inherents::InherentDataProvider::from_timestamp_and_slot_duration(
+                                    *timestamp,
+                                    slot_duration,
+                                );
+
+                            let device_scanner = DeviceScanInherentDataProvider::new(
+                                scan_results,
+                                Default::default(),
+                                100,
+                            );
+
+                            Ok((slot, timestamp, device_scanner))
+                        }
+                    },
+                    force_authoring,
+                    backoff_authoring_blocks,
+                    keystore: keystore_container.keystore(),
+                    sync_oracle: sync_service.clone(),
+                    justification_sync_link: sync_service.clone(),
+                    block_proposal_slot_portion: SlotProportion::new(2f32 / 3f32),
+                    max_block_proposal_slot_portion: None,
+                    telemetry: telemetry.as_ref().map(|t: &Telemetry| t.handle()),
+                    compatibility_mode: Default::default(),
+                },
+            )?;
+
+            task_manager
+                .spawn_essential_handle()
+                .spawn_blocking("aura", Some("block-authoring"), aura);
+        }
     }
 
     if enable_grandpa {

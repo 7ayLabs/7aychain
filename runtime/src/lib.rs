@@ -151,7 +151,7 @@ impl pallet_aura::Config for Runtime {
     type AuthorityId = AuraId;
     type DisabledValidators = ();
     type MaxAuthorities = MaxAuthorities;
-    type AllowMultipleBlocksPerSlot = ConstBool<false>;
+    type AllowMultipleBlocksPerSlot = ConstBool<true>;
     type SlotDuration = pallet_aura::MinimumPeriodTimesTwo<Runtime>;
 }
 

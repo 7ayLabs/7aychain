@@ -40,6 +40,10 @@ pub struct ExtendedRunCmd {
 
     #[arg(long, default_value = "42")]
     pub mock_seed: u64,
+
+    /// Block sealing mode: "aura" (continuous every 7s) or "instant" (only on extrinsic)
+    #[arg(long, default_value = "aura")]
+    pub sealing: String,
 }
 
 #[derive(Debug, clap::Subcommand)]

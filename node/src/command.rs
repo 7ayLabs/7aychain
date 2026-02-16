@@ -2,7 +2,7 @@ use crate::{
     chain_spec,
     cli::{Cli, Subcommand},
     scanner::{Position, ScannerConfig, ScannerMode},
-    service,
+    service::{self, SealingMode},
 };
 use clap::Parser;
 use sc_cli::SubstrateCli;
@@ -140,9 +140,12 @@ pub fn run() -> sc_cli::Result<()> {
                 ..ScannerConfig::default()
             };
 
+            let sealing = cli.run.sealing.parse::<SealingMode>().unwrap_or_default();
+
             let runner = cli.create_runner(&cli.run.base)?;
             runner.run_node_until_exit(|config| async move {
-                service::new_full(config, Some(scanner_config)).map_err(sc_cli::Error::Service)
+                service::new_full(config, Some(scanner_config), sealing)
+                    .map_err(sc_cli::Error::Service)
             })
         }
     }

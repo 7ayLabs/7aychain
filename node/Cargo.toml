@@ -25,6 +25,7 @@ sc-client-api = { version = "44.0.0" }
 sc-consensus = { version = "0.54.0" }
 sc-consensus-aura = { version = "0.55.0" }
 sc-consensus-grandpa = { version = "0.40.0" }
+sc-consensus-manual-seal = { version = "0.56.0" }
 sc-executor = { version = "0.47.0" }
 sc-network = { version = "0.55.1" }
 sc-offchain = { version = "50.0.0" }
