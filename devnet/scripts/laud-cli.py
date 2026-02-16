@@ -73,6 +73,11 @@ class LaudCLI:
         self.substrate = None
         self.keypairs = {}
         self.connected = False
+        # Context state (persistent across commands)
+        self._ctx_epoch = None
+        self._ctx_account = 'alice'
+        self._nav_stack = []
+        self._history_file = os.path.expanduser('~/.laud_history')
 
     # ── Connection ─────────────────────────────────────────────────
 
@@ -129,6 +134,60 @@ class LaudCLI:
         if not self._reconnect():
             return False
         return True
+
+    # ── readline ────────────────────────────────────────────────
+
+    def _setup_readline(self):
+        try:
+            import readline
+            readline.set_completer(self._completer)
+            readline.parse_and_bind('tab: complete')
+            readline.set_completer_delims(' ')
+            try:
+                readline.read_history_file(self._history_file)
+            except FileNotFoundError:
+                pass
+            readline.set_history_length(500)
+            import atexit
+            atexit.register(readline.write_history_file, self._history_file)
+        except ImportError:
+            pass  # Windows fallback
+
+    _CMD_NAMES = [
+        'help', 'use', 'status', 'menu', 'back', 'exit', 'bootstrap', 'connect',
+        'presence', 'epoch', 'validator', 'pbt', 'triangulation',
+        'dispute', 'zk', 'vault', 'device', 'lifecycle', 'governance',
+        'semantic', 'boomerang', 'autonomous', 'octopus', 'storage',
+        'blocks', 'inspect', 'runtime', 'network', 'crypto', 'accounts', 'events',
+        'test',
+    ]
+    _CMD_SUBS = {
+        'presence': ['declare','commit','reveal','vote','finalize','slash','quorum'],
+        'epoch': ['schedule','start','close','finalize','register','update','force'],
+        'validator': ['register','activate','deactivate','withdraw','stake','slash'],
+        'pbt': ['position','claim','attest','verify','setup','test'],
+        'test': ['pop','pbt','commit'],
+        'use': ['epoch','alice','bob','charlie','dave','eve','ferdie','clear'],
+    }
+
+    def _completer(self, text, state):
+        try:
+            import readline
+            line = readline.get_line_buffer().lstrip()
+            parts = line.split()
+            if not parts or (len(parts) == 1 and not line.endswith(' ')):
+                prefix = parts[0] if parts else ''
+                candidates = [c + ' ' for c in self._CMD_NAMES if c.startswith(prefix)]
+            else:
+                parent = parts[0].lower()
+                subs = self._CMD_SUBS.get(parent, [])
+                prefix = text.lower()
+                candidates = [s + ' ' for s in subs if s.startswith(prefix)]
+            return candidates[state] if state < len(candidates) else None
+        except Exception:
+            return None
+
+    # ── Submission ──────────────────────────────────────────────
 
     def _submit(self, module, fn, params, signer='alice', sudo=False):
         if not self._ensure():
@@ -228,7 +287,7 @@ class LaudCLI:
             return []
 
     def _show(self, result, label=None):
-        """Pretty-print a query result."""
+        """Pretty-print a query result (handles 2-level nesting)."""
         if result is None:
             return
         val = result.value if hasattr(result, 'value') else result
@@ -236,10 +295,23 @@ class LaudCLI:
             print(f"  {C.DIM}{label}:{C.R}")
         if isinstance(val, dict):
             for k, v in val.items():
-                print(f"    {C.CY}{k:>24}{C.R}: {C.W}{v}{C.R}")
+                if isinstance(v, dict):
+                    print(f"    {C.CY}{k}{C.R}:")
+                    for k2, v2 in v.items():
+                        print(f"      {C.DIM}{k2:>20}{C.R}: {C.W}{v2}{C.R}")
+                elif isinstance(v, list):
+                    print(f"    {C.CY}{k:>24}{C.R}: {C.W}[{len(v)} items]{C.R}")
+                    for i, item in enumerate(v[:5]):
+                        print(f"      {C.DIM}[{i}]{C.R} {item}")
+                    if len(v) > 5:
+                        print(f"      {C.DIM}... +{len(v)-5} more{C.R}")
+                else:
+                    print(f"    {C.CY}{k:>24}{C.R}: {C.W}{v}{C.R}")
         elif isinstance(val, list):
             for i, item in enumerate(val[:20]):
                 print(f"    {C.DIM}[{i}]{C.R} {item}")
+            if len(val) > 20:
+                print(f"    {C.DIM}... +{len(val)-20} more{C.R}")
         else:
             print(f"    {C.W}{val}{C.R}")
 
@@ -280,9 +352,14 @@ class LaudCLI:
 
     def _prompt_account(self, label="Account"):
         names = list(self.keypairs.keys())
-        print(f"  {C.DIM}Accounts: {', '.join(names)}{C.R}")
-        name = self._prompt(label, "alice").lower()
-        return name if name in names else "alice"
+        default = self._ctx_account
+        print(f"  {C.DIM}Accounts: {', '.join(names)}  (active: {default}){C.R}")
+        name = self._prompt(label, default).lower()
+        return name if name in names else default
+
+    def _prompt_epoch(self, label="Epoch"):
+        default = self._ctx_epoch if self._ctx_epoch is not None else 1
+        return self._prompt_int(label, default)
 
     def _prompt_position(self, label="Position"):
         x = self._prompt_int(f"{label} X (m)", 0)
@@ -331,18 +408,54 @@ class LaudCLI:
         else:
             print(f"  {C.CY}{key}:{C.R} {C.W}{v}{C.R}")
 
+    def _table(self, headers, rows):
+        """Print a formatted table with aligned columns."""
+        if not rows:
+            print(f"  {C.DIM}(no data){C.R}")
+            return
+        # Calculate column widths from headers and data
+        widths = [len(str(h)) for h in headers]
+        for row in rows:
+            for i, cell in enumerate(row):
+                if i < len(widths):
+                    widths[i] = max(widths[i], len(str(cell)))
+        # Cap columns at 32 chars
+        widths = [min(w, 32) for w in widths]
+        # Header
+        hdr = "  "
+        sep = "  "
+        for i, h in enumerate(headers):
+            w = widths[i] if i < len(widths) else 10
+            hdr += f"{C.BB}{str(h):<{w}}{C.R}  "
+            sep += f"{C.DIM}{'─' * w}{C.R}  "
+        print(hdr)
+        print(sep)
+        # Rows
+        for row in rows:
+            line = "  "
+            for i, cell in enumerate(row):
+                w = widths[i] if i < len(widths) else 10
+                s = str(cell)
+                if len(s) > w:
+                    s = s[:w-1] + '…'
+                if i == 0:
+                    line += f"{C.CY}{s:<{w}}{C.R}  "
+                else:
+                    line += f"{C.W}{s:<{w}}{C.R}  "
+            print(line)
+        print()
+
     def _header(self, title):
-        w = 52
-        print(f"\n{C.B}{'═' * w}{C.R}")
-        print(f"{C.BB}  {title}{C.R}")
-        print(f"{C.B}{'═' * w}{C.R}\n")
+        print(f"\n  {C.BB}{title}{C.R}")
+        print(f"  {C.DIM}{'─' * min(52, len(title) + 4)}{C.R}")
 
     def _menu(self, title, options):
-        self._header(title)
+        print(f"\n  {C.BB}{title}{C.R}")
+        print(f"  {C.DIM}{'─' * min(52, len(title) + 4)}{C.R}")
         for key, label in options:
             if key == "─":
                 if label:
-                    print(f"{label}")
+                    print(f"  {label}")
                 else:
                     print()
             elif key == "?":
@@ -355,24 +468,38 @@ class LaudCLI:
         return self._prompt("", "0")
 
     def _pause(self):
-        input(f"  {C.DIM}enter to continue...{C.R}")
+        pass  # no-op: output flows continuously
 
     # ══════════════════════════════════════════════════════════════
     #  1. CHAIN STATUS
     # ══════════════════════════════════════════════════════════════
 
-    def menu_chain(self):
-        while True:
-            c = self._menu("CHAIN STATUS", [
+    def menu_chain(self, _direct=None):
+        self._nav_stack.append('chain')
+        _opts = [
                 ("1", "Node health & info"),
                 ("2", "Latest block"),
                 ("3", "Runtime version"),
                 ("4", "Account balances"),
                 ("5", "Recent events"),
                 ("6", "List pallets"),
+                ("?", "Show options"),
                 ("0", "Back"),
-            ])
-            if c == "0": break
+            ]
+        if not _direct:
+            self._menu("CHAIN STATUS", _opts)
+        while True:
+            if _direct:
+                c = _direct
+                _direct = None
+            else:
+                c = self._prompt("", "0")
+            if c in ("0", "back"):
+                self._nav_stack.pop()
+                break
+            if c == "?":
+                self._menu("CHAIN STATUS", _opts)
+                continue
             if not self._ensure():
                 self._pause(); continue
             try:
@@ -416,10 +543,10 @@ class LaudCLI:
     #  2. PRESENCE PROTOCOL
     # ══════════════════════════════════════════════════════════════
 
-    def menu_presence(self):
+    def menu_presence(self, _direct=None):
         self._check_epoch()
-        while True:
-            c = self._menu("PRESENCE PROTOCOL", [
+        self._nav_stack.append('presence')
+        _opts = [
                 ("1", "Declare Presence"),
                 ("2", "Declare with Commitment"),
                 ("3", "Reveal Commitment"),
@@ -435,15 +562,29 @@ class LaudCLI:
                 ("c", "Vote Count"),
                 ("d", "Active Validators"),
                 ("e", "Commitment / Reveal Count"),
+                ("?", "Show options"),
                 ("0", "Back"),
-            ])
-            if c == "0": break
+            ]
+        if not _direct:
+            self._menu("PRESENCE PROTOCOL", _opts)
+        while True:
+            if _direct:
+                c = _direct
+                _direct = None
+            else:
+                c = self._prompt("", "0")
+            if c in ("0", "back"):
+                self._nav_stack.pop()
+                break
+            if c == "?":
+                self._menu("PRESENCE PROTOCOL", _opts)
+                continue
             elif c == "1":
-                e = self._prompt_int("Epoch", 1)
+                e = self._prompt_epoch()
                 a = self._prompt_account("Signer")
                 self._submit("Presence", "declare_presence", {"epoch": e}, a)
             elif c == "2":
-                e = self._prompt_int("Epoch", 1)
+                e = self._prompt_epoch()
                 a = self._prompt_account("Signer")
                 sec = secrets.token_hex(32)
                 rnd = secrets.token_hex(32)
@@ -454,7 +595,7 @@ class LaudCLI:
                 self._submit("Presence", "declare_presence_with_commitment",
                              {"epoch": e, "commitment": "0x" + h}, a)
             elif c == "3":
-                e   = self._prompt_int("Epoch", 1)
+                e   = self._prompt_epoch()
                 sec = self._prompt("Secret (hex from step 2)")
                 rnd = self._prompt("Randomness (hex from step 2)")
                 a   = self._prompt_account("Signer")
@@ -462,20 +603,20 @@ class LaudCLI:
                              {"epoch": e, "secret": sec, "randomness": rnd}, a)
             elif c == "4":
                 actor   = self._prompt_actor("Target actor")
-                e       = self._prompt_int("Epoch", 1)
+                e       = self._prompt_epoch()
                 approve = self._prompt_bool("Approve?")
                 a       = self._prompt_account("Voter")
                 self._submit("Presence", "vote_presence",
                              {"actor": actor, "epoch": e, "approve": approve}, a)
             elif c == "5":
                 actor = self._prompt_actor("Target actor")
-                e     = self._prompt_int("Epoch", 1)
+                e     = self._prompt_epoch()
                 a     = self._prompt_account("Signer")
                 self._submit("Presence", "finalize_presence",
                              {"actor": actor, "epoch": e}, a)
             elif c == "6":
                 actor = self._prompt_actor("Target actor")
-                e     = self._prompt_int("Epoch", 1)
+                e     = self._prompt_epoch()
                 self._submit("Presence", "slash_presence",
                              {"actor": actor, "epoch": e}, sudo=True)
             elif c == "7":
@@ -489,25 +630,25 @@ class LaudCLI:
                 self._submit("Presence", "set_validator_status",
                              {"validator": vid, "active": act}, sudo=True)
             elif c == "9":
-                e   = self._prompt_int("Epoch", 1)
+                e   = self._prompt_epoch()
                 act = self._prompt_bool("Active?")
                 self._submit("Presence", "set_epoch_active",
                              {"epoch": e, "active": act}, sudo=True)
             elif c == "a":
                 self._val("Current Epoch", self._query("Presence", "CurrentEpoch"))
             elif c == "b":
-                e = self._prompt_int("Epoch", 1)
+                e = self._prompt_epoch()
                 actor = self._prompt_actor("Actor")
                 self._val("Presence", self._query("Presence", "Presences", [e, actor]))
             elif c == "c":
-                e = self._prompt_int("Epoch", 1)
+                e = self._prompt_epoch()
                 actor = self._prompt_actor("Actor")
                 self._val("Votes", self._query("Presence", "VoteCount", [e, actor]))
             elif c == "d":
                 for k, v in self._query_map("Presence", "ActiveValidators")[:10]:
                     print(f"    {C.DIM}{k.value[:20] if hasattr(k,'value') else k}... = {v.value if hasattr(v,'value') else v}{C.R}")
             elif c == "e":
-                e = self._prompt_int("Epoch", 1)
+                e = self._prompt_epoch()
                 self._val("Commitments", self._query("Presence", "CommitmentCount", [e]))
                 self._val("Reveals", self._query("Presence", "RevealCount", [e]))
             self._pause()
@@ -516,9 +657,9 @@ class LaudCLI:
     #  3. EPOCH MANAGEMENT
     # ══════════════════════════════════════════════════════════════
 
-    def menu_epoch(self):
-        while True:
-            c = self._menu("EPOCH MANAGEMENT", [
+    def menu_epoch(self, _direct=None):
+        self._nav_stack.append('epoch')
+        _opts = [
                 ("1", "Schedule Epoch [sudo]"),
                 ("2", "Start Epoch [sudo]"),
                 ("3", "Close Epoch [sudo]"),
@@ -531,9 +672,23 @@ class LaudCLI:
                 ("b", "Epoch Info"),
                 ("c", "Epoch Count"),
                 ("d", "Epoch Schedule"),
+                ("?", "Show options"),
                 ("0", "Back"),
-            ])
-            if c == "0": break
+            ]
+        if not _direct:
+            self._menu("EPOCH MANAGEMENT", _opts)
+        while True:
+            if _direct:
+                c = _direct
+                _direct = None
+            else:
+                c = self._prompt("", "0")
+            if c in ("0", "back"):
+                self._nav_stack.pop()
+                break
+            if c == "?":
+                self._menu("EPOCH MANAGEMENT", _opts)
+                continue
             elif c == "1":
                 s = self._prompt_int("Start block", 10)
                 d = self._prompt_int("Duration (blocks)", 60)
@@ -567,7 +722,7 @@ class LaudCLI:
                 self._val("Current Epoch", self._query("Epoch", "CurrentEpoch"))
             elif c == "b":
                 self._val("Info", self._query("Epoch", "EpochInfo",
-                          [self._prompt_int("Epoch", 1)]))
+                          [self._prompt_epoch()]))
             elif c == "c":
                 self._val("Total", self._query("Epoch", "EpochCount"))
             elif c == "d":
@@ -578,9 +733,9 @@ class LaudCLI:
     #  4. VALIDATOR OPERATIONS
     # ══════════════════════════════════════════════════════════════
 
-    def menu_validator(self):
-        while True:
-            c = self._menu("VALIDATOR OPERATIONS", [
+    def menu_validator(self, _direct=None):
+        self._nav_stack.append('validator')
+        _opts = [
                 ("1", "Register Validator"),
                 ("2", "Activate Validator"),
                 ("3", "Deactivate Validator"),
@@ -593,9 +748,23 @@ class LaudCLI:
                 ("a", "Validator Info"),
                 ("b", "Validator Count / Total Stake"),
                 ("c", "Pending Slashes"),
+                ("?", "Show options"),
                 ("0", "Back"),
-            ])
-            if c == "0": break
+            ]
+        if not _direct:
+            self._menu("VALIDATOR OPERATIONS", _opts)
+        while True:
+            if _direct:
+                c = _direct
+                _direct = None
+            else:
+                c = self._prompt("", "0")
+            if c in ("0", "back"):
+                self._nav_stack.pop()
+                break
+            if c == "?":
+                self._menu("VALIDATOR OPERATIONS", _opts)
+                continue
             elif c == "1":
                 s = self._prompt_int("Stake", 1000000)
                 a = self._prompt_account()
@@ -642,10 +811,10 @@ class LaudCLI:
     #  5. POSITION-BASED TRIANGULATION (PBT)
     # ══════════════════════════════════════════════════════════════
 
-    def menu_pbt(self):
+    def menu_pbt(self, _direct=None):
         self._check_epoch()
-        while True:
-            c = self._menu("POSITION-BASED TRIANGULATION", [
+        self._nav_stack.append('pbt')
+        _opts = [
                 ("1", "Set Validator Position"),
                 ("2", "Claim Position"),
                 ("3", "Submit Witness Attestation"),
@@ -657,9 +826,23 @@ class LaudCLI:
                 ("a", "Position Claim"),
                 ("b", "Attestation Count"),
                 ("c", "Validator Positions"),
+                ("?", "Show options"),
                 ("0", "Back"),
-            ])
-            if c == "0": break
+            ]
+        if not _direct:
+            self._menu("POSITION-BASED TRIANGULATION", _opts)
+        while True:
+            if _direct:
+                c = _direct
+                _direct = None
+            else:
+                c = self._prompt("", "0")
+            if c in ("0", "back"):
+                self._nav_stack.pop()
+                break
+            if c == "?":
+                self._menu("POSITION-BASED TRIANGULATION", _opts)
+                continue
             elif c == "1":
                 name = self._prompt_account("Validator")
                 vid = self._validator_id(name)
@@ -667,14 +850,14 @@ class LaudCLI:
                 self._submit("Presence", "set_validator_position",
                              {"validator": vid, "position": pos}, name)
             elif c == "2":
-                e   = self._prompt_int("Epoch", 1)
+                e   = self._prompt_epoch()
                 pos = self._prompt_position("Claimed position")
                 a   = self._prompt_account("Claimer")
                 self._submit("Presence", "claim_position",
                              {"epoch": e, "position": pos}, a)
             elif c == "3":
                 target  = self._prompt_actor("Target actor")
-                e       = self._prompt_int("Epoch", 1)
+                e       = self._prompt_epoch()
                 lat     = self._prompt_int("Latency ms", 5)
                 direct  = self._prompt_bool("Direct connection?")
                 w       = self._prompt_account("Witness")
@@ -683,7 +866,7 @@ class LaudCLI:
                               "latency_ms": lat, "direct_connection": direct}, w)
             elif c == "4":
                 target = self._prompt_actor("Target")
-                e      = self._prompt_int("Epoch", 1)
+                e      = self._prompt_epoch()
                 a      = self._prompt_account("Caller")
                 self._submit("Presence", "verify_position",
                              {"target": target, "epoch": e}, a)
@@ -692,11 +875,11 @@ class LaudCLI:
             elif c == "6":
                 self._auto_pbt_test()
             elif c == "a":
-                e = self._prompt_int("Epoch", 1)
+                e = self._prompt_epoch()
                 actor = self._prompt_actor("Actor")
                 self._val("Claim", self._query("Presence", "PositionClaims", [e, actor]))
             elif c == "b":
-                e = self._prompt_int("Epoch", 1)
+                e = self._prompt_epoch()
                 actor = self._prompt_actor("Actor")
                 self._val("Count", self._query("Presence", "AttestationCount", [e, actor]))
             elif c == "c":
@@ -791,13 +974,13 @@ class LaudCLI:
     # ── Error Hints ───────────────────────────────────────────────
 
     ERROR_HINTS = {
-        'EpochNotActive': 'Press b from main menu to bootstrap the devnet',
-        'NotAValidator': 'Press b from main menu to register validators',
-        'NotAnActiveValidator': 'Press b from main menu to register validators',
-        'PositionAlreadyClaimed': 'Already claimed this epoch — use a fresh epoch',
+        'EpochNotActive': 'Run "bootstrap" to set up the devnet first',
+        'NotAValidator': 'Run "bootstrap" to register validators',
+        'NotAnActiveValidator': 'Run "bootstrap" to register validators',
+        'PositionAlreadyClaimed': 'Already claimed this epoch — try "use epoch <N>" with a fresh epoch',
         'DuplicateAttestation': 'This witness already attested this epoch',
-        'DuplicatePresence': 'Already declared presence this epoch — use a fresh epoch',
-        'DuplicateVote': 'This validator already voted this epoch — use a fresh epoch',
+        'DuplicatePresence': 'Already declared this epoch — try "use epoch <N>" with a fresh epoch',
+        'DuplicateVote': 'Already voted this epoch — try "use epoch <N>" with a fresh epoch',
         'PresenceImmutable': 'Presence already finalized — cannot modify in this epoch',
         'SelfAttestation': 'Validators cannot self-attest — use a different witness',
         'InsufficientAttestations': 'Need 3+ witness attestations first',
@@ -813,6 +996,53 @@ class LaudCLI:
             if key in err_str:
                 return hint
         return None
+
+    # ── Context Commands ────────────────────────────────────────────
+
+    def _cmd_use(self, args):
+        """Handle the 'use' command for setting context."""
+        if not args:
+            self._info(f"epoch={C.W}{self._ctx_epoch or 'auto'}{C.R}  "
+                       f"account={C.W}{self._ctx_account}{C.R}")
+            self._info(f"Usage: use epoch <N> | use <account> | use clear")
+            return
+        if args[0] == 'epoch':
+            if len(args) > 1:
+                try:
+                    self._ctx_epoch = int(args[1])
+                    self._ok(f"Context epoch set to {self._ctx_epoch}")
+                except ValueError:
+                    self._err(f"Invalid epoch: {args[1]}")
+            else:
+                self._val("Current epoch", self._ctx_epoch or "not set")
+        elif args[0] == 'clear':
+            self._ctx_epoch = None
+            self._ctx_account = 'alice'
+            self._ok("Context cleared (epoch=auto, account=alice)")
+        elif args[0] in self.keypairs:
+            self._ctx_account = args[0]
+            self._ok(f"Context account set to {self._ctx_account}")
+        else:
+            self._err(f"Unknown: '{args[0]}'. Try: use epoch 5, use bob, use clear")
+
+    def _show_status(self):
+        """Show compact chain status."""
+        parts = [f"{C.BB}laud{C.R}"]
+        if self.connected:
+            parts.append(f"{C.DIM}{self.url}{C.R}")
+            try:
+                blk = self.substrate.get_block_header()['header']['number']
+                parts.append(f"{C.G}block #{blk}{C.R}")
+            except Exception:
+                parts.append(f"{C.G}connected{C.R}")
+        else:
+            parts.append(f"{C.RED}offline{C.R}")
+        if self._ctx_epoch is not None:
+            parts.append(f"{C.Y}epoch {self._ctx_epoch}{C.R}")
+        acct = self._ctx_account
+        sudo_tag = f" {C.DIM}(sudo){C.R}" if acct == 'alice' else ""
+        parts.append(f"account: {C.W}{acct}{C.R}{sudo_tag}")
+        print(f"  {'  '.join(parts)}")
 
     # ── Bootstrap ─────────────────────────────────────────────────
 
@@ -862,9 +1092,9 @@ class LaudCLI:
     #  6. DISPUTE RESOLUTION
     # ══════════════════════════════════════════════════════════════
 
-    def menu_dispute(self):
-        while True:
-            c = self._menu("DISPUTE RESOLUTION", [
+    def menu_dispute(self, _direct=None):
+        self._nav_stack.append('dispute')
+        _opts = [
                 ("1", "Open Dispute"),
                 ("2", "Submit Evidence"),
                 ("3", "Resolve Dispute [sudo]"),
@@ -872,9 +1102,23 @@ class LaudCLI:
                 ("─", f"{C.DIM}── Queries ──{C.R}"),
                 ("a", "Dispute Info"),
                 ("b", "Open Disputes"),
+                ("?", "Show options"),
                 ("0", "Back"),
-            ])
-            if c == "0": break
+            ]
+        if not _direct:
+            self._menu("DISPUTE RESOLUTION", _opts)
+        while True:
+            if _direct:
+                c = _direct
+                _direct = None
+            else:
+                c = self._prompt("", "0")
+            if c in ("0", "back"):
+                self._nav_stack.pop()
+                break
+            if c == "?":
+                self._menu("DISPUTE RESOLUTION", _opts)
+                continue
             elif c == "1":
                 t = self._prompt_actor("Target validator")
                 v = self._prompt_enum("Violation:", ["Minor","Moderate","Severe","Critical"])
@@ -909,9 +1153,9 @@ class LaudCLI:
     #  7. SIGNAL TRIANGULATION
     # ══════════════════════════════════════════════════════════════
 
-    def menu_triangulation(self):
-        while True:
-            c = self._menu("SIGNAL TRIANGULATION", [
+    def menu_triangulation(self, _direct=None):
+        self._nav_stack.append('triangulation')
+        _opts = [
                 ("1", "Register Reporter"),
                 ("2", "Deregister Reporter"),
                 ("3", "Report Signal"),
@@ -922,9 +1166,23 @@ class LaudCLI:
                 ("a", "Reporter Info"),
                 ("b", "Device / Ghost Count"),
                 ("c", "Fraud Cases"),
+                ("?", "Show options"),
                 ("0", "Back"),
-            ])
-            if c == "0": break
+            ]
+        if not _direct:
+            self._menu("SIGNAL TRIANGULATION", _opts)
+        while True:
+            if _direct:
+                c = _direct
+                _direct = None
+            else:
+                c = self._prompt("", "0")
+            if c in ("0", "back"):
+                self._nav_stack.pop()
+                break
+            if c == "?":
+                self._menu("SIGNAL TRIANGULATION", _opts)
+                continue
             elif c == "1":
                 pos = self._prompt_position("Reporter pos")
                 a   = self._prompt_account()
@@ -984,9 +1242,9 @@ class LaudCLI:
     #  8. DEVICE MANAGEMENT
     # ══════════════════════════════════════════════════════════════
 
-    def menu_device(self):
-        while True:
-            c = self._menu("DEVICE MANAGEMENT", [
+    def menu_device(self, _direct=None):
+        self._nav_stack.append('device')
+        _opts = [
                 ("1", "Register Device"),
                 ("2", "Activate / Reactivate Device"),
                 ("3", "Suspend Device"),
@@ -996,9 +1254,23 @@ class LaudCLI:
                 ("7", "Update Trust Score"),
                 ("─", f"{C.DIM}── Queries ──{C.R}"),
                 ("a", "Device Info"),
+                ("?", "Show options"),
                 ("0", "Back"),
-            ])
-            if c == "0": break
+            ]
+        if not _direct:
+            self._menu("DEVICE MANAGEMENT", _opts)
+        while True:
+            if _direct:
+                c = _direct
+                _direct = None
+            else:
+                c = self._prompt("", "0")
+            if c in ("0", "back"):
+                self._nav_stack.pop()
+                break
+            if c == "?":
+                self._menu("DEVICE MANAGEMENT", _opts)
+                continue
             elif c == "1":
                 owner = self._prompt_actor("Owner")
                 dt    = self._prompt_enum("Type:", ["Mobile","Desktop","Server","IoT","Hardware","Virtual"])
@@ -1051,9 +1323,9 @@ class LaudCLI:
     #  9. LIFECYCLE MANAGEMENT
     # ══════════════════════════════════════════════════════════════
 
-    def menu_lifecycle(self):
-        while True:
-            c = self._menu("LIFECYCLE MANAGEMENT", [
+    def menu_lifecycle(self, _direct=None):
+        self._nav_stack.append('lifecycle')
+        _opts = [
                 ("1", "Register Actor"),
                 ("2", "Activate Actor [sudo]"),
                 ("3", "Suspend / Reactivate [sudo]"),
@@ -1065,9 +1337,23 @@ class LaudCLI:
                 ("─", f"{C.DIM}── Queries ──{C.R}"),
                 ("a", "Actor Info"),
                 ("b", "Actor Count"),
+                ("?", "Show options"),
                 ("0", "Back"),
-            ])
-            if c == "0": break
+            ]
+        if not _direct:
+            self._menu("LIFECYCLE MANAGEMENT", _opts)
+        while True:
+            if _direct:
+                c = _direct
+                _direct = None
+            else:
+                c = self._prompt("", "0")
+            if c in ("0", "back"):
+                self._nav_stack.pop()
+                break
+            if c == "?":
+                self._menu("LIFECYCLE MANAGEMENT", _opts)
+                continue
             elif c == "1":
                 kh = self._prompt_h256("Key hash")
                 a  = self._prompt_account()
@@ -1113,9 +1399,9 @@ class LaudCLI:
     #  10. CRYPTOGRAPHIC VAULT
     # ══════════════════════════════════════════════════════════════
 
-    def menu_vault(self):
-        while True:
-            c = self._menu("CRYPTOGRAPHIC VAULT (Shamir t-of-n)", [
+    def menu_vault(self, _direct=None):
+        self._nav_stack.append('vault')
+        _opts = [
                 ("1", "Create Vault"),
                 ("2", "Add Member"),
                 ("3", "Activate Vault"),
@@ -1126,9 +1412,23 @@ class LaudCLI:
                 ("8", "Dissolve Vault"),
                 ("─", f"{C.DIM}── Queries ──{C.R}"),
                 ("a", "Vault Info"),
+                ("?", "Show options"),
                 ("0", "Back"),
-            ])
-            if c == "0": break
+            ]
+        if not _direct:
+            self._menu("CRYPTOGRAPHIC VAULT (Shamir t-of-n)", _opts)
+        while True:
+            if _direct:
+                c = _direct
+                _direct = None
+            else:
+                c = self._prompt("", "0")
+            if c in ("0", "back"):
+                self._nav_stack.pop()
+                break
+            if c == "?":
+                self._menu("CRYPTOGRAPHIC VAULT (Shamir t-of-n)", _opts)
+                continue
             elif c == "1":
                 owner = self._prompt_actor("Owner")
                 t = self._prompt_int("Threshold (t)", 2)
@@ -1170,9 +1470,9 @@ class LaudCLI:
     #  11. ZERO-KNOWLEDGE PROOFS
     # ══════════════════════════════════════════════════════════════
 
-    def menu_zk(self):
-        while True:
-            c = self._menu("ZERO-KNOWLEDGE PROOFS", [
+    def menu_zk(self, _direct=None):
+        self._nav_stack.append('zk')
+        _opts = [
                 ("1", "Verify Share Proof"),
                 ("2", "Verify Presence Proof"),
                 ("3", "Verify Access Proof"),
@@ -1182,9 +1482,23 @@ class LaudCLI:
                 ("7", "Add/Remove Trusted Verifier [sudo]"),
                 ("─", f"{C.DIM}── Queries ──{C.R}"),
                 ("a", "Verification Count"),
+                ("?", "Show options"),
                 ("0", "Back"),
-            ])
-            if c == "0": break
+            ]
+        if not _direct:
+            self._menu("ZERO-KNOWLEDGE PROOFS", _opts)
+        while True:
+            if _direct:
+                c = _direct
+                _direct = None
+            else:
+                c = self._prompt("", "0")
+            if c in ("0", "back"):
+                self._nav_stack.pop()
+                break
+            if c == "?":
+                self._menu("ZERO-KNOWLEDGE PROOFS", _opts)
+                continue
             elif c == "1":
                 cm = self._prompt_h256("Commitment hash")
                 pr = self._prompt("Proof hex", "00" * 32)
@@ -1194,7 +1508,7 @@ class LaudCLI:
                               "proof": "0x" + pr}, a)
             elif c == "2":
                 actor = self._prompt_actor("Actor")
-                e     = self._prompt_int("Epoch", 1)
+                e     = self._prompt_epoch()
                 pr    = self._prompt("Proof hex", "00" * 32)
                 a     = self._prompt_account()
                 self._submit("Zk", "verify_presence_proof",
@@ -1237,18 +1551,32 @@ class LaudCLI:
     #  12. GOVERNANCE
     # ══════════════════════════════════════════════════════════════
 
-    def menu_governance(self):
-        while True:
-            c = self._menu("GOVERNANCE & CAPABILITIES", [
+    def menu_governance(self, _direct=None):
+        self._nav_stack.append('governance')
+        _opts = [
                 ("1", "Grant Capability"),
                 ("2", "Revoke Capability"),
                 ("3", "Delegate Capability"),
                 ("4", "Update Permissions"),
                 ("─", f"{C.DIM}── Queries ──{C.R}"),
                 ("a", "Capability Info"),
+                ("?", "Show options"),
                 ("0", "Back"),
-            ])
-            if c == "0": break
+            ]
+        if not _direct:
+            self._menu("GOVERNANCE & CAPABILITIES", _opts)
+        while True:
+            if _direct:
+                c = _direct
+                _direct = None
+            else:
+                c = self._prompt("", "0")
+            if c in ("0", "back"):
+                self._nav_stack.pop()
+                break
+            if c == "?":
+                self._menu("GOVERNANCE & CAPABILITIES", _opts)
+                continue
             elif c == "1":
                 grantee = self._prompt_actor("Grantee")
                 res     = self._prompt_h256("Resource ID")
@@ -1287,9 +1615,9 @@ class LaudCLI:
     #  13. SEMANTIC RELATIONSHIPS
     # ══════════════════════════════════════════════════════════════
 
-    def menu_semantic(self):
-        while True:
-            c = self._menu("SEMANTIC RELATIONSHIPS", [
+    def menu_semantic(self, _direct=None):
+        self._nav_stack.append('semantic')
+        _opts = [
                 ("1", "Create Relationship"),
                 ("2", "Accept Relationship"),
                 ("3", "Revoke Relationship"),
@@ -1298,9 +1626,23 @@ class LaudCLI:
                 ("6", "Update Profile"),
                 ("─", f"{C.DIM}── Queries ──{C.R}"),
                 ("a", "Relationship Info"),
+                ("?", "Show options"),
                 ("0", "Back"),
-            ])
-            if c == "0": break
+            ]
+        if not _direct:
+            self._menu("SEMANTIC RELATIONSHIPS", _opts)
+        while True:
+            if _direct:
+                c = _direct
+                _direct = None
+            else:
+                c = self._prompt("", "0")
+            if c in ("0", "back"):
+                self._nav_stack.pop()
+                break
+            if c == "?":
+                self._menu("SEMANTIC RELATIONSHIPS", _opts)
+                continue
             elif c == "1":
                 to    = self._prompt_actor("To actor")
                 rtype = self._prompt("Relationship type", "Trust")
@@ -1345,9 +1687,9 @@ class LaudCLI:
     #  14. BOOMERANG ROUTING
     # ══════════════════════════════════════════════════════════════
 
-    def menu_boomerang(self):
-        while True:
-            c = self._menu("BOOMERANG ROUTING", [
+    def menu_boomerang(self, _direct=None):
+        self._nav_stack.append('boomerang')
+        _opts = [
                 ("1", "Initiate Path"),
                 ("2", "Record Hop"),
                 ("3", "Extend Timeout"),
@@ -1355,9 +1697,23 @@ class LaudCLI:
                 ("─", f"{C.DIM}── Queries ──{C.R}"),
                 ("a", "Path Info"),
                 ("b", "Active Paths"),
+                ("?", "Show options"),
                 ("0", "Back"),
-            ])
-            if c == "0": break
+            ]
+        if not _direct:
+            self._menu("BOOMERANG ROUTING", _opts)
+        while True:
+            if _direct:
+                c = _direct
+                _direct = None
+            else:
+                c = self._prompt("", "0")
+            if c in ("0", "back"):
+                self._nav_stack.pop()
+                break
+            if c == "?":
+                self._menu("BOOMERANG ROUTING", _opts)
+                continue
             elif c == "1":
                 target = self._prompt_actor("Target")
                 a      = self._prompt_account()
@@ -1390,11 +1746,11 @@ class LaudCLI:
     #  15. AUTONOMOUS BEHAVIORS
     # ══════════════════════════════════════════════════════════════
 
-    def menu_autonomous(self):
+    def menu_autonomous(self, _direct=None):
+        self._nav_stack.append('autonomous')
         BTYPES = ["PresencePattern","InteractionPattern","TemporalPattern",
                   "TransactionPattern","NetworkPattern"]
-        while True:
-            c = self._menu("AUTONOMOUS BEHAVIORS", [
+        _opts = [
                 ("1", "Create Profile"),
                 ("2", "Record Behavior"),
                 ("3", "Register Pattern"),
@@ -1405,9 +1761,23 @@ class LaudCLI:
                 ("─", f"{C.DIM}── Queries ──{C.R}"),
                 ("a", "Actor Profile"),
                 ("b", "Pattern Count"),
+                ("?", "Show options"),
                 ("0", "Back"),
-            ])
-            if c == "0": break
+            ]
+        if not _direct:
+            self._menu("AUTONOMOUS BEHAVIORS", _opts)
+        while True:
+            if _direct:
+                c = _direct
+                _direct = None
+            else:
+                c = self._prompt("", "0")
+            if c in ("0", "back"):
+                self._nav_stack.pop()
+                break
+            if c == "?":
+                self._menu("AUTONOMOUS BEHAVIORS", _opts)
+                continue
             elif c == "1":
                 actor = self._prompt_actor("Actor")
                 a     = self._prompt_account()
@@ -1465,9 +1835,9 @@ class LaudCLI:
     #  16. OCTOPUS CLUSTERS
     # ══════════════════════════════════════════════════════════════
 
-    def menu_octopus(self):
-        while True:
-            c = self._menu("OCTOPUS CLUSTERS", [
+    def menu_octopus(self, _direct=None):
+        self._nav_stack.append('octopus')
+        _opts = [
                 ("1",  "Create Cluster"),
                 ("2",  "Register Subnode"),
                 ("3",  "Activate Subnode"),
@@ -1484,10 +1854,24 @@ class LaudCLI:
                 ("a",  "Cluster Info"),
                 ("b",  "Subnode Info"),
                 ("c",  "Cluster Count"),
+                ("?",  "Show options"),
                 ("0",  "Back"),
-            ])
-            if c == "0": break
-            a = self._prompt_account() if c not in ("a","b","c","0","─") else "alice"
+            ]
+        if not _direct:
+            self._menu("OCTOPUS CLUSTERS", _opts)
+        while True:
+            if _direct:
+                c = _direct
+                _direct = None
+            else:
+                c = self._prompt("", "0")
+            if c in ("0", "back"):
+                self._nav_stack.pop()
+                break
+            if c == "?":
+                self._menu("OCTOPUS CLUSTERS", _opts)
+                continue
+            a = self._prompt_account() if c not in ("a","b","c","0","─","?") else "alice"
             if c == "1":
                 owner = self._prompt_actor("Owner")
                 self._submit("Octopus", "create_cluster", {"owner": owner}, a)
@@ -1560,9 +1944,9 @@ class LaudCLI:
     #  17. STORAGE OPERATIONS
     # ══════════════════════════════════════════════════════════════
 
-    def menu_storage(self):
-        while True:
-            c = self._menu("ON-CHAIN STORAGE", [
+    def menu_storage(self, _direct=None):
+        self._nav_stack.append('storage')
+        _opts = [
                 ("1", "Store Data"),
                 ("2", "Update Data"),
                 ("3", "Delete Data"),
@@ -1570,11 +1954,25 @@ class LaudCLI:
                 ("5", "Finalize Epoch Storage [sudo]"),
                 ("─", f"{C.DIM}── Queries ──{C.R}"),
                 ("a", "Entry Count"),
+                ("?", "Show options"),
                 ("0", "Back"),
-            ])
-            if c == "0": break
+            ]
+        if not _direct:
+            self._menu("ON-CHAIN STORAGE", _opts)
+        while True:
+            if _direct:
+                c = _direct
+                _direct = None
+            else:
+                c = self._prompt("", "0")
+            if c in ("0", "back"):
+                self._nav_stack.pop()
+                break
+            if c == "?":
+                self._menu("ON-CHAIN STORAGE", _opts)
+                continue
             elif c == "1":
-                e    = self._prompt_int("Epoch", 1)
+                e    = self._prompt_epoch()
                 key  = self._prompt_h256("Data key")
                 dh   = self._prompt_h256("Data hash")
                 dt   = self._prompt_enum("Type:", ["Presence","Commitment","Proof","Metadata","Temporary"])
@@ -1585,7 +1983,7 @@ class LaudCLI:
                              {"epoch": e, "key": key, "data_hash": dh,
                               "data_type": dt, "size_bytes": sz, "retention": ret}, a)
             elif c == "2":
-                e   = self._prompt_int("Epoch", 1)
+                e   = self._prompt_epoch()
                 key = self._prompt_h256("Data key")
                 dh  = self._prompt_h256("New data hash")
                 sz  = self._prompt_int("New size", 256)
@@ -1594,7 +1992,7 @@ class LaudCLI:
                              {"epoch": e, "key": key, "new_data_hash": dh,
                               "new_size": sz}, a)
             elif c == "3":
-                e   = self._prompt_int("Epoch", 1)
+                e   = self._prompt_epoch()
                 key = self._prompt_h256("Data key")
                 a   = self._prompt_account()
                 self._submit("Storage", "delete_data", {"epoch": e, "key": key}, a)
@@ -1606,7 +2004,7 @@ class LaudCLI:
                              {"actor": actor, "max_entries": me, "max_bytes": mb}, sudo=True)
             elif c == "5":
                 self._submit("Storage", "finalize_epoch",
-                             {"epoch": self._prompt_int("Epoch", 1)}, sudo=True)
+                             {"epoch": self._prompt_epoch()}, sudo=True)
             elif c == "a":
                 self._val("Entries", self._query("Storage", "EntryCount"))
             self._pause()
@@ -1615,9 +2013,9 @@ class LaudCLI:
     #  19. BLOCK EXPLORER
     # ══════════════════════════════════════════════════════════════
 
-    def menu_block_explorer(self):
-        while True:
-            c = self._menu("BLOCK EXPLORER", [
+    def menu_block_explorer(self, _direct=None):
+        self._nav_stack.append('blocks')
+        _opts = [
                 ("1", "Get block by number"),
                 ("2", "Get block by hash"),
                 ("3", "Latest block detail"),
@@ -1625,9 +2023,23 @@ class LaudCLI:
                 ("5", "Block events"),
                 ("6", "Finalized head"),
                 ("7", "Compare blocks"),
+                ("?", "Show options"),
                 ("0", "Back"),
-            ])
-            if c == "0": break
+            ]
+        if not _direct:
+            self._menu("BLOCK EXPLORER", _opts)
+        while True:
+            if _direct:
+                c = _direct
+                _direct = None
+            else:
+                c = self._prompt("", "0")
+            if c in ("0", "back"):
+                self._nav_stack.pop()
+                break
+            if c == "?":
+                self._menu("BLOCK EXPLORER", _opts)
+                continue
             if not self._ensure():
                 self._pause(); continue
             try:
@@ -1679,12 +2091,14 @@ class LaudCLI:
                     if not exts:
                         self._info("No extrinsics in this block")
                     else:
+                        rows = []
                         for i, ext in enumerate(exts):
                             call = ext.value if hasattr(ext, 'value') else ext
                             call_data = call.get('call', {}) if isinstance(call, dict) else {}
                             mod = call_data.get('call_module', '?')
                             fn = call_data.get('call_function', '?')
-                            print(f"    {C.Y}{i}{C.R}  {C.W}{mod}.{fn}{C.R}")
+                            rows.append([i, mod, fn])
+                        self._table(["#", "Module", "Function"], rows)
                         idx = self._prompt_int("Decode index", 0)
                         if 0 <= idx < len(exts):
                             ext = exts[idx]
@@ -1748,18 +2162,32 @@ class LaudCLI:
     #  20. STORAGE INSPECTOR
     # ══════════════════════════════════════════════════════════════
 
-    def menu_storage_inspector(self):
-        while True:
-            c = self._menu("STORAGE INSPECTOR", [
+    def menu_storage_inspector(self, _direct=None):
+        self._nav_stack.append('inspect')
+        _opts = [
                 ("1", "Query storage by pallet + item"),
                 ("2", "Raw storage key lookup"),
                 ("3", "Enumerate keys by prefix"),
                 ("4", "Storage size"),
                 ("5", "Storage diff between blocks"),
                 ("6", "Storage proof (Merkle)"),
+                ("?", "Show options"),
                 ("0", "Back"),
-            ])
-            if c == "0": break
+            ]
+        if not _direct:
+            self._menu("STORAGE INSPECTOR", _opts)
+        while True:
+            if _direct:
+                c = _direct
+                _direct = None
+            else:
+                c = self._prompt("", "0")
+            if c in ("0", "back"):
+                self._nav_stack.pop()
+                break
+            if c == "?":
+                self._menu("STORAGE INSPECTOR", _opts)
+                continue
             if not self._ensure():
                 self._pause(); continue
             try:
@@ -1853,18 +2281,32 @@ class LaudCLI:
     #  21. RUNTIME INSPECTOR
     # ══════════════════════════════════════════════════════════════
 
-    def menu_runtime_inspector(self):
-        while True:
-            c = self._menu("RUNTIME INSPECTOR", [
+    def menu_runtime_inspector(self, _direct=None):
+        self._nav_stack.append('runtime')
+        _opts = [
                 ("1", "List all pallets"),
                 ("2", "Pallet detail"),
                 ("3", "Runtime version"),
                 ("4", "Search call by name"),
                 ("5", "Search storage by name"),
                 ("6", "Search error by name"),
+                ("?", "Show options"),
                 ("0", "Back"),
-            ])
-            if c == "0": break
+            ]
+        if not _direct:
+            self._menu("RUNTIME INSPECTOR", _opts)
+        while True:
+            if _direct:
+                c = _direct
+                _direct = None
+            else:
+                c = self._prompt("", "0")
+            if c in ("0", "back"):
+                self._nav_stack.pop()
+                break
+            if c == "?":
+                self._menu("RUNTIME INSPECTOR", _opts)
+                continue
             if not self._ensure():
                 self._pause(); continue
             try:
@@ -1968,9 +2410,9 @@ class LaudCLI:
     #  22. NETWORK & PEERS
     # ══════════════════════════════════════════════════════════════
 
-    def menu_network(self):
-        while True:
-            c = self._menu("NETWORK & PEERS", [
+    def menu_network(self, _direct=None):
+        self._nav_stack.append('network')
+        _opts = [
                 ("1", "Connected peers"),
                 ("2", "Node identity"),
                 ("3", "Sync state"),
@@ -1979,9 +2421,23 @@ class LaudCLI:
                 ("6", "Chain type"),
                 ("7", "Pending extrinsics"),
                 ("8", "Add/Remove reserved peer"),
+                ("?", "Show options"),
                 ("0", "Back"),
-            ])
-            if c == "0": break
+            ]
+        if not _direct:
+            self._menu("NETWORK & PEERS", _opts)
+        while True:
+            if _direct:
+                c = _direct
+                _direct = None
+            else:
+                c = self._prompt("", "0")
+            if c in ("0", "back"):
+                self._nav_stack.pop()
+                break
+            if c == "?":
+                self._menu("NETWORK & PEERS", _opts)
+                continue
             if not self._ensure():
                 self._pause(); continue
             try:
@@ -2043,9 +2499,9 @@ class LaudCLI:
     #  23. CRYPTO TOOLBOX
     # ══════════════════════════════════════════════════════════════
 
-    def menu_crypto(self):
-        while True:
-            c = self._menu("CRYPTO TOOLBOX", [
+    def menu_crypto(self, _direct=None):
+        self._nav_stack.append('crypto')
+        _opts = [
                 ("1",  "Generate keypair"),
                 ("2",  "Derive from URI"),
                 ("3",  "SS58 encode/decode"),
@@ -2058,9 +2514,23 @@ class LaudCLI:
                 ("10", "Sign message"),
                 ("11", "Verify signature"),
                 ("12", "Random H256"),
+                ("?",  "Show options"),
                 ("0",  "Back"),
-            ])
-            if c == "0": break
+            ]
+        if not _direct:
+            self._menu("CRYPTO TOOLBOX", _opts)
+        while True:
+            if _direct:
+                c = _direct
+                _direct = None
+            else:
+                c = self._prompt("", "0")
+            if c in ("0", "back"):
+                self._nav_stack.pop()
+                break
+            if c == "?":
+                self._menu("CRYPTO TOOLBOX", _opts)
+                continue
             try:
                 if c == "1":
                     scheme = self._prompt_enum("Scheme:", ["sr25519", "ed25519"])
@@ -2201,17 +2671,31 @@ class LaudCLI:
     #  24. ACCOUNT INSPECTOR
     # ══════════════════════════════════════════════════════════════
 
-    def menu_account_inspector(self):
-        while True:
-            c = self._menu("ACCOUNT INSPECTOR", [
+    def menu_account_inspector(self, _direct=None):
+        self._nav_stack.append('accounts')
+        _opts = [
                 ("1", "Full account info"),
                 ("2", "Account nonce"),
                 ("3", "All balances"),
                 ("4", "Fee estimation"),
                 ("5", "Dry run extrinsic"),
+                ("?", "Show options"),
                 ("0", "Back"),
-            ])
-            if c == "0": break
+            ]
+        if not _direct:
+            self._menu("ACCOUNT INSPECTOR", _opts)
+        while True:
+            if _direct:
+                c = _direct
+                _direct = None
+            else:
+                c = self._prompt("", "0")
+            if c in ("0", "back"):
+                self._nav_stack.pop()
+                break
+            if c == "?":
+                self._menu("ACCOUNT INSPECTOR", _opts)
+                continue
             if not self._ensure():
                 self._pause(); continue
             try:
@@ -2234,8 +2718,7 @@ class LaudCLI:
                     r = self.substrate.rpc_request("system_accountNextIndex", [kp.ss58_address])
                     self._val("Next Nonce", r.get('result', '?'))
                 elif c == "3":
-                    print(f"\n  {C.W}{'Account':>10}  {'Free':>18}  {'Reserved':>18}  {'Total':>18}{C.R}")
-                    print(f"  {C.DIM}{'─'*68}{C.R}")
+                    rows = []
                     for name, kp in self.keypairs.items():
                         r = self.substrate.query('System', 'Account', [kp.ss58_address])
                         if r and r.value:
@@ -2243,9 +2726,10 @@ class LaudCLI:
                             free = data.get('free', 0)
                             reserved = data.get('reserved', 0)
                             total = free + reserved
-                            print(f"  {C.Y}{name:>10}{C.R}  {free/1e12:>18.4f}  {reserved/1e12:>18.4f}  {total/1e12:>18.4f}")
+                            rows.append([name, f"{free/1e12:.4f}", f"{reserved/1e12:.4f}", f"{total/1e12:.4f}"])
                         else:
-                            print(f"  {C.Y}{name:>10}{C.R}  {C.DIM}(not found){C.R}")
+                            rows.append([name, "—", "—", "—"])
+                    self._table(["Account", "Free", "Reserved", "Total"], rows)
                 elif c == "4":
                     mod = self._prompt("Call module", "Presence")
                     fn = self._prompt("Call function", "declare_presence")
@@ -2289,17 +2773,31 @@ class LaudCLI:
     #  25. EVENT DECODER
     # ══════════════════════════════════════════════════════════════
 
-    def menu_events(self):
-        while True:
-            c = self._menu("EVENT DECODER", [
+    def menu_events(self, _direct=None):
+        self._nav_stack.append('events')
+        _opts = [
                 ("1", "Events at latest block"),
                 ("2", "Events at block N"),
                 ("3", "Filter by pallet"),
                 ("4", "Event history (last N blocks)"),
                 ("5", "List all event types"),
+                ("?", "Show options"),
                 ("0", "Back"),
-            ])
-            if c == "0": break
+            ]
+        if not _direct:
+            self._menu("EVENT DECODER", _opts)
+        while True:
+            if _direct:
+                c = _direct
+                _direct = None
+            else:
+                c = self._prompt("", "0")
+            if c in ("0", "back"):
+                self._nav_stack.pop()
+                break
+            if c == "?":
+                self._menu("EVENT DECODER", _opts)
+                continue
             if not self._ensure():
                 self._pause(); continue
             try:
@@ -2370,7 +2868,7 @@ class LaudCLI:
                     self._val("Total events found", total)
                 elif c == "5":
                     md = self.substrate.get_metadata()
-                    total = 0
+                    rows = []
                     for p in md.pallets:
                         if p.events:
                             for ev in p.events:
@@ -2379,9 +2877,9 @@ class LaudCLI:
                                     fields = ", ".join(str(a) for a in ev.args)
                                 elif hasattr(ev, 'value') and isinstance(ev.value, dict):
                                     fields = ", ".join(ev.value.get('args', []))
-                                print(f"    {C.B}{p.name}{C.R}.{C.Y}{ev.name}{C.R} {C.DIM}({fields}){C.R}")
-                                total += 1
-                    self._val("Total event types", total)
+                                rows.append([p.name, ev.name, fields])
+                    self._table(["Pallet", "Event", "Fields"], rows)
+                    self._val("Total event types", len(rows))
             except Exception as e:
                 self._err(str(e))
             self._pause()
@@ -2470,63 +2968,137 @@ class LaudCLI:
     #  MAIN MENU
     # ══════════════════════════════════════════════════════════════
 
-    def menu_main(self):
-        if self.connected:
-            try:
-                blk = self.substrate.get_block_header()['header']['number']
-                status = f"{C.G}block #{blk}{C.R}"
-            except Exception:
-                status = f"{C.G}connected{C.R}"
+    # ══════════════════════════════════════════════════════════════
+    #  COMPACT MENU & HELP
+    # ══════════════════════════════════════════════════════════════
+
+    def _show_compact_menu(self):
+        print(f"""
+  {C.BB}COMMANDS{C.R}  {C.DIM}type command or number, Tab to complete{C.R}
+
+  {C.B}CORE{C.R}                    {C.B}POSITIONING{C.R}             {C.B}SECURITY{C.R}
+  {C.Y} 2{C.R} presence    {C.DIM}p{C.R}       {C.Y} 5{C.R} pbt                 {C.Y} 7{C.R} dispute     {C.DIM}dis{C.R}
+  {C.Y} 3{C.R} epoch       {C.DIM}e{C.R}       {C.Y} 6{C.R} triangulation       {C.Y} 8{C.R} zk
+  {C.Y} 4{C.R} validator   {C.DIM}val{C.R}                             {C.Y} 9{C.R} vault
+
+  {C.B}IDENTITY{C.R}                {C.B}INTELLIGENCE{C.R}            {C.B}DEV TOOLS{C.R}
+  {C.Y}10{C.R} device      {C.DIM}dev{C.R}     {C.Y}13{C.R} semantic    {C.DIM}sem{C.R}    {C.Y}19{C.R} blocks      {C.DIM}blk{C.R}
+  {C.Y}11{C.R} lifecycle   {C.DIM}life{C.R}    {C.Y}14{C.R} boomerang   {C.DIM}boom{C.R}   {C.Y}20{C.R} inspect     {C.DIM}si{C.R}
+  {C.Y}12{C.R} governance  {C.DIM}gov{C.R}     {C.Y}15{C.R} autonomous  {C.DIM}auto{C.R}   {C.Y}21{C.R} runtime     {C.DIM}rt{C.R}
+                          {C.Y}16{C.R} octopus     {C.DIM}oct{C.R}    {C.Y}22{C.R} network     {C.DIM}net{C.R}
+                          {C.Y}17{C.R} storage     {C.DIM}store{C.R}  {C.Y}23{C.R} crypto      {C.DIM}cr{C.R}
+                                                {C.Y}24{C.R} accounts    {C.DIM}acct{C.R}
+  {C.B}TESTS{C.R}                   {C.B}STATUS{C.R}                  {C.Y}25{C.R} events      {C.DIM}ev{C.R}
+  {C.Y}t1{C.R} test pop            {C.Y}18{C.R} chain status
+  {C.Y}t2{C.R} test pbt
+  {C.Y}t3{C.R} test commit
+
+  {C.DIM}Other: status  use epoch/account  bootstrap (b)  connect (1)  help  ?  exit{C.R}
+""")
+
+    def _cmd_help(self, args=None):
+        if not args:
+            print(f"""
+  {C.BB}LAUD CLI{C.R}  {C.DIM}PoP Protocol Testing Suite{C.R}
+
+  {C.W}Navigation{C.R}
+    menu              Show all commands with numbers
+    <command>         Enter submenu (e.g. 'presence' or '2')
+    <cmd> <action>    Direct action (e.g. 'presence declare' or 'p d')
+    back              Return to parent menu
+    0                 Back / exit current submenu
+
+  {C.W}Context{C.R}
+    use epoch <N>     Set default epoch for all commands
+    use <name>        Set default account (alice, bob, ...)
+    use clear         Reset to defaults
+    status            Show chain / epoch / account status
+
+  {C.W}Quick Actions{C.R}
+    b / bootstrap     Bootstrap devnet (epoch + validators + positions)
+    t1 / test pop     Full PoP lifecycle test
+    t2 / test pbt     PBT triangulation test
+    t3 / test commit  Commit-reveal test
+    1 / connect       Connect to node
+
+  {C.W}Tips{C.R}
+    Tab               Autocomplete commands
+    Up/Down           Command history
+    Ctrl+C            Cancel / back to root
+    ?                 Quick start guide (inside submenu: show options)
+
+  {C.DIM}Type 'help <topic>' for details, e.g. 'help presence', 'help pbt'{C.R}
+""")
+            return
+        topic = args[0].lower()
+        topic_map = {
+            'p': 'presence', '2': 'presence',
+            'e': 'epoch', '3': 'epoch',
+            'val': 'validator', '4': 'validator',
+            '5': 'pbt',
+            'tri': 'triangulation', '6': 'triangulation',
+            'dis': 'dispute', '7': 'dispute',
+            '8': 'zk',
+            '9': 'vault',
+            'dev': 'device', '10': 'device',
+            'life': 'lifecycle', '11': 'lifecycle',
+            'gov': 'governance', '12': 'governance',
+            'sem': 'semantic', '13': 'semantic',
+            'boom': 'boomerang', '14': 'boomerang',
+            'auto': 'autonomous', '15': 'autonomous',
+            'oct': 'octopus', '16': 'octopus',
+            'store': 'storage', '17': 'storage',
+            'blk': 'blocks', '19': 'blocks',
+            'si': 'inspect', '20': 'inspect',
+            'rt': 'runtime', '21': 'runtime',
+            'net': 'network', '22': 'network',
+            'cr': 'crypto', '23': 'crypto',
+            'acct': 'accounts', '24': 'accounts',
+            'ev': 'events', '25': 'events',
+        }
+        topic = topic_map.get(topic, topic)
+        help_data = {
+            'presence': ('Presence Protocol', [
+                ('declare', '1/d', 'Declare presence for an epoch'),
+                ('commit',  '2/cm', 'Declare with commitment hash'),
+                ('reveal',  '3/rv', 'Reveal a commitment'),
+                ('vote',    '4/v', 'Vote on an actor\'s presence'),
+                ('finalize','5/f', 'Finalize presence after quorum'),
+                ('slash',   '6', 'Slash presence [sudo]'),
+                ('quorum',  '7', 'Set quorum config [sudo]'),
+            ]),
+            'epoch': ('Epoch Management', [
+                ('schedule', '1', 'Schedule a new epoch [sudo]'),
+                ('start',    '2', 'Start an epoch [sudo]'),
+                ('close',    '3', 'Close an epoch [sudo]'),
+                ('finalize', '4', 'Finalize an epoch [sudo]'),
+                ('register', '5', 'Register participant'),
+            ]),
+            'validator': ('Validator Operations', [
+                ('register',   '1', 'Register with stake'),
+                ('activate',   '2', 'Activate validator'),
+                ('deactivate', '3', 'Deactivate validator'),
+                ('withdraw',   '4', 'Withdraw stake'),
+                ('stake',      '5', 'Increase stake'),
+                ('slash',      '6', 'Slash validator [sudo]'),
+            ]),
+            'pbt': ('Position-Based Triangulation', [
+                ('position', '1', 'Set validator position'),
+                ('claim',    '2', 'Claim a position'),
+                ('attest',   '3', 'Submit witness attestation'),
+                ('verify',   '4', 'Verify position via triangulation'),
+                ('setup',    '5', 'Auto-setup 6 validators'),
+                ('test',     '6', 'Full PBT test flow'),
+            ]),
+        }
+        if topic in help_data:
+            title, cmds = help_data[topic]
+            print(f"\n  {C.BB}{title}{C.R}  {C.DIM}({topic}){C.R}\n")
+            for name, alias, desc in cmds:
+                print(f"    {C.Y}{name:16}{C.R} {C.DIM}({alias}){C.R}  {desc}")
+            print(f"\n  {C.DIM}Usage: {topic} <action>  or type '{topic}' for interactive menu{C.R}\n")
         else:
-            status = f"{C.RED}offline{C.R}"
-
-        return self._menu(f"LAUD NETWORKS  {C.DIM}[{status}{C.DIM}]{C.R}", [
-            ("1",  f"{'Reconnect' if self.connected else 'Connect'}          {C.DIM}{self.url}{C.R}"),
-            ("b",  f"Bootstrap Devnet {C.DIM}epoch + 6 validators + hexagonal positions{C.R}"),
-            ("─",  ""),
-            ("─",  f"{C.B}  CORE{C.R} {C.DIM}— declare, vote, finalize proof-of-presence{C.R}"),
-            ("2",  "Presence Protocol"),
-            ("3",  "Epoch Management"),
-            ("4",  "Validator Operations"),
-            ("─",  f"{C.B}  POSITIONING{C.R} {C.DIM}— triangulate & verify physical location{C.R}"),
-            ("5",  "Position-Based Triangulation"),
-            ("6",  "Signal Triangulation"),
-            ("─",  f"{C.B}  SECURITY{C.R} {C.DIM}— disputes, ZK proofs, Shamir vaults{C.R}"),
-            ("7",  "Dispute Resolution"),
-            ("8",  "Zero-Knowledge Proofs"),
-            ("9",  "Cryptographic Vault"),
-            ("─",  f"{C.B}  IDENTITY{C.R} {C.DIM}— devices, lifecycle, capabilities{C.R}"),
-            ("10", "Device Management"),
-            ("11", "Lifecycle Management"),
-            ("12", "Governance & Capabilities"),
-            ("─",  f"{C.B}  INTELLIGENCE{C.R} {C.DIM}— behavior, routing, clustering{C.R}"),
-            ("13", "Semantic Relationships"),
-            ("14", "Boomerang Routing"),
-            ("15", "Autonomous Behaviors"),
-            ("16", "Octopus Clusters"),
-            ("17", "Storage Operations"),
-            ("─",  f"{C.B}  DEV TOOLS{C.R} {C.DIM}— inspect blocks, storage, runtime, crypto{C.R}"),
-            ("19", "Block Explorer"),
-            ("20", "Storage Inspector"),
-            ("21", "Runtime Inspector"),
-            ("22", "Network & Peers"),
-            ("23", "Crypto Toolbox"),
-            ("24", "Account Inspector"),
-            ("25", "Event Decoder"),
-            ("─",  ""),
-            ("18", f"Chain Status {C.DIM}(quick overview){C.R}"),
-            ("─",  f"{C.B}  AUTOMATED TESTS{C.R}"),
-            ("t1", f"{C.G}Full PoP Lifecycle{C.R}  {C.DIM}declare > vote > finalize{C.R}"),
-            ("t2", f"{C.G}PBT Flow{C.R}           {C.DIM}claim > attest > verify{C.R}"),
-            ("t3", f"{C.G}Commit-Reveal{C.R}      {C.DIM}commit > reveal > check{C.R}"),
-            ("─",  ""),
-            ("?",  f"Quick Start Guide"),
-            ("0",  f"Exit"),
-        ])
-
-    # ══════════════════════════════════════════════════════════════
-    #  QUICK START GUIDE
-    # ══════════════════════════════════════════════════════════════
+            self._err(f"No help for '{topic}'. Type 'help' for general help.")
 
     def show_guide(self):
         self._header("QUICK START GUIDE")
@@ -2538,107 +3110,209 @@ class LaudCLI:
 
   {C.W}1. Start the devnet{C.R}  {C.DIM}(instant-seal: blocks only on your txns){C.R}
      {C.Y}cd devnet && ./scripts/dev.sh{C.R}
-     {C.DIM}Or multi-node Aura:  docker compose up -d --build
-     Or native:           ./scripts/dev.sh native{C.R}
+     {C.DIM}Or multi-node Aura:  docker compose up -d --build{C.R}
 
   {C.W}2. Connect + bootstrap{C.R}
-     {C.DIM}CLI auto-connects on start. Then press {C.Y}b{C.DIM} to bootstrap:
+     {C.DIM}CLI auto-connects on start. Type {C.Y}bootstrap{C.DIM} or {C.Y}b{C.DIM}:
      activates epoch 1, registers 6 validators, sets positions.{C.R}
 
-  {C.W}3. Run automated tests{C.R}  {C.DIM}(self-contained, press b first){C.R}
-     {C.Y}t1{C.R}  {C.DIM}Full PoP lifecycle — declare > 3 votes > finalize
-     {C.Y}t2{C.R}  PBT flow — claim position > 3 attestations > verify
-     {C.Y}t3{C.R}  Commit-reveal — commit hash > reveal secret > check{C.R}
+  {C.W}3. Run automated tests{C.R}  {C.DIM}(type bootstrap first){C.R}
+     {C.Y}t1{C.R}  {C.DIM}Full PoP lifecycle    {C.Y}test pop{C.R}
+     {C.Y}t2{C.R}  {C.DIM}PBT flow             {C.Y}test pbt{C.R}
+     {C.Y}t3{C.R}  {C.DIM}Commit-reveal        {C.Y}test commit{C.R}
 
-  {C.W}4. Manual walkthrough{C.R}
-     {C.Y}b{C.R}      {C.DIM}Bootstrap (if not done){C.R}
-     {C.Y}2 > 1{C.R}  {C.DIM}Declare presence (epoch=1, pick any account){C.R}
-     {C.Y}2 > 4{C.R}  {C.DIM}Vote on it (repeat x3: alice, bob, charlie){C.R}
-     {C.Y}2 > 5{C.R}  {C.DIM}Finalize — state becomes Finalized{C.R}
+  {C.W}4. Set context{C.R}  {C.DIM}(avoid re-typing epoch/account){C.R}
+     {C.Y}use epoch 5{C.R}   {C.DIM}all subsequent commands use epoch 5{C.R}
+     {C.Y}use bob{C.R}       {C.DIM}all subsequent commands sign as bob{C.R}
+     {C.Y}use clear{C.R}     {C.DIM}reset to defaults{C.R}
 
-  {C.W}5. Inspect results{C.R}
-     {C.Y}25 > 1{C.R}  {C.DIM}Event Decoder: see events at latest block{C.R}
-     {C.Y}19 > 3{C.R}  {C.DIM}Block Explorer: latest block detail{C.R}
-     {C.Y}20 > 1{C.R}  {C.DIM}Storage Inspector: query any pallet storage{C.R}
-     {C.Y}21 > 2{C.R}  {C.DIM}Runtime Inspector: drill into pallet calls/errors{C.R}
-     {C.Y}24 > 3{C.R}  {C.DIM}Account Inspector: all 6 balances{C.R}
+  {C.W}5. Direct commands{C.R}  {C.DIM}(skip menus){C.R}
+     {C.Y}presence declare{C.R}   {C.DIM}or{C.R}  {C.Y}p d{C.R}
+     {C.Y}presence vote{C.R}      {C.DIM}or{C.R}  {C.Y}p v{C.R}
+     {C.Y}pbt test{C.R}           {C.DIM}full PBT test flow{C.R}
 
-  {C.W}6. Accounts{C.R}
+  {C.W}6. Inspect results{C.R}
+     {C.Y}events{C.R} {C.DIM}or{C.R} {C.Y}25{C.R}   {C.DIM}Event Decoder{C.R}
+     {C.Y}blocks{C.R} {C.DIM}or{C.R} {C.Y}19{C.R}   {C.DIM}Block Explorer{C.R}
+     {C.Y}status{C.R}           {C.DIM}Quick chain status{C.R}
+
+  {C.W}7. Accounts{C.R}
      {C.DIM}alice {C.Y}(sudo){C.DIM}, bob, charlie, dave, eve, ferdie
      All pre-funded with 10M UNIT on devnet{C.R}
-
-  {C.W}7. Output legend{C.R}
-     {C.G}[OK]{C.DIM}  Block #N (Event.Name) — success
-     {C.RED}[ERR]{C.DIM} Error message
-            {C.Y}Hint: suggested fix{C.DIM} — shown for known errors{C.R}
 """)
-        self._pause()
+
+    # ══════════════════════════════════════════════════════════════
+    #  COMMAND DISPATCH
+    # ══════════════════════════════════════════════════════════════
+
+    # Maps aliases/numbers to canonical menu handler names
+    _MENU_ALIASES = {
+        '1': '_cmd_connect', 'connect': '_cmd_connect', 'reconnect': '_cmd_connect',
+        'b': 'bootstrap', 'boot': 'bootstrap', 'bootstrap': 'bootstrap',
+        '2': 'menu_presence', 'presence': 'menu_presence', 'p': 'menu_presence',
+        '3': 'menu_epoch', 'epoch': 'menu_epoch', 'e': 'menu_epoch',
+        '4': 'menu_validator', 'validator': 'menu_validator', 'val': 'menu_validator',
+        '5': 'menu_pbt', 'pbt': 'menu_pbt',
+        '6': 'menu_triangulation', 'triangulation': 'menu_triangulation', 'tri': 'menu_triangulation',
+        '7': 'menu_dispute', 'dispute': 'menu_dispute', 'dis': 'menu_dispute',
+        '8': 'menu_zk', 'zk': 'menu_zk',
+        '9': 'menu_vault', 'vault': 'menu_vault',
+        '10': 'menu_device', 'device': 'menu_device', 'dev': 'menu_device',
+        '11': 'menu_lifecycle', 'lifecycle': 'menu_lifecycle', 'life': 'menu_lifecycle',
+        '12': 'menu_governance', 'governance': 'menu_governance', 'gov': 'menu_governance',
+        '13': 'menu_semantic', 'semantic': 'menu_semantic', 'sem': 'menu_semantic',
+        '14': 'menu_boomerang', 'boomerang': 'menu_boomerang', 'boom': 'menu_boomerang',
+        '15': 'menu_autonomous', 'autonomous': 'menu_autonomous', 'auto': 'menu_autonomous',
+        '16': 'menu_octopus', 'octopus': 'menu_octopus', 'oct': 'menu_octopus',
+        '17': 'menu_storage', 'storage': 'menu_storage', 'store': 'menu_storage',
+        '18': 'menu_chain', 'chain': 'menu_chain',
+        '19': 'menu_block_explorer', 'blocks': 'menu_block_explorer', 'blk': 'menu_block_explorer',
+        '20': 'menu_storage_inspector', 'inspect': 'menu_storage_inspector', 'si': 'menu_storage_inspector',
+        '21': 'menu_runtime_inspector', 'runtime': 'menu_runtime_inspector', 'rt': 'menu_runtime_inspector',
+        '22': 'menu_network', 'network': 'menu_network', 'net': 'menu_network',
+        '23': 'menu_crypto', 'crypto': 'menu_crypto', 'cr': 'menu_crypto',
+        '24': 'menu_account_inspector', 'accounts': 'menu_account_inspector', 'acct': 'menu_account_inspector',
+        '25': 'menu_events', 'events': 'menu_events', 'ev': 'menu_events',
+        't1': 'test_full_lifecycle', 't2': '_auto_pbt_test', 't3': 'test_commit_reveal',
+        '?': 'show_guide',
+    }
+
+    # Maps parent command → { sub-alias → submenu-number }
+    _SUB_ALIASES = {
+        'menu_presence': {
+            'declare': '1', 'd': '1', 'commit': '2', 'cm': '2', 'reveal': '3', 'rv': '3',
+            'vote': '4', 'v': '4', 'finalize': '5', 'f': '5', 'slash': '6',
+            'quorum': '7', 'validator-status': '8', 'epoch-active': '9',
+        },
+        'menu_epoch': {
+            'schedule': '1', 'start': '2', 'close': '3', 'finalize': '4',
+            'register': '5', 'update': '6', 'force': '7',
+        },
+        'menu_validator': {
+            'register': '1', 'activate': '2', 'deactivate': '3',
+            'withdraw': '4', 'stake': '5', 'slash': '6',
+        },
+        'menu_pbt': {
+            'position': '1', 'claim': '2', 'attest': '3', 'verify': '4',
+            'setup': '5', 'test': '6',
+        },
+    }
+
+    def _cmd_connect(self):
+        url = self._prompt("URL", self.url)
+        self.connect(url)
+
+    def _build_prompt(self):
+        path = "/".join(["laud"] + self._nav_stack)
+        extras = []
+        if self._ctx_account != 'alice':
+            extras.append(f"{C.Y}{self._ctx_account}{C.R}")
+        if self._ctx_epoch is not None:
+            extras.append(f"{C.DIM}epoch:{self._ctx_epoch}{C.R}")
+        extra = " " + " ".join(extras) if extras else ""
+        return f"  {C.B}{path}{C.R}{extra} > "
+
+    def _dispatch(self, line):
+        """Route user input to the right handler."""
+        parts = line.strip().split()
+        if not parts:
+            return
+        cmd = parts[0].lower()
+
+        # Special commands
+        if cmd in ('exit', 'quit', '0'):
+            raise SystemExit
+        if cmd == 'help' or cmd == 'h':
+            self._cmd_help(parts[1:] if len(parts) > 1 else None)
+            return
+        if cmd == 'use':
+            self._cmd_use(parts[1:])
+            return
+        if cmd == 'status':
+            self._show_status()
+            return
+        if cmd in ('menu', 'm'):
+            self._show_compact_menu()
+            return
+        if cmd == 'back':
+            if self._nav_stack:
+                self._nav_stack.pop()
+            return
+
+        # Test aliases: "test pop", "test pbt", "test commit"
+        if cmd == 'test' and len(parts) > 1:
+            sub = parts[1].lower()
+            test_map = {'pop': 'test_full_lifecycle', '1': 'test_full_lifecycle',
+                        'pbt': '_auto_pbt_test', '2': '_auto_pbt_test',
+                        'commit': 'test_commit_reveal', '3': 'test_commit_reveal'}
+            handler_name = test_map.get(sub)
+            if handler_name:
+                getattr(self, handler_name)()
+                return
+
+        # Two-word commands: "presence declare", "pbt test", etc.
+        handler_name = self._MENU_ALIASES.get(cmd)
+        if handler_name and len(parts) > 1:
+            sub_map = self._SUB_ALIASES.get(handler_name, {})
+            sub_alias = parts[1].lower()
+            sub_num = sub_map.get(sub_alias)
+            if sub_num:
+                # Call the menu method with a pre-set choice
+                handler = getattr(self, handler_name, None)
+                if handler:
+                    handler(_direct=sub_num)
+                    return
+
+        # Single-word command / number
+        if handler_name:
+            handler = getattr(self, handler_name, None)
+            if handler:
+                handler()
+                return
+
+        self._err(f"Unknown: '{line}'. Type 'help' or 'menu'.")
 
     # ══════════════════════════════════════════════════════════════
     #  RUN
     # ══════════════════════════════════════════════════════════════
 
+    def _print_welcome(self):
+        print(f"""
+  {C.BB}LAUD NETWORKS{C.R}  {C.DIM}PoP Protocol Testing Suite v1.0.0{C.R}
+  {C.DIM}Type{C.R} help {C.DIM}for commands,{C.R} menu {C.DIM}for full menu,{C.R} ? {C.DIM}for guide{C.R}
+""")
+
     def run(self):
-        print_banner()
+        self._print_welcome()
+        self._setup_readline()
 
         if not SUBSTRATE_OK:
             print(f"  {C.RED}substrate-interface not found.{C.R}")
             print(f"  Run: {C.Y}pip install substrate-interface{C.R}")
             print(f"  Or:  {C.Y}source .venv/bin/activate{C.R}\n")
         else:
-            # Auto-connect on startup
             self.connect(self.url)
             if not self.connected:
-                print(f"  {C.DIM}Tip: run ./scripts/dev.sh for instant-seal devnet, then press 1{C.R}\n")
-
-        menus = {
-            "1":  lambda: self.connect(self._prompt("URL", self.url)),
-            "b":  self.bootstrap,
-            "2":  self.menu_presence,
-            "3":  self.menu_epoch,
-            "4":  self.menu_validator,
-            "5":  self.menu_pbt,
-            "6":  self.menu_triangulation,
-            "7":  self.menu_dispute,
-            "8":  self.menu_zk,
-            "9":  self.menu_vault,
-            "10": self.menu_device,
-            "11": self.menu_lifecycle,
-            "12": self.menu_governance,
-            "13": self.menu_semantic,
-            "14": self.menu_boomerang,
-            "15": self.menu_autonomous,
-            "16": self.menu_octopus,
-            "17": self.menu_storage,
-            "18": self.menu_chain,
-            "19": self.menu_block_explorer,
-            "20": self.menu_storage_inspector,
-            "21": self.menu_runtime_inspector,
-            "22": self.menu_network,
-            "23": self.menu_crypto,
-            "24": self.menu_account_inspector,
-            "25": self.menu_events,
-            "t1": self.test_full_lifecycle,
-            "t2": self._auto_pbt_test,
-            "t3": self.test_commit_reveal,
-            "?":  self.show_guide,
-        }
+                print(f"  {C.DIM}Tip: run ./scripts/dev.sh then type 'connect'{C.R}\n")
 
         while True:
             try:
-                choice = self.menu_main()
-                if choice == "0":
-                    print(f"\n  {C.DIM}LAUD NETWORKS · 7aylabs{C.R}\n")
-                    break
-                handler = menus.get(choice)
-                if handler:
-                    handler()
-                else:
-                    self._err(f"Unknown option '{choice}'. Press ? for help.")
+                line = input(self._build_prompt()).strip()
+                if not line:
+                    continue
+                self._dispatch(line)
+            except SystemExit:
+                print(f"\n  {C.DIM}LAUD NETWORKS{C.R}\n")
+                break
             except KeyboardInterrupt:
-                print(f"\n\n  {C.DIM}Ctrl+C{C.R}")
-                if self._prompt_bool("Exit?"):
-                    break
+                print()
+                if self._nav_stack:
+                    self._nav_stack.clear()
+                    continue
+                print(f"  {C.DIM}(Ctrl+C again or type 'exit' to quit){C.R}")
+            except EOFError:
+                print(f"\n  {C.DIM}LAUD NETWORKS{C.R}\n")
+                break
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -2647,7 +3321,7 @@ class LaudCLI:
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
-        description="LAUD NETWORKS - PoP Protocol Testing Suite · a 7aylabs product")
+        description="LAUD NETWORKS - PoP Protocol Testing Suite")
     parser.add_argument('--url', default='ws://127.0.0.1:9944',
                         help='WebSocket endpoint (default: ws://127.0.0.1:9944)')
     args = parser.parse_args()
