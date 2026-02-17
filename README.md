@@ -6,15 +6,25 @@
 </p>
 
 <p align="center">
-  Standalone Layer 1 blockchain with on-chain Proof of Presence.
+  <a href="https://github.com/7ayLabs/7aychain/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/7ayLabs/7aychain/ci.yml?branch=main&style=for-the-badge" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-BUSL--1.1-blue.svg?style=for-the-badge" alt="License"></a>
+  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/rust-stable-orange.svg?style=for-the-badge" alt="Rust"></a>
+  <a href="https://github.com/paritytech/polkadot-sdk"><img src="https://img.shields.io/badge/substrate-polkadot--stable2503-blueviolet?style=for-the-badge" alt="Substrate"></a>
 </p>
 
-<p align="center">
-  <a href="https://github.com/7ayLabs/7aychain/actions/workflows/ci.yml"><img src="https://github.com/7ayLabs/7aychain/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-BUSL--1.1-blue.svg" alt="License"></a>
-  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/rust-stable-orange.svg" alt="Rust"></a>
-  <a href="https://github.com/paritytech/polkadot-sdk"><img src="https://img.shields.io/badge/substrate-polkadot--stable2503-blueviolet" alt="Substrate"></a>
-</p>
+**7aychain** is a Layer 1 blockchain built to answer one question: _is this actor actually here?_ Validators form witness circles, measure network latency between peers, and triangulate positions — no GPS, no external oracles, no special hardware. Presence is verified through the protocol itself and finalized on-chain with quorum consensus.
+
+The chain runs on the [7ay Proof of Presence Protocol](https://github.com/7ayLabs/7ay-presence), where every presence declaration goes through an epoch-bound lifecycle: declared, attested by witnesses, triangulated, and finalized by validators.
+
+[Website](https://7aylabs.com) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [License](LICENSE)
+
+Get running in three commands — clone, build, and start a local devnet. Then use the [Laud Networks CLI](#laud-networks-cli) to interact with every module on the chain.
+
+```bash
+git clone https://github.com/7ayLabs/7aychain.git && cd 7aychain
+cargo build --release
+./target/release/seveny-node --dev
+```
 
 ---
 
