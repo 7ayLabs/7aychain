@@ -146,12 +146,12 @@ fn report_signal_creates_device() {
             ReporterId::new(0),
             mac_hash,
             -50,
-            SignalType::Wifi,
+            SignalType::NetworkLatency,
             2400
         ));
 
         let device = Triangulation::tracked_devices(mac_hash).expect("device should exist");
-        assert_eq!(device.signal_type, SignalType::Wifi);
+        assert_eq!(device.signal_type, SignalType::NetworkLatency);
         assert_eq!(device.state, DeviceState::Active);
         assert_eq!(Triangulation::device_count(), 1);
     });
@@ -178,7 +178,7 @@ fn invalid_rssi_rejected() {
                 ReporterId::new(0),
                 mac_hash,
                 10,
-                SignalType::Wifi,
+                SignalType::NetworkLatency,
                 2400
             ),
             Error::<Test>::InvalidRssi
@@ -212,7 +212,7 @@ fn inactive_reporter_cannot_report() {
                 ReporterId::new(0),
                 mac_hash,
                 -50,
-                SignalType::Wifi,
+                SignalType::NetworkLatency,
                 2400
             ),
             Error::<Test>::ReporterNotActive
@@ -240,7 +240,7 @@ fn signal_history_stored() {
             ReporterId::new(0),
             mac_hash,
             -50,
-            SignalType::Wifi,
+            SignalType::NetworkLatency,
             2400
         ));
 
@@ -310,7 +310,7 @@ fn multiple_signals_improve_confidence() {
                 ReporterId::new(0),
                 mac_hash,
                 -50,
-                SignalType::Wifi,
+                SignalType::NetworkLatency,
                 2400
             ));
         }
@@ -336,10 +336,10 @@ fn all_signal_types() {
         ));
 
         let signal_types = [
-            SignalType::Wifi,
-            SignalType::Bluetooth,
-            SignalType::Ble,
-            SignalType::Zigbee,
+            SignalType::NetworkLatency,
+            SignalType::NetworkLatency,
+            SignalType::NetworkLatency,
+            SignalType::NetworkLatency,
             SignalType::Unknown,
         ];
 
