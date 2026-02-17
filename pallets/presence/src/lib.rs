@@ -937,6 +937,12 @@ pub mod pallet {
                 ensure_root(origin)?;
             }
 
+            // Only active validators can set their position
+            ensure!(
+                ActiveValidators::<T>::get(validator),
+                Error::<T>::ValidatorNotActive
+            );
+
             ValidatorPositions::<T>::insert(validator, position);
 
             Self::deposit_event(Event::ValidatorPositionUpdated {

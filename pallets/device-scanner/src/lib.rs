@@ -240,15 +240,20 @@ pub mod pallet {
 
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
-        fn on_initialize(_n: BlockNumberFor<T>) -> Weight {
+        fn on_initialize(n: BlockNumberFor<T>) -> Weight {
             ScanDataReceived::<T>::put(false);
-            Weight::from_parts(1_000, 0)
-        }
+            let mut weight = Weight::from_parts(1_000, 0);
 
-        fn on_finalize(n: BlockNumberFor<T>) {
+            // Run stale-device cleanup every 100 blocks, with metered weight
             if (n % 100u32.into()).is_zero() {
-                Self::cleanup_stale_devices(n);
+                let removed = Self::cleanup_stale_devices(n);
+                // Each removal: 1 read + 3 writes (take + 2 mutate)
+                weight = weight.saturating_add(
+                    Weight::from_parts(5_000_u64.saturating_mul(removed as u64), 0),
+                );
             }
+
+            weight
         }
     }
 
@@ -312,13 +317,26 @@ pub mod pallet {
                 if is_new {
                     let current_count = ActiveDeviceCount::<T>::get();
                     if current_count >= T::MaxTrackedDevices::get() {
-                        let evict_count = (T::MaxTrackedDevices::get() / 10).max(1);
-                        let mut candidates: Vec<(H256, BlockNumberFor<T>, DetectedDeviceType)> =
-                            TrackedDevices::<T>::iter()
-                                .map(|(h, d)| (h, d.last_seen, d.device_type))
-                                .collect();
-                        candidates.sort_by_key(|(_, last_seen, _)| *last_seen);
-                        for (hash, _, dtype) in candidates.iter().take(evict_count as usize) {
+                        let evict_count = (T::MaxTrackedDevices::get() / 10).max(1) as usize;
+                        // Bounded selection: keep only the `evict_count` oldest entries
+                        // instead of collecting and sorting all tracked devices (O(n) vs O(n log n))
+                        let mut oldest: Vec<(H256, BlockNumberFor<T>, DetectedDeviceType)> =
+                            Vec::with_capacity(evict_count + 1);
+                        for (h, d) in TrackedDevices::<T>::iter() {
+                            oldest.push((h, d.last_seen, d.device_type));
+                            if oldest.len() > evict_count {
+                                // Remove the newest entry to keep only the oldest
+                                if let Some(pos) = oldest
+                                    .iter()
+                                    .enumerate()
+                                    .max_by_key(|(_, (_, ls, _))| *ls)
+                                    .map(|(i, _)| i)
+                                {
+                                    oldest.swap_remove(pos);
+                                }
+                            }
+                        }
+                        for (hash, _, dtype) in &oldest {
                             TrackedDevices::<T>::remove(hash);
                             DeviceTypeCount::<T>::mutate(dtype, |c| *c = c.saturating_sub(1));
                             ActiveDeviceCount::<T>::mutate(|c| *c = c.saturating_sub(1));
@@ -423,7 +441,8 @@ pub mod pallet {
     impl<T: Config> Pallet<T> {
         /// Clean up stale devices that haven't been seen for DeviceStaleBlocks.
         /// Bounded to 50 removals per invocation to prevent DoS.
-        fn cleanup_stale_devices(current_block: BlockNumberFor<T>) {
+        /// Returns the number of devices removed (for weight accounting).
+        fn cleanup_stale_devices(current_block: BlockNumberFor<T>) -> u32 {
             let stale_threshold = T::DeviceStaleBlocks::get();
             let max_removals: u32 = 50;
             let mut to_remove: Vec<H256> = Vec::with_capacity(max_removals as usize);
@@ -440,25 +459,24 @@ pub mod pallet {
             }
 
             // Actually remove the stale devices
+            let mut removed = 0u32;
             for mac_hash in to_remove {
                 if let Some(device) = TrackedDevices::<T>::take(mac_hash) {
-                    // Update device type count
                     DeviceTypeCount::<T>::mutate(device.device_type, |c| *c = c.saturating_sub(1));
-                    // Update active device count
                     ActiveDeviceCount::<T>::mutate(|c| *c = c.saturating_sub(1));
 
-                    // Emit stale event (for backwards compatibility)
                     Self::deposit_event(Event::DeviceStale {
                         mac_hash,
                         last_seen: device.last_seen,
                     });
-                    // Emit removal event
                     Self::deposit_event(Event::DeviceRemoved {
                         mac_hash,
                         reason: RemovalReason::Stale,
                     });
+                    removed += 1;
                 }
             }
+            removed
         }
 
         pub fn get_active_devices() -> Vec<TrackedScannedDevice<BlockNumberFor<T>>> {

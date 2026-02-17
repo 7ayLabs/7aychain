@@ -368,8 +368,8 @@ pub fn triangulate_from_witnesses<BlockNumber: Clone>(
 
     for attestation in attestations {
         // Weight is inverse of distance (closer = more weight)
-        // Add 1 to avoid division by zero
-        let weight = 1000u64 / (attestation.max_distance_km as u64 + 1);
+        // Add 1 to avoid division by zero; clamp to min 1 so every valid attestation contributes
+        let weight = (1000u64 / (attestation.max_distance_km as u64 + 1)).max(1);
 
         weighted_x += (attestation.witness_position.x as i64) * (weight as i64);
         weighted_y += (attestation.witness_position.y as i64) * (weight as i64);

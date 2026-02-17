@@ -62,7 +62,7 @@ cleanup() {
 trap cleanup SIGINT SIGTERM
 
 # Parse arguments
-SCANNER_MODE="real"
+SCANNER_MODE="latency"
 SCAN_INTERVAL=10
 POS_X=0
 POS_Y=0

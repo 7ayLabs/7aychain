@@ -715,7 +715,12 @@ pub mod pallet {
             let circuit =
                 CircuitRegistry::<T>::get(circuit_id).ok_or(Error::<T>::CircuitNotFound)?;
 
-            // Use stub verifiers - actual pairing implementation pending
+            // WARNING: Stub verifiers only check byte length / non-empty inputs.
+            // Do NOT treat SnarkVerified as cryptographic proof until real verifiers land.
+            log::warn!(
+                "verify_snark: using STUB verifier for circuit {:?} — not cryptographically secure",
+                circuit_id
+            );
             let verified = match circuit.proof_type {
                 SnarkProofType::Groth16 => Self::verify_groth16_stub(&proof, &inputs),
                 SnarkProofType::PlonK => Self::verify_plonk_stub(&proof, &inputs),

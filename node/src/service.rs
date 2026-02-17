@@ -351,6 +351,8 @@ pub fn new_full(
 
     if role.is_authority() {
         let scanner_cfg = scanner_config.unwrap_or_default();
+        let inherent_reporter_position = scanner_cfg.reporter_position;
+        let inherent_max_devices = scanner_cfg.max_devices_per_block;
         start_scanner_task(&task_manager, scanner_cfg, scan_results.clone());
         log::info!("Device scanner initialized for block authoring");
 
@@ -422,8 +424,8 @@ pub fn new_full(
 
                             let device_scanner = DeviceScanInherentDataProvider::new(
                                 scan_results,
-                                Default::default(),
-                                100,
+                                inherent_reporter_position,
+                                inherent_max_devices,
                             );
 
                             Ok((slot, timestamp, device_scanner))

@@ -274,8 +274,12 @@ pub mod pallet {
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
         fn on_initialize(block_number: BlockNumberFor<T>) -> Weight {
-            Self::detect_offline_devices(block_number);
-            Weight::from_parts(10_000, 0)
+            let processed = Self::detect_offline_devices(block_number);
+            // Base cost + per-heartbeat cost (1 read + possible writes)
+            Weight::from_parts(
+                1_000_u64.saturating_add(10_000_u64.saturating_mul(processed as u64)),
+                0,
+            )
         }
     }
 
@@ -711,12 +715,21 @@ pub mod pallet {
             OfflineDeviceCount::<T>::get()
         }
 
-        fn detect_offline_devices(current_block: BlockNumberFor<T>) {
+        /// Check heartbeats for offline devices. Bounded to 50 entries per block.
+        /// Returns the number of heartbeats processed (for weight accounting).
+        fn detect_offline_devices(current_block: BlockNumberFor<T>) -> u32 {
             let timeout = T::HeartbeatTimeoutBlocks::get();
             let max_misses = T::MaxConsecutiveMisses::get();
             let decay = T::HealthScoreDecay::get();
+            let max_per_block: u32 = 50;
+            let mut processed: u32 = 0;
 
             for (device_id, mut heartbeat) in Heartbeats::<T>::iter() {
+                if processed >= max_per_block {
+                    break;
+                }
+                processed += 1;
+
                 if let Some(device) = Devices::<T>::get(device_id) {
                     if device.status != DeviceStatus::Active {
                         continue;
@@ -748,6 +761,7 @@ pub mod pallet {
                     }
                 }
             }
+            processed
         }
     }
 }
