@@ -39,16 +39,10 @@ jobs:
       - name: Build release binary
         run: cargo build --release -p seveny-node
 
-      - name: Build WASM runtime
-        run: cargo build --release -p seveny-runtime
-
       - name: Create checksums
         run: |
           cd target/release
           sha256sum seveny-node > seveny-node.sha256
-          if [ -f wbuild/seveny-runtime/seveny_runtime.compact.compressed.wasm ]; then
-            sha256sum wbuild/seveny-runtime/seveny_runtime.compact.compressed.wasm > seveny-runtime.wasm.sha256
-          fi
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
@@ -57,8 +51,6 @@ jobs:
           path: |
             target/release/seveny-node
             target/release/seveny-node.sha256
-            target/release/wbuild/seveny-runtime/seveny_runtime.compact.compressed.wasm
-            target/release/seveny-runtime.wasm.sha256
           retention-days: 30
           if-no-files-found: warn
 
