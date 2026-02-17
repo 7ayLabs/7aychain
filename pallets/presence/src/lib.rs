@@ -27,7 +27,7 @@ pub mod pallet {
         witness::{
             triangulate_from_witnesses, LatencyMeasurement, PositionClaim, WitnessAttestation,
         },
-        CryptoCommitment as Commitment, Position,
+        PresenceCommitment, Position,
     };
     use sp_runtime::{traits::Hash, Saturating};
 
@@ -201,7 +201,7 @@ pub mod pallet {
     )]
     #[scale_info(skip_type_params(T))]
     pub struct Declaration<BlockNumber> {
-        pub commitment: Commitment,
+        pub commitment: PresenceCommitment,
         pub declared_at: BlockNumber,
         pub block_ref: BlockRef,
         pub revealed: bool,
@@ -449,7 +449,7 @@ pub mod pallet {
         pub fn declare_presence_with_commitment(
             origin: OriginFor<T>,
             epoch: EpochId,
-            commitment: Commitment,
+            commitment: PresenceCommitment,
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
             let actor = Self::account_to_actor(&who);
@@ -1075,7 +1075,7 @@ pub mod pallet {
             epoch: &EpochId,
             secret: &[u8; 32],
             randomness: &[u8; 32],
-        ) -> Commitment {
+        ) -> PresenceCommitment {
             let mut preimage = Vec::with_capacity(DOMAIN_PRESENCE.len() + 32 + 8 + 32 + 32);
             preimage.extend_from_slice(DOMAIN_PRESENCE);
             preimage.extend_from_slice(actor.as_bytes());
@@ -1088,7 +1088,7 @@ pub mod pallet {
                 .as_ref()
                 .try_into()
                 .expect("runtime hash must be 32 bytes");
-            Commitment(sp_core::H256(hash_bytes))
+            PresenceCommitment(sp_core::H256(hash_bytes))
         }
 
         pub fn is_in_commit_phase(epoch: EpochId) -> bool {

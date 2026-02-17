@@ -20,7 +20,7 @@ pub use types::*;
 
 // Re-export crypto with explicit names to avoid conflicts
 pub use crypto::{
-    hash_pair, hash_with_domain, Commitment as CryptoCommitment, MerkleProof, Nullifier,
+    hash_pair, hash_with_domain, MerkleProof, Nullifier, PresenceCommitment,
     PresenceProof, PresenceStatement, PresenceWitness, Share, ShareIndex, StateRoot,
     DOMAIN_COMMITMENT, DOMAIN_EPOCH, DOMAIN_MERKLE, DOMAIN_NULLIFIER, DOMAIN_PRESENCE,
 };
