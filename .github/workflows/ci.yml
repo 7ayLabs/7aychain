@@ -62,7 +62,7 @@ jobs:
             -A clippy::expect_used \
             -A clippy::derivable_impls \
             -A clippy::excessive_nesting \
-            -A clippy::print_stdout
+            -A clippy::disallowed_macros
 
   check-nostd:
     name: Check no_std
