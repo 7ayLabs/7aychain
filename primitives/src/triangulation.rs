@@ -67,7 +67,7 @@ pub fn rssi_to_distance_cm(rssi: i8, tx_power: i8, path_loss_x100: u16) -> u32 {
     let remainder = (exponent_scaled % 10) as u32;
     distance_cm = distance_cm.saturating_add(distance_cm * remainder / 10);
 
-    distance_cm.max(10).min(100_000_00)
+    distance_cm.clamp(10, 10_000_000)
 }
 
 pub fn calculate_weighted_centroid(
@@ -289,7 +289,7 @@ fn integer_sqrt(n: u64) -> u64 {
         return 0;
     }
     let mut x = n;
-    let mut y = (x + 1) / 2;
+    let mut y = x.div_ceil(2);
     while y < x {
         x = y;
         y = (x + n / x) / 2;

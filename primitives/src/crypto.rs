@@ -418,7 +418,7 @@ impl ShamirScheme {
     fn reconstruct_inner(shares: &[Share]) -> Option<[u8; 32]> {
         let mut secret = [0u8; 32];
 
-        for byte_idx in 0..32 {
+        for (byte_idx, slot) in secret.iter_mut().enumerate() {
             let mut result: u8 = 0;
 
             for (i, share_i) in shares.iter().enumerate() {
@@ -428,7 +428,7 @@ impl ShamirScheme {
                 result = gf256::add(result, gf256::mul(yi, li));
             }
 
-            secret[byte_idx] = result;
+            *slot = result;
         }
 
         Some(secret)
