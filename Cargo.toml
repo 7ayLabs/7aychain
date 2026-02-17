@@ -118,7 +118,9 @@ unsafe_code = "forbid"
 # =============================================================================
 # Prevent panics in production code
 unwrap_used = "deny"
-expect_used = "deny"
+# expect_used: FRAME macros (#[pallet::pallet], #[pallet::storage], #[pallet::error])
+# generate code with .expect() internally — cannot deny at workspace level.
+expect_used = "warn"
 # Prevent information leaks
 dbg_macro = "deny"
 print_stdout = "deny"

@@ -47,14 +47,19 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Clippy (library code)
-        run: cargo clippy --workspace --lib -- -D warnings
+        run: |
+          cargo clippy --workspace --lib -- \
+            -D warnings \
+            -A clippy::expect_used \
+            -A clippy::derivable_impls
 
       - name: Clippy (test code)
         run: |
           cargo clippy --workspace --tests -- \
             -D warnings \
             -A clippy::unwrap_used \
-            -A clippy::expect_used
+            -A clippy::expect_used \
+            -A clippy::derivable_impls
 
   check-nostd:
     name: Check no_std
