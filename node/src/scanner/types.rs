@@ -70,4 +70,3 @@ pub struct DeviceScanInherentData {
     pub reporter_position: Position,
     pub scan_timestamp: u64,
 }
-
