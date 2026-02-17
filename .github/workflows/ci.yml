@@ -91,6 +91,9 @@ jobs:
           shared-key: nostd
 
       - name: Check no_std compliance
+        env:
+          # Mimic substrate runtime build: excludes sp-state-machine from sp-io
+          RUSTFLAGS: "--cfg substrate_runtime"
         run: |
           CRATES="seveny-primitives seveny-runtime"
           for pallet in presence epoch validator dispute governance semantic \
