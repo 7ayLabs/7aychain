@@ -132,7 +132,7 @@ impl frame_system::Config for Runtime {
 }
 
 parameter_types! {
-    pub const MinimumPeriod: u64 = 3000;
+    pub const MinimumPeriod: u64 = 3500;
 }
 
 impl pallet_timestamp::Config for Runtime {
@@ -215,8 +215,11 @@ parameter_types! {
     pub const MaxVotesPerPresence: u32 = 100;
     pub const DefaultQuorumThreshold: u32 = 2;
     pub const DefaultQuorumTotal: u32 = 3;
-    pub const CommitRevealDelay: BlockNumber = 10;
-    pub const RevealWindow: BlockNumber = 20;
+    pub const CommitRevealDelay: BlockNumber = 2;
+    pub const RevealWindow: BlockNumber = 4;
+    // Position-Based Triangulation
+    pub const MinWitnessesForVerification: u32 = 3;
+    pub const PositionToleranceMeters: u32 = 100;
 }
 
 impl pallet_presence::Config for Runtime {
@@ -226,13 +229,15 @@ impl pallet_presence::Config for Runtime {
     type DefaultQuorumTotal = DefaultQuorumTotal;
     type CommitRevealDelay = CommitRevealDelay;
     type RevealWindow = RevealWindow;
+    type MinWitnessesForVerification = MinWitnessesForVerification;
+    type PositionToleranceMeters = PositionToleranceMeters;
 }
 
 parameter_types! {
-    pub const EpochDuration: BlockNumber = 100;
-    pub const MinEpochDuration: BlockNumber = 10;
+    pub const EpochDuration: BlockNumber = 60;
+    pub const MinEpochDuration: BlockNumber = 4;
     pub const MaxEpochDuration: BlockNumber = 1000;
-    pub const GracePeriod: BlockNumber = 10;
+    pub const GracePeriod: BlockNumber = 2;
 }
 
 impl pallet_epoch::Config for Runtime {
@@ -244,10 +249,11 @@ impl pallet_epoch::Config for Runtime {
 }
 
 parameter_types! {
-    pub const MinStake: Balance = 10_000;
+    pub const MinStake: Balance = 1_000_000;
     pub const MaxValidators: u32 = 100;
-    pub const BondingDuration: BlockNumber = 100;
-    pub const SlashDeferDuration: BlockNumber = 50;
+    pub const MinValidators: u32 = 50;
+    pub const BondingDuration: BlockNumber = 345_600;
+    pub const SlashDeferDuration: BlockNumber = 86_400;
 }
 
 impl pallet_validator::Config for Runtime {
@@ -255,6 +261,7 @@ impl pallet_validator::Config for Runtime {
     type Currency = Balances;
     type MinStake = MinStake;
     type MaxValidators = MaxValidators;
+    type MinValidators = MinValidators;
     type BondingDuration = BondingDuration;
     type SlashDeferDuration = SlashDeferDuration;
 }
@@ -347,6 +354,10 @@ parameter_types! {
     pub const MaxSubnodesPerCluster: u32 = 8;
     pub const MinSubnodes: u32 = 2;
     pub const ScalingCooldownBlocks: BlockNumber = 50;
+    pub const HeartbeatTimeoutBlocks: BlockNumber = 10;
+    pub const MaxConsecutiveMisses: u8 = 3;
+    pub const HealthScoreDecay: u8 = 10;
+    pub const HealthScoreRecovery: u8 = 5;
 }
 
 impl pallet_octopus::Config for Runtime {
@@ -357,12 +368,20 @@ impl pallet_octopus::Config for Runtime {
     type MaxSubnodesPerCluster = MaxSubnodesPerCluster;
     type MinSubnodes = MinSubnodes;
     type ScalingCooldownBlocks = ScalingCooldownBlocks;
+    type HeartbeatTimeoutBlocks = HeartbeatTimeoutBlocks;
+    type MaxConsecutiveMisses = MaxConsecutiveMisses;
+    type HealthScoreDecay = HealthScoreDecay;
+    type HealthScoreRecovery = HealthScoreRecovery;
 }
 
 parameter_types! {
     pub const MaxDevicesPerActor: u32 = 10;
     pub const AttestationValidityBlocks: BlockNumber = 1000;
     pub const InitialTrustScore: u8 = 50;
+    pub const DeviceHeartbeatTimeoutBlocks: BlockNumber = 10;
+    pub const DeviceMaxConsecutiveMisses: u32 = 3;
+    pub const DeviceHealthScoreDecay: u8 = 10;
+    pub const DeviceHealthScoreRecovery: u8 = 5;
 }
 
 impl pallet_device::Config for Runtime {
@@ -370,6 +389,10 @@ impl pallet_device::Config for Runtime {
     type MaxDevicesPerActor = MaxDevicesPerActor;
     type AttestationValidityBlocks = AttestationValidityBlocks;
     type InitialTrustScore = InitialTrustScore;
+    type HeartbeatTimeoutBlocks = DeviceHeartbeatTimeoutBlocks;
+    type MaxConsecutiveMisses = DeviceMaxConsecutiveMisses;
+    type HealthScoreDecay = DeviceHealthScoreDecay;
+    type HealthScoreRecovery = DeviceHealthScoreRecovery;
 }
 
 parameter_types! {
@@ -419,6 +442,7 @@ parameter_types! {
     pub const KeyDestructionTimeoutBlocks: BlockNumber = 100;
     pub const MinDestructionAttestations: u32 = 3;
     pub const RotationCooldownBlocks: BlockNumber = 50;
+    pub const RotationTimeoutBlocks: BlockNumber = 200;
 }
 
 impl pallet_lifecycle::Config for Runtime {
@@ -426,6 +450,41 @@ impl pallet_lifecycle::Config for Runtime {
     type KeyDestructionTimeoutBlocks = KeyDestructionTimeoutBlocks;
     type MinDestructionAttestations = MinDestructionAttestations;
     type RotationCooldownBlocks = RotationCooldownBlocks;
+    type RotationTimeoutBlocks = RotationTimeoutBlocks;
+}
+
+parameter_types! {
+    pub const MaxReporters: u32 = 100;
+    pub const MaxReadingsPerDevice: u32 = 50;
+    pub const MaxHistoryEntries: u32 = 1000;
+    pub const InactiveTimeoutBlocks: BlockNumber = 10;
+    pub const LostTimeoutBlocks: BlockNumber = 100;
+    pub const MinReadingsForActive: u32 = 3;
+    pub const SignalRetentionBlocks: BlockNumber = 1000;
+}
+
+impl pallet_triangulation::Config for Runtime {
+    type WeightInfo = ();
+    type MaxReporters = MaxReporters;
+    type MaxReadingsPerDevice = MaxReadingsPerDevice;
+    type MaxHistoryEntries = MaxHistoryEntries;
+    type InactiveTimeoutBlocks = InactiveTimeoutBlocks;
+    type LostTimeoutBlocks = LostTimeoutBlocks;
+    type MinReadingsForActive = MinReadingsForActive;
+    type SignalRetentionBlocks = SignalRetentionBlocks;
+}
+
+parameter_types! {
+    pub const MaxTrackedDevices: u32 = 10_000;
+    pub const DeviceStaleBlocks: BlockNumber = 600;
+    pub const MaxHistoryPerDevice: u32 = 100;
+}
+
+impl pallet_device_scanner::Config for Runtime {
+    type WeightInfo = ();
+    type MaxTrackedDevices = MaxTrackedDevices;
+    type DeviceStaleBlocks = DeviceStaleBlocks;
+    type MaxHistoryPerDevice = MaxHistoryPerDevice;
 }
 
 construct_runtime!(
@@ -452,6 +511,8 @@ construct_runtime!(
         Zk: pallet_zk,
         Storage: pallet_storage,
         Lifecycle: pallet_lifecycle,
+        Triangulation: pallet_triangulation,
+        DeviceScanner: pallet_device_scanner,
     }
 );
 
@@ -598,6 +659,8 @@ impl_runtime_apis! {
             >,
             _key_owner_proof: sp_consensus_grandpa::OpaqueKeyOwnershipProof,
         ) -> Option<()> {
+            // TODO: implement equivocation reporting — currently unhandled
+            log::warn!(target: "runtime", "Grandpa equivocation report received but not processed");
             None
         }
 
@@ -605,6 +668,8 @@ impl_runtime_apis! {
             _set_id: sp_consensus_grandpa::SetId,
             _authority_id: GrandpaId,
         ) -> Option<sp_consensus_grandpa::OpaqueKeyOwnershipProof> {
+            // TODO: implement key ownership proofs for equivocation reporting
+            log::warn!(target: "runtime", "Key ownership proof requested but not implemented");
             None
         }
     }
@@ -658,12 +723,12 @@ impl_runtime_apis! {
         }
 
         fn execute_block(
-            block: Block,
+            block: <Block as BlockT>::LazyBlock,
             state_root_check: bool,
             signature_check: bool,
             select: frame_try_runtime::TryStateSelect,
         ) -> Weight {
-            Executive::try_execute_block(block, state_root_check, signature_check, select).unwrap()
+            Executive::try_execute_block(block.into(), state_root_check, signature_check, select).unwrap()
         }
     }
 }

@@ -1,7 +1,8 @@
 use crate::{
     chain_spec,
     cli::{Cli, Subcommand},
-    service,
+    scanner::{Position, ScannerConfig, ScannerMode},
+    service::{self, SealingMode},
 };
 use clap::Parser;
 use sc_cli::SubstrateCli;
@@ -37,6 +38,7 @@ impl SubstrateCli for Cli {
         Ok(match id {
             "dev" => Box::new(chain_spec::development_config()?),
             "local" | "" => Box::new(chain_spec::local_testnet_config()?),
+            "mainnet" => Box::new(chain_spec::mainnet_config()?),
             path => Box::new(chain_spec::ChainSpec::from_json_file(
                 std::path::PathBuf::from(path),
             )?),
@@ -124,9 +126,30 @@ pub fn run() -> sc_cli::Result<()> {
             runner.sync_run(|config| cmd.run::<Block>(&config))
         }
         None => {
-            let runner = cli.create_runner(&cli.run)?;
+            let scanner_mode = cli
+                .run
+                .scanner_mode
+                .parse::<ScannerMode>()
+                .unwrap_or_default();
+            let scanner_config = ScannerConfig {
+                mode: scanner_mode,
+                mock_device_count: cli.run.mock_devices,
+                mock_seed: cli.run.mock_seed,
+                scan_interval_secs: cli.run.scan_interval,
+                reporter_position: Position {
+                    x: cli.run.scanner_pos_x,
+                    y: cli.run.scanner_pos_y,
+                    z: cli.run.scanner_pos_z,
+                },
+                ..ScannerConfig::default()
+            };
+
+            let sealing = cli.run.sealing.parse::<SealingMode>().unwrap_or_default();
+
+            let runner = cli.create_runner(&cli.run.base)?;
             runner.run_node_until_exit(|config| async move {
-                service::new_full(config).map_err(sc_cli::Error::Service)
+                service::new_full(config, Some(scanner_config), sealing)
+                    .map_err(sc_cli::Error::Service)
             })
         }
     }

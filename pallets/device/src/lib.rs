@@ -83,12 +83,32 @@ pub enum DeviceStatus {
     Suspended,
     Revoked,
     Compromised,
+    Offline,
 }
 
 impl Default for DeviceStatus {
     fn default() -> Self {
         Self::Pending
     }
+}
+
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+    Default,
+)]
+pub struct HeartbeatInfo<BlockNumber> {
+    pub last_heartbeat: BlockNumber,
+    pub sequence: u64,
+    pub consecutive_misses: u32,
+    pub health_score: u8,
 }
 
 #[derive(
@@ -181,6 +201,18 @@ pub mod pallet {
 
         #[pallet::constant]
         type InitialTrustScore: Get<u8>;
+
+        #[pallet::constant]
+        type HeartbeatTimeoutBlocks: Get<BlockNumberFor<Self>>;
+
+        #[pallet::constant]
+        type MaxConsecutiveMisses: Get<u32>;
+
+        #[pallet::constant]
+        type HealthScoreDecay: Get<u8>;
+
+        #[pallet::constant]
+        type HealthScoreRecovery: Get<u8>;
     }
 
     #[pallet::storage]
@@ -214,6 +246,15 @@ pub mod pallet {
     #[pallet::getter(fn active_device_count)]
     pub type ActiveDeviceCount<T> = StorageValue<_, u32, ValueQuery>;
 
+    #[pallet::storage]
+    #[pallet::getter(fn heartbeats)]
+    pub type Heartbeats<T: Config> =
+        StorageMap<_, Blake2_128Concat, DeviceId, HeartbeatInfo<BlockNumberFor<T>>>;
+
+    #[pallet::storage]
+    #[pallet::getter(fn offline_device_count)]
+    pub type OfflineDeviceCount<T> = StorageValue<_, u32, ValueQuery>;
+
     #[pallet::genesis_config]
     #[derive(frame_support::DefaultNoBound)]
     pub struct GenesisConfig<T: Config> {
@@ -226,6 +267,19 @@ pub mod pallet {
         fn build(&self) {
             DeviceCount::<T>::put(0u64);
             ActiveDeviceCount::<T>::put(0u32);
+            OfflineDeviceCount::<T>::put(0u32);
+        }
+    }
+
+    #[pallet::hooks]
+    impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+        fn on_initialize(block_number: BlockNumberFor<T>) -> Weight {
+            let processed = Self::detect_offline_devices(block_number);
+            // Base cost + per-heartbeat cost (1 read + possible writes)
+            Weight::from_parts(
+                1_000_u64.saturating_add(10_000_u64.saturating_mul(processed as u64)),
+                0,
+            )
         }
     }
 
@@ -262,6 +316,19 @@ pub mod pallet {
         DeviceActivityRecorded {
             device_id: DeviceId,
         },
+        HeartbeatReceived {
+            device_id: DeviceId,
+            sequence: u64,
+            health_score: u8,
+        },
+        DeviceWentOffline {
+            device_id: DeviceId,
+            consecutive_misses: u32,
+        },
+        DeviceRecovered {
+            device_id: DeviceId,
+            health_score: u8,
+        },
     }
 
     #[pallet::error]
@@ -279,6 +346,8 @@ pub mod pallet {
         DeviceCompromised,
         CannotReactivateRevokedDevice,
         InvalidTrustScore,
+        InvalidHeartbeatSequence,
+        DeviceOffline,
     }
 
     #[pallet::call]
@@ -519,7 +588,7 @@ pub mod pallet {
                 let d = device.as_mut().ok_or(Error::<T>::DeviceNotFound)?;
 
                 ensure!(
-                    d.status == DeviceStatus::Suspended,
+                    d.status == DeviceStatus::Suspended || d.status == DeviceStatus::Offline,
                     Error::<T>::CannotReactivateRevokedDevice
                 );
 
@@ -528,6 +597,72 @@ pub mod pallet {
                 ActiveDeviceCount::<T>::mutate(|count| *count = count.saturating_add(1));
 
                 Self::deposit_event(Event::DeviceActivated { device_id });
+
+                Ok(())
+            })
+        }
+
+        #[pallet::call_index(9)]
+        #[pallet::weight(T::WeightInfo::record_heartbeat())]
+        pub fn record_heartbeat(
+            origin: OriginFor<T>,
+            device_id: DeviceId,
+            sequence: u64,
+        ) -> DispatchResult {
+            ensure_signed(origin)?;
+
+            let block_number = frame_system::Pallet::<T>::block_number();
+
+            Devices::<T>::try_mutate(device_id, |device| -> DispatchResult {
+                let d = device.as_mut().ok_or(Error::<T>::DeviceNotFound)?;
+
+                ensure!(
+                    d.status == DeviceStatus::Active || d.status == DeviceStatus::Offline,
+                    Error::<T>::DeviceNotActive
+                );
+
+                let mut heartbeat = Heartbeats::<T>::get(device_id).unwrap_or(HeartbeatInfo {
+                    last_heartbeat: block_number,
+                    sequence: 0,
+                    consecutive_misses: 0,
+                    health_score: 100,
+                });
+
+                ensure!(
+                    sequence > heartbeat.sequence,
+                    Error::<T>::InvalidHeartbeatSequence
+                );
+
+                let was_offline = d.status == DeviceStatus::Offline;
+
+                heartbeat.last_heartbeat = block_number;
+                heartbeat.sequence = sequence;
+                heartbeat.consecutive_misses = 0;
+                heartbeat.health_score = heartbeat
+                    .health_score
+                    .saturating_add(T::HealthScoreRecovery::get())
+                    .min(100);
+
+                d.last_active = block_number;
+
+                if was_offline {
+                    d.status = DeviceStatus::Active;
+                    OfflineDeviceCount::<T>::mutate(|c| *c = c.saturating_sub(1));
+                    ActiveDeviceCount::<T>::mutate(|c| *c = c.saturating_add(1));
+
+                    Self::deposit_event(Event::DeviceRecovered {
+                        device_id,
+                        health_score: heartbeat.health_score,
+                    });
+                }
+
+                Heartbeats::<T>::insert(device_id, heartbeat.clone());
+
+                Self::deposit_event(Event::HeartbeatReceived {
+                    device_id,
+                    sequence,
+                    health_score: heartbeat.health_score,
+                });
 
                 Ok(())
             })
@@ -574,6 +709,59 @@ pub mod pallet {
 
         pub fn get_total_active_devices() -> u32 {
             ActiveDeviceCount::<T>::get()
+        }
+
+        pub fn get_total_offline_devices() -> u32 {
+            OfflineDeviceCount::<T>::get()
+        }
+
+        /// Check heartbeats for offline devices. Bounded to 50 entries per block.
+        /// Returns the number of heartbeats processed (for weight accounting).
+        fn detect_offline_devices(current_block: BlockNumberFor<T>) -> u32 {
+            let timeout = T::HeartbeatTimeoutBlocks::get();
+            let max_misses = T::MaxConsecutiveMisses::get();
+            let decay = T::HealthScoreDecay::get();
+            let max_per_block: u32 = 50;
+            let mut processed: u32 = 0;
+
+            for (device_id, mut heartbeat) in Heartbeats::<T>::iter() {
+                if processed >= max_per_block {
+                    break;
+                }
+                processed += 1;
+
+                if let Some(device) = Devices::<T>::get(device_id) {
+                    if device.status != DeviceStatus::Active {
+                        continue;
+                    }
+
+                    let blocks_since = current_block.saturating_sub(heartbeat.last_heartbeat);
+                    if blocks_since >= timeout {
+                        heartbeat.consecutive_misses =
+                            heartbeat.consecutive_misses.saturating_add(1);
+                        heartbeat.health_score = heartbeat.health_score.saturating_sub(decay);
+
+                        if heartbeat.consecutive_misses >= max_misses {
+                            Devices::<T>::mutate(device_id, |d| {
+                                if let Some(dev) = d {
+                                    dev.status = DeviceStatus::Offline;
+                                }
+                            });
+
+                            ActiveDeviceCount::<T>::mutate(|c| *c = c.saturating_sub(1));
+                            OfflineDeviceCount::<T>::mutate(|c| *c = c.saturating_add(1));
+
+                            Self::deposit_event(Event::DeviceWentOffline {
+                                device_id,
+                                consecutive_misses: heartbeat.consecutive_misses,
+                            });
+                        }
+
+                        Heartbeats::<T>::insert(device_id, heartbeat);
+                    }
+                }
+            }
+            processed
         }
     }
 }

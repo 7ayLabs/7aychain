@@ -70,6 +70,7 @@ impl pallet_balances::Config for Test {
 parameter_types! {
     pub const MinStake: u64 = 1000;
     pub const MaxValidators: u32 = 100;
+    pub const MinValidators: u32 = 3;
     pub const BondingDuration: u64 = 10;
     pub const SlashDeferDuration: u64 = 5;
 }
@@ -79,6 +80,7 @@ impl pallet_validator::Config for Test {
     type Currency = Balances;
     type MinStake = MinStake;
     type MaxValidators = MaxValidators;
+    type MinValidators = MinValidators;
     type BondingDuration = BondingDuration;
     type SlashDeferDuration = SlashDeferDuration;
 }
@@ -253,12 +255,18 @@ fn invariant_inv46_min_validators() {
         assert_ok!(Validator::deactivate_validator(RuntimeOrigin::signed(6)));
         assert_eq!(Validator::active_validator_count(), 5);
 
+        assert_ok!(Validator::deactivate_validator(RuntimeOrigin::signed(5)));
+        assert_eq!(Validator::active_validator_count(), 4);
+
+        assert_ok!(Validator::deactivate_validator(RuntimeOrigin::signed(4)));
+        assert_eq!(Validator::active_validator_count(), 3);
+
         assert_noop!(
-            Validator::deactivate_validator(RuntimeOrigin::signed(5)),
+            Validator::deactivate_validator(RuntimeOrigin::signed(3)),
             Error::<Test>::MinValidatorsRequired
         );
 
-        assert_eq!(Validator::active_validator_count(), 5);
+        assert_eq!(Validator::active_validator_count(), 3);
     });
 }
 

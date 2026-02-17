@@ -24,7 +24,10 @@ pub mod pallet {
             ActorId, BlockRef, EpochId, PresenceRecord, PresenceState, QuorumConfig, ValidatorId,
             Vote,
         },
-        CryptoCommitment as Commitment,
+        witness::{
+            triangulate_from_witnesses, LatencyMeasurement, PositionClaim, WitnessAttestation,
+        },
+        Position, PresenceCommitment,
     };
     use sp_runtime::{traits::Hash, Saturating};
 
@@ -54,6 +57,16 @@ pub mod pallet {
 
         #[pallet::constant]
         type RevealWindow: Get<BlockNumberFor<Self>>;
+
+        // Position-Based Triangulation Configuration
+
+        /// Minimum number of witness attestations required to verify a position.
+        #[pallet::constant]
+        type MinWitnessesForVerification: Get<u32>;
+
+        /// Position tolerance in meters for verification.
+        #[pallet::constant]
+        type PositionToleranceMeters: Get<u32>;
     }
 
     #[pallet::storage]
@@ -132,6 +145,49 @@ pub mod pallet {
     #[pallet::getter(fn reveal_count)]
     pub type RevealCount<T: Config> = StorageMap<_, Blake2_128Concat, EpochId, u32, ValueQuery>;
 
+    // =========================================================================
+    // Position-Based Triangulation Storage (PBT)
+    // =========================================================================
+
+    /// Position claims made by actors.
+    #[pallet::storage]
+    #[pallet::getter(fn position_claims)]
+    pub type PositionClaims<T: Config> = StorageDoubleMap<
+        _,
+        Blake2_128Concat,
+        EpochId,
+        Blake2_128Concat,
+        ActorId,
+        PositionClaim<BlockNumberFor<T>>,
+        OptionQuery,
+    >;
+
+    /// Witness attestations for position verification.
+    #[pallet::storage]
+    #[pallet::getter(fn witness_attestations)]
+    pub type WitnessAttestations<T: Config> = StorageNMap<
+        _,
+        (
+            NMapKey<Blake2_128Concat, EpochId>,
+            NMapKey<Blake2_128Concat, ActorId>,
+            NMapKey<Blake2_128Concat, ValidatorId>,
+        ),
+        WitnessAttestation<BlockNumberFor<T>>,
+        OptionQuery,
+    >;
+
+    /// Count of attestations per actor per epoch.
+    #[pallet::storage]
+    #[pallet::getter(fn attestation_count)]
+    pub type AttestationCount<T: Config> =
+        StorageDoubleMap<_, Blake2_128Concat, EpochId, Blake2_128Concat, ActorId, u32, ValueQuery>;
+
+    /// Validator positions (registered positions for witnesses).
+    #[pallet::storage]
+    #[pallet::getter(fn validator_positions)]
+    pub type ValidatorPositions<T: Config> =
+        StorageMap<_, Blake2_128Concat, ValidatorId, Position, OptionQuery>;
+
     #[derive(
         Clone,
         PartialEq,
@@ -145,7 +201,7 @@ pub mod pallet {
     )]
     #[scale_info(skip_type_params(T))]
     pub struct Declaration<BlockNumber> {
-        pub commitment: Commitment,
+        pub commitment: PresenceCommitment,
         pub declared_at: BlockNumber,
         pub block_ref: BlockRef,
         pub revealed: bool,
@@ -233,6 +289,39 @@ pub mod pallet {
             epoch: EpochId,
             reason: RevealFailureReason,
         },
+        // Position-Based Triangulation Events
+        PositionClaimed {
+            actor: ActorId,
+            epoch: EpochId,
+            position: Position,
+            block_number: BlockNumberFor<T>,
+        },
+        WitnessAttestationSubmitted {
+            witness: ValidatorId,
+            target: ActorId,
+            epoch: EpochId,
+            latency_ms: u32,
+            max_distance_km: u32,
+        },
+        PositionVerified {
+            actor: ActorId,
+            epoch: EpochId,
+            claimed_position: Position,
+            triangulated_position: Position,
+            confidence: u8,
+            witness_count: u32,
+        },
+        PositionDisputed {
+            actor: ActorId,
+            epoch: EpochId,
+            claimed_position: Position,
+            triangulated_position: Position,
+            deviation_meters: u32,
+        },
+        ValidatorPositionUpdated {
+            validator: ValidatorId,
+            position: Position,
+        },
     }
 
     #[derive(
@@ -278,6 +367,17 @@ pub mod pallet {
         AlreadyRevealed,
         NotInCommitPhase,
         NotInRevealPhase,
+        BlockRefConversionFailed,
+        // Position-Based Triangulation Errors
+        PositionAlreadyClaimed,
+        PositionNotClaimed,
+        DuplicateAttestation,
+        InvalidLatencyMeasurement,
+        InsufficientWitnesses,
+        PositionMismatch,
+        ValidatorPositionNotSet,
+        SelfAttestation,
+        InvalidBlockNumber,
     }
 
     #[pallet::genesis_config]
@@ -349,7 +449,7 @@ pub mod pallet {
         pub fn declare_presence_with_commitment(
             origin: OriginFor<T>,
             epoch: EpochId,
-            commitment: Commitment,
+            commitment: PresenceCommitment,
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
             let actor = Self::account_to_actor(&who);
@@ -359,10 +459,14 @@ pub mod pallet {
             Self::ensure_epoch_active(&epoch)?;
             Self::ensure_no_duplicate_presence(&epoch, &actor)?;
 
-            let block_ref = BlockRef::new(
-                block_number.try_into().unwrap_or(0),
-                sp_core::H256(block_hash.as_ref().try_into().unwrap_or([0u8; 32])),
-            );
+            let block_num: u64 = block_number
+                .try_into()
+                .map_err(|_| Error::<T>::BlockRefConversionFailed)?;
+            let hash_bytes: [u8; 32] = block_hash
+                .as_ref()
+                .try_into()
+                .map_err(|_| Error::<T>::BlockRefConversionFailed)?;
+            let block_ref = BlockRef::new(block_num, sp_core::H256(hash_bytes));
 
             let declaration = Declaration {
                 commitment,
@@ -429,10 +533,14 @@ pub mod pallet {
             Self::ensure_not_terminal(&record.state)?;
             Self::ensure_valid_vote_state(&record.state)?;
 
-            let block_ref = BlockRef::new(
-                block_number.try_into().unwrap_or(0),
-                sp_core::H256(block_hash.as_ref().try_into().unwrap_or([0u8; 32])),
-            );
+            let block_num: u64 = block_number
+                .try_into()
+                .map_err(|_| Error::<T>::BlockRefConversionFailed)?;
+            let hash_bytes: [u8; 32] = block_hash
+                .as_ref()
+                .try_into()
+                .map_err(|_| Error::<T>::BlockRefConversionFailed)?;
+            let block_ref = BlockRef::new(block_num, sp_core::H256(hash_bytes));
 
             let vote = Vote {
                 validator,
@@ -633,17 +741,239 @@ pub mod pallet {
 
             Ok(())
         }
+
+        // =====================================================================
+        // Position-Based Triangulation Extrinsics
+        // =====================================================================
+
+        /// Claim a position for the current epoch.
+        /// The position will be verified through witness attestations.
+        #[pallet::call_index(9)]
+        #[pallet::weight(T::WeightInfo::declare_presence())]
+        pub fn claim_position(
+            origin: OriginFor<T>,
+            epoch: EpochId,
+            position: Position,
+        ) -> DispatchResult {
+            let who = ensure_signed(origin)?;
+            let actor = Self::account_to_actor(&who);
+            let block_number = frame_system::Pallet::<T>::block_number();
+
+            Self::ensure_epoch_active(&epoch)?;
+            ensure!(
+                !PositionClaims::<T>::contains_key(epoch, actor),
+                Error::<T>::PositionAlreadyClaimed
+            );
+
+            let claim = PositionClaim::new(actor, position, epoch, block_number);
+            PositionClaims::<T>::insert(epoch, actor, claim);
+
+            Self::deposit_event(Event::PositionClaimed {
+                actor,
+                epoch,
+                position,
+                block_number,
+            });
+
+            Ok(())
+        }
+
+        /// Submit a witness attestation for another node's presence.
+        /// The witness must have a registered position.
+        #[pallet::call_index(10)]
+        #[pallet::weight(T::WeightInfo::vote_presence())]
+        pub fn submit_witness_attestation(
+            origin: OriginFor<T>,
+            target: ActorId,
+            epoch: EpochId,
+            latency_ms: u32,
+            direct_connection: bool,
+        ) -> DispatchResult {
+            let who = ensure_signed(origin)?;
+            let witness = Self::account_to_validator(&who);
+            let block_number = frame_system::Pallet::<T>::block_number();
+
+            Self::ensure_epoch_active(&epoch)?;
+            Self::ensure_validator_active(&witness)?;
+
+            // Ensure target has claimed a position
+            ensure!(
+                PositionClaims::<T>::contains_key(epoch, target),
+                Error::<T>::PositionNotClaimed
+            );
+
+            // Ensure witness has a registered position
+            let witness_position =
+                ValidatorPositions::<T>::get(witness).ok_or(Error::<T>::ValidatorPositionNotSet)?;
+
+            // Prevent self-attestation
+            let witness_as_actor = Self::validator_to_actor(&witness);
+            ensure!(witness_as_actor != target, Error::<T>::SelfAttestation);
+
+            // Ensure no duplicate attestation
+            ensure!(
+                !WitnessAttestations::<T>::contains_key((epoch, target, witness)),
+                Error::<T>::DuplicateAttestation
+            );
+
+            // Validate latency measurement
+            let block_u64: u64 = block_number
+                .try_into()
+                .map_err(|_| Error::<T>::InvalidBlockNumber)?;
+            let latency = LatencyMeasurement::new(latency_ms, direct_connection, block_u64);
+            ensure!(latency.is_valid(), Error::<T>::InvalidLatencyMeasurement);
+
+            let max_distance_km = latency.max_distance_km();
+
+            let attestation = WitnessAttestation::new(
+                witness,
+                target,
+                epoch,
+                latency,
+                witness_position,
+                block_number,
+            );
+
+            WitnessAttestations::<T>::insert((epoch, target, witness), attestation);
+            AttestationCount::<T>::mutate(epoch, target, |count| {
+                *count = count.saturating_add(1);
+            });
+
+            Self::deposit_event(Event::WitnessAttestationSubmitted {
+                witness,
+                target,
+                epoch,
+                latency_ms,
+                max_distance_km,
+            });
+
+            Ok(())
+        }
+
+        /// Verify a position claim by triangulating from witness attestations.
+        /// Anyone can call this once enough witnesses have attested.
+        #[pallet::call_index(11)]
+        #[pallet::weight(T::WeightInfo::finalize_presence())]
+        pub fn verify_position(
+            origin: OriginFor<T>,
+            target: ActorId,
+            epoch: EpochId,
+        ) -> DispatchResult {
+            ensure_signed(origin)?;
+
+            let mut claim =
+                PositionClaims::<T>::get(epoch, target).ok_or(Error::<T>::PositionNotClaimed)?;
+
+            let attestation_count = AttestationCount::<T>::get(epoch, target);
+            let min_witnesses = T::MinWitnessesForVerification::get();
+            ensure!(
+                attestation_count >= min_witnesses,
+                Error::<T>::InsufficientWitnesses
+            );
+
+            // Collect all attestations for this target
+            let attestations: Vec<WitnessAttestation<BlockNumberFor<T>>> =
+                WitnessAttestations::<T>::iter_prefix((epoch, target))
+                    .map(|(_, attestation)| attestation)
+                    .collect();
+
+            // Triangulate position from witnesses
+            let result = triangulate_from_witnesses(&attestations)
+                .ok_or(Error::<T>::InsufficientWitnesses)?;
+
+            claim.update_triangulation(result.position, result.confidence);
+            claim.witness_count = result.witness_count;
+
+            // Check if claimed position matches triangulated position
+            let tolerance_m = T::PositionToleranceMeters::get();
+            if claim.is_consistent(tolerance_m) {
+                claim.verified = true;
+
+                Self::deposit_event(Event::PositionVerified {
+                    actor: target,
+                    epoch,
+                    claimed_position: claim.claimed_position,
+                    triangulated_position: result.position,
+                    confidence: result.confidence,
+                    witness_count: result.witness_count,
+                });
+            } else {
+                // Position mismatch - potential fraud
+                let deviation_squared = claim.claimed_position.distance_squared(&result.position);
+                // Integer square root using binary search
+                let deviation_m = Self::integer_sqrt(deviation_squared) as u32;
+
+                Self::deposit_event(Event::PositionDisputed {
+                    actor: target,
+                    epoch,
+                    claimed_position: claim.claimed_position,
+                    triangulated_position: result.position,
+                    deviation_meters: deviation_m,
+                });
+            }
+
+            PositionClaims::<T>::insert(epoch, target, claim);
+
+            Ok(())
+        }
+
+        /// Set a validator's position (root only or self-registration).
+        #[pallet::call_index(12)]
+        #[pallet::weight(T::WeightInfo::set_validator_status())]
+        pub fn set_validator_position(
+            origin: OriginFor<T>,
+            validator: ValidatorId,
+            position: Position,
+        ) -> DispatchResult {
+            // Allow root or the validator themselves
+            let who = ensure_signed(origin.clone()).ok();
+            if let Some(account) = who {
+                let caller_validator = Self::account_to_validator(&account);
+                ensure!(
+                    caller_validator == validator,
+                    Error::<T>::ValidatorNotActive
+                );
+            } else {
+                ensure_root(origin)?;
+            }
+
+            // Only active validators can set their position
+            ensure!(
+                ActiveValidators::<T>::get(validator),
+                Error::<T>::ValidatorNotActive
+            );
+
+            ValidatorPositions::<T>::insert(validator, position);
+
+            Self::deposit_event(Event::ValidatorPositionUpdated {
+                validator,
+                position,
+            });
+
+            Ok(())
+        }
     }
 
     impl<T: Config> Pallet<T> {
+        fn validator_to_actor(validator: &ValidatorId) -> ActorId {
+            ActorId::from_raw(*validator.as_bytes())
+        }
         fn account_to_actor(account: &T::AccountId) -> ActorId {
             let hash = T::Hashing::hash_of(account);
-            ActorId::from(sp_core::H256(hash.as_ref().try_into().unwrap_or([0u8; 32])))
+            let hash_bytes: [u8; 32] = hash
+                .as_ref()
+                .try_into()
+                .expect("runtime hash must be 32 bytes");
+            ActorId::from(sp_core::H256(hash_bytes))
         }
 
         fn account_to_validator(account: &T::AccountId) -> ValidatorId {
             let hash = T::Hashing::hash_of(account);
-            ValidatorId::from(sp_core::H256(hash.as_ref().try_into().unwrap_or([0u8; 32])))
+            let hash_bytes: [u8; 32] = hash
+                .as_ref()
+                .try_into()
+                .expect("runtime hash must be 32 bytes");
+            ValidatorId::from(sp_core::H256(hash_bytes))
         }
 
         fn ensure_epoch_active(epoch: &EpochId) -> DispatchResult {
@@ -692,6 +1022,30 @@ pub mod pallet {
             Ok(())
         }
 
+        /// Integer square root using binary search (no_std compatible).
+        fn integer_sqrt(n: u64) -> u64 {
+            if n == 0 {
+                return 0;
+            }
+            let mut lo = 1u64;
+            let mut hi = n;
+            while lo <= hi {
+                let mid = lo + (hi - lo) / 2;
+                if let Some(sq) = mid.checked_mul(mid) {
+                    if sq == n {
+                        return mid;
+                    } else if sq < n {
+                        lo = mid + 1;
+                    } else {
+                        hi = mid - 1;
+                    }
+                } else {
+                    hi = mid - 1;
+                }
+            }
+            hi
+        }
+
         pub fn get_presence(
             epoch: EpochId,
             actor: ActorId,
@@ -735,7 +1089,7 @@ pub mod pallet {
             epoch: &EpochId,
             secret: &[u8; 32],
             randomness: &[u8; 32],
-        ) -> Commitment {
+        ) -> PresenceCommitment {
             let mut preimage = Vec::with_capacity(DOMAIN_PRESENCE.len() + 32 + 8 + 32 + 32);
             preimage.extend_from_slice(DOMAIN_PRESENCE);
             preimage.extend_from_slice(actor.as_bytes());
@@ -744,7 +1098,11 @@ pub mod pallet {
             preimage.extend_from_slice(randomness);
 
             let hash = T::Hashing::hash(&preimage);
-            Commitment(sp_core::H256(hash.as_ref().try_into().unwrap_or([0u8; 32])))
+            let hash_bytes: [u8; 32] = hash
+                .as_ref()
+                .try_into()
+                .expect("runtime hash must be 32 bytes");
+            PresenceCommitment(sp_core::H256(hash_bytes))
         }
 
         pub fn is_in_commit_phase(epoch: EpochId) -> bool {

@@ -45,9 +45,9 @@ pub fn hash_pair(left: &H256, right: &H256) -> H256 {
     TypeInfo,
     RuntimeDebug,
 )]
-pub struct Commitment(pub H256);
+pub struct PresenceCommitment(pub H256);
 
-impl Commitment {
+impl PresenceCommitment {
     pub fn new<V: Encode>(value: &V, randomness: &[u8; 32]) -> Self {
         let value_bytes = value.encode();
         let mut input = Vec::with_capacity(DOMAIN_COMMITMENT.len() + value_bytes.len() + 32);
@@ -96,6 +96,10 @@ impl MerkleProof {
                 hash_pair(sibling, &current)
             };
             index >>= 1;
+        }
+
+        if index != 0 {
+            return false;
         }
 
         current.ct_eq(root)
@@ -203,7 +207,7 @@ impl StateRoot {
     RuntimeDebug,
 )]
 pub struct PresenceProof {
-    pub commitment: Commitment,
+    pub commitment: PresenceCommitment,
     pub merkle_proof: MerkleProof,
     pub nullifier: Nullifier,
 }
@@ -268,37 +272,100 @@ pub struct Share {
     pub value: [u8; 32],
 }
 
-/// Polynomial evaluation for Shamir's scheme using big-integer arithmetic.
-#[allow(clippy::cast_possible_truncation)]
+pub mod gf256 {
+    const RIJNDAEL_POLY: u16 = 0x11B;
+
+    #[inline]
+    pub fn mul(a: u8, b: u8) -> u8 {
+        let mut result: u8 = 0;
+        let mut a = a;
+        let mut b = b;
+
+        while b != 0 {
+            if b & 1 != 0 {
+                result ^= a;
+            }
+            let high_bit = a & 0x80;
+            a <<= 1;
+            if high_bit != 0 {
+                a ^= (RIJNDAEL_POLY & 0xFF) as u8;
+            }
+            b >>= 1;
+        }
+
+        result
+    }
+
+    #[inline]
+    pub fn add(a: u8, b: u8) -> u8 {
+        a ^ b
+    }
+
+    #[inline]
+    pub fn sub(a: u8, b: u8) -> u8 {
+        a ^ b
+    }
+
+    pub fn inv(a: u8) -> u8 {
+        if a == 0 {
+            return 0;
+        }
+
+        let mut result = a;
+        for _ in 0..6 {
+            result = mul(result, result);
+            result = mul(result, a);
+        }
+        mul(result, result)
+    }
+
+    #[inline]
+    pub fn div(a: u8, b: u8) -> Option<u8> {
+        if b == 0 {
+            return None;
+        }
+        Some(mul(a, inv(b)))
+    }
+
+    pub fn pow(base: u8, exp: u8) -> u8 {
+        if exp == 0 {
+            return 1;
+        }
+        let mut result = 1u8;
+        let mut base = base;
+        let mut exp = exp;
+        while exp > 0 {
+            if exp & 1 != 0 {
+                result = mul(result, base);
+            }
+            base = mul(base, base);
+            exp >>= 1;
+        }
+        result
+    }
+}
+
 pub fn eval_polynomial(coeffs: &[[u8; 32]], x: u8) -> [u8; 32] {
     let mut result = [0u8; 32];
 
-    for coeff in coeffs.iter().rev() {
-        let mut carry: u16 = 0;
-        for byte in &mut result {
-            let prod = u16::from(*byte) * u16::from(x) + carry;
-            *byte = prod as u8;
-            carry = prod >> 8;
+    for byte_idx in 0..32 {
+        let mut value = 0u8;
+        for coeff in coeffs.iter().rev() {
+            value = gf256::add(gf256::mul(value, x), coeff[byte_idx]);
         }
-
-        let mut carry: u16 = 0;
-        for (i, byte) in result.iter_mut().enumerate() {
-            let sum = u16::from(*byte) + u16::from(coeff[i]) + carry;
-            *byte = sum as u8;
-            carry = sum >> 8;
-        }
+        result[byte_idx] = value;
     }
 
     result
 }
 
-impl CryptoHash for Commitment {
+impl CryptoHash for PresenceCommitment {
     fn crypto_hash(&self) -> H256 {
         self.0
     }
 }
 
-impl DomainSeparatedHash for Commitment {
+impl DomainSeparatedHash for PresenceCommitment {
     const DOMAIN: &'static [u8] = DOMAIN_COMMITMENT;
 
     fn domain_hash(&self) -> H256 {
@@ -313,12 +380,11 @@ pub struct ShamirScheme;
 
 impl ShamirScheme {
     pub fn split(secret: &[u8; 32], threshold: u8, total: u8) -> Option<Vec<Share>> {
-        if threshold < 2 || total < threshold {
+        if threshold < 2 || total < threshold || total == 0 {
             return None;
         }
 
         let mut shares = Vec::with_capacity(total as usize);
-
         let mut coefficients = Vec::with_capacity(threshold as usize);
         coefficients.push(*secret);
 
@@ -331,20 +397,7 @@ impl ShamirScheme {
         }
 
         for idx in 1..=total {
-            let mut share_value = [0u8; 32];
-
-            for byte_idx in 0..32 {
-                let mut result: u64 = coefficients[0][byte_idx] as u64;
-                let mut x_power: u64 = idx as u64;
-
-                for coeff in coefficients.iter().skip(1) {
-                    result = result.wrapping_add((coeff[byte_idx] as u64).wrapping_mul(x_power));
-                    x_power = x_power.wrapping_mul(idx as u64);
-                }
-
-                share_value[byte_idx] = (result % 251) as u8;
-            }
-
+            let share_value = eval_polynomial(&coefficients, idx);
             shares.push(Share {
                 index: ShareIndex(idx),
                 value: share_value,
@@ -359,45 +412,46 @@ impl ShamirScheme {
             return None;
         }
 
-        Some(Self::reconstruct_inner(&shares[..threshold as usize]))
+        Self::reconstruct_inner(&shares[..threshold as usize])
     }
 
-    fn reconstruct_inner(shares: &[Share]) -> [u8; 32] {
+    fn reconstruct_inner(shares: &[Share]) -> Option<[u8; 32]> {
         let mut secret = [0u8; 32];
 
-        for (byte_idx, secret_byte) in secret.iter_mut().enumerate() {
-            let mut result: i128 = 0;
+        for (byte_idx, slot) in secret.iter_mut().enumerate() {
+            let mut result: u8 = 0;
 
             for (i, share_i) in shares.iter().enumerate() {
-                let xi = share_i.index.0 as i128;
-                let yi = share_i.value[byte_idx] as i128;
-
-                let (num, den) = Self::compute_lagrange_coefficient(shares, i, xi);
-
-                if den != 0 {
-                    result += yi * num / den;
-                }
+                let xi = share_i.index.0;
+                let yi = share_i.value[byte_idx];
+                let li = Self::compute_lagrange_basis_at_zero(shares, i, xi)?;
+                result = gf256::add(result, gf256::mul(yi, li));
             }
 
-            *secret_byte = result.rem_euclid(251) as u8;
+            *slot = result;
         }
 
-        secret
+        Some(secret)
     }
 
-    fn compute_lagrange_coefficient(shares: &[Share], i: usize, xi: i128) -> (i128, i128) {
-        let mut num: i128 = 1;
-        let mut den: i128 = 1;
+    fn compute_lagrange_basis_at_zero(shares: &[Share], i: usize, xi: u8) -> Option<u8> {
+        let mut result: u8 = 1;
 
         for (j, share_j) in shares.iter().enumerate() {
             if i != j {
-                let xj = share_j.index.0 as i128;
-                num *= -xj;
-                den *= xi - xj;
+                let xj = share_j.index.0;
+                let denominator = gf256::sub(xi, xj);
+
+                if denominator == 0 {
+                    return None;
+                }
+
+                let div_result = gf256::div(xj, denominator)?;
+                result = gf256::mul(result, div_result);
             }
         }
 
-        (num, den)
+        Some(result)
     }
 
     pub fn verify_share(share: &Share, commitment: &H256) -> bool {
@@ -517,11 +571,105 @@ mod tests {
     use super::*;
 
     #[test]
+    fn gf256_add_is_xor() {
+        assert_eq!(gf256::add(0, 0), 0);
+        assert_eq!(gf256::add(0xFF, 0xFF), 0);
+        assert_eq!(gf256::add(0xAB, 0xCD), 0xAB ^ 0xCD);
+    }
+
+    #[test]
+    fn gf256_mul_basic() {
+        assert_eq!(gf256::mul(0, 5), 0);
+        assert_eq!(gf256::mul(1, 5), 5);
+        assert_eq!(gf256::mul(5, 1), 5);
+        assert_eq!(gf256::mul(2, 2), 4);
+    }
+
+    #[test]
+    fn gf256_mul_overflow() {
+        let result = gf256::mul(0x80, 2);
+        assert_eq!(result, 0x1B);
+    }
+
+    #[test]
+    fn gf256_inverse() {
+        for a in 1..=255u8 {
+            let inv = gf256::inv(a);
+            assert_eq!(gf256::mul(a, inv), 1);
+        }
+    }
+
+    #[test]
+    fn gf256_div() {
+        for a in 1..=255u8 {
+            assert_eq!(gf256::div(a, a), Some(1));
+        }
+        for a in 0..=255u8 {
+            assert_eq!(gf256::div(a, 1), Some(a));
+        }
+    }
+
+    #[test]
+    fn gf256_div_by_zero_returns_none() {
+        assert!(gf256::div(0, 0).is_none());
+        assert!(gf256::div(1, 0).is_none());
+        assert!(gf256::div(255, 0).is_none());
+    }
+
+    #[test]
+    fn gf256_pow() {
+        assert_eq!(gf256::pow(2, 0), 1);
+        assert_eq!(gf256::pow(2, 1), 2);
+        assert_eq!(gf256::pow(2, 8), gf256::mul(gf256::pow(2, 7), 2));
+    }
+
+    #[test]
+    fn shamir_roundtrip_simple() {
+        let secret = [42u8; 32];
+        let shares = ShamirScheme::split(&secret, 2, 3).expect("split failed");
+        let reconstructed =
+            ShamirScheme::reconstruct(&shares[0..2], 2).expect("reconstruct failed");
+        assert_eq!(secret, reconstructed);
+    }
+
+    #[test]
+    fn shamir_roundtrip_random_secret() {
+        let secret: [u8; 32] = [
+            0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
+            0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00, 0x01, 0x02, 0x03, 0x04,
+            0x05, 0x06, 0x07, 0x08,
+        ];
+        let shares = ShamirScheme::split(&secret, 3, 5).expect("split failed");
+
+        let combos: [(usize, usize, usize); 4] = [(0, 1, 2), (0, 2, 4), (1, 3, 4), (2, 3, 4)];
+
+        for (a, b, c) in combos {
+            let subset = vec![shares[a].clone(), shares[b].clone(), shares[c].clone()];
+            let reconstructed = ShamirScheme::reconstruct(&subset, 3).expect("reconstruct failed");
+            assert_eq!(secret, reconstructed);
+        }
+    }
+
+    #[test]
+    fn shamir_threshold_boundary() {
+        let secret = [0xAB; 32];
+        let shares = ShamirScheme::split(&secret, 4, 7).expect("split failed");
+
+        let reconstructed =
+            ShamirScheme::reconstruct(&shares[0..4], 4).expect("reconstruct failed");
+        assert_eq!(secret, reconstructed);
+
+        let reconstructed =
+            ShamirScheme::reconstruct(&shares[0..6], 4).expect("reconstruct failed");
+        assert_eq!(secret, reconstructed);
+    }
+
+    #[test]
     fn commitment_verify() {
         let value = 42u64;
         let randomness = [1u8; 32];
 
-        let commitment = Commitment::new(&value, &randomness);
+        let commitment = PresenceCommitment::new(&value, &randomness);
         assert!(commitment.verify(&value, &randomness));
         assert!(!commitment.verify(&43u64, &randomness));
     }
@@ -710,5 +858,49 @@ mod tests {
         for (i, share) in shares.iter().enumerate() {
             assert_eq!(share.index.0, (i + 1) as u8);
         }
+    }
+
+    #[test]
+    fn shamir_duplicate_indices_fails() {
+        let secret = [42u8; 32];
+        let shares = ShamirScheme::split(&secret, 2, 3).expect("split failed");
+
+        let duplicate_shares = vec![
+            Share::new(shares[0].index.0, shares[0].value),
+            Share::new(shares[0].index.0, shares[1].value),
+        ];
+
+        let result = ShamirScheme::reconstruct(&duplicate_shares, 2);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn merkle_proof_incomplete_path_rejected() {
+        let left = H256::repeat_byte(0x01);
+        let right = H256::repeat_byte(0x02);
+        let root = hash_pair(&left, &right);
+
+        let proof = MerkleProof {
+            leaf_index: 4,
+            siblings: vec![right],
+        };
+        assert!(!proof.verify(&root, &left));
+    }
+
+    #[test]
+    fn merkle_proof_extra_siblings_accepted_if_root_matches() {
+        let leaf = H256::repeat_byte(0x01);
+
+        let proof = MerkleProof {
+            leaf_index: 0,
+            siblings: vec![],
+        };
+        assert!(proof.verify(&leaf, &leaf));
+
+        let proof_extra = MerkleProof {
+            leaf_index: 0,
+            siblings: vec![H256::repeat_byte(0x02)],
+        };
+        assert!(!proof_extra.verify(&leaf, &leaf));
     }
 }
