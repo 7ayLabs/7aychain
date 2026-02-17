@@ -354,7 +354,7 @@ pub struct FraudProof {
 impl FraudProof {
     /// Calculate Z-score: |claimed - expected| / sigma, scaled by 100
     pub fn calculate_z_score(claimed: i8, expected: i8, sigma: u8) -> u32 {
-        let diff = (claimed as i32 - expected as i32).abs() as u32;
+        let diff = (claimed as i32 - expected as i32).unsigned_abs();
         (diff * 100) / (sigma.max(1) as u32)
     }
 
@@ -633,7 +633,7 @@ pub mod pallet {
         ) -> DispatchResult {
             ensure_signed(origin)?;
 
-            ensure!(rssi >= -120 && rssi <= 0, Error::<T>::InvalidRssi);
+            ensure!((-120..=0).contains(&rssi), Error::<T>::InvalidRssi);
 
             let reporter = Reporters::<T>::get(reporter_id).ok_or(Error::<T>::ReporterNotFound)?;
             ensure!(reporter.active, Error::<T>::ReporterNotActive);
@@ -894,26 +894,26 @@ pub mod pallet {
 
                         TrackedDevices::<T>::insert(mac_hash, device);
                     }
-                } else if blocks_since >= inactive_timeout {
-                    if matches!(device.state, DeviceState::Active) {
-                        device.consecutive_misses = device.consecutive_misses.saturating_add(1);
+                } else if blocks_since >= inactive_timeout
+                    && matches!(device.state, DeviceState::Active)
+                {
+                    device.consecutive_misses = device.consecutive_misses.saturating_add(1);
 
-                        device.state = if device.consecutive_misses >= 3 {
-                            DeviceState::Unverifiable
-                        } else {
-                            DeviceState::Sleeping
-                        };
+                    device.state = if device.consecutive_misses >= 3 {
+                        DeviceState::Unverifiable
+                    } else {
+                        DeviceState::Sleeping
+                    };
 
-                        device.confidence = device.confidence.saturating_sub(10);
+                    device.confidence = device.confidence.saturating_sub(10);
 
-                        Self::deposit_event(Event::DeviceStateChanged {
-                            mac_hash,
-                            old_state,
-                            new_state: device.state,
-                        });
+                    Self::deposit_event(Event::DeviceStateChanged {
+                        mac_hash,
+                        old_state,
+                        new_state: device.state,
+                    });
 
-                        TrackedDevices::<T>::insert(mac_hash, device);
-                    }
+                    TrackedDevices::<T>::insert(mac_hash, device);
                 }
             }
         }

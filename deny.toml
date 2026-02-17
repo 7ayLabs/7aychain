@@ -5,8 +5,13 @@
 all-features = true
 
 [advisories]
-# v2 denies all advisories by default
-# ignore = ["RUSTSEC-YYYY-NNNN"]
+# Transitive Substrate deps — no fix available upstream
+ignore = [
+    "RUSTSEC-2026-0007", # bytes: integer overflow in BytesMut::reserve
+    "RUSTSEC-2025-0009", # ring: AES panic with overflow checks
+    "RUSTSEC-2026-0009", # time: DoS via stack exhaustion
+    "RUSTSEC-2026-0006", # wasmtime: f64.copysign segfault on x86-64
+]
 
 [licenses]
 allow = [

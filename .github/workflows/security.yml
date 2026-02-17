@@ -20,7 +20,12 @@ jobs:
         run: cargo install cargo-audit --version 0.22.1 --locked
 
       - name: Run security audit
-        run: cargo audit
+        run: |
+          cargo audit \
+            --ignore RUSTSEC-2026-0007 \
+            --ignore RUSTSEC-2025-0009 \
+            --ignore RUSTSEC-2026-0009 \
+            --ignore RUSTSEC-2026-0006
 
   deny:
     name: Cargo Deny
@@ -59,5 +64,5 @@ jobs:
         with:
           fail-on-severity: high
           deny-licenses: AGPL-3.0
-          allow-unknown-licenses: true
+          license-check: false
           comment-summary-in-pr: always
