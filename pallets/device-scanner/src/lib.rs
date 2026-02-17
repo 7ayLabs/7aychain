@@ -248,9 +248,10 @@ pub mod pallet {
             if (n % 100u32.into()).is_zero() {
                 let removed = Self::cleanup_stale_devices(n);
                 // Each removal: 1 read + 3 writes (take + 2 mutate)
-                weight = weight.saturating_add(
-                    Weight::from_parts(5_000_u64.saturating_mul(removed as u64), 0),
-                );
+                weight = weight.saturating_add(Weight::from_parts(
+                    5_000_u64.saturating_mul(removed as u64),
+                    0,
+                ));
             }
 
             weight
