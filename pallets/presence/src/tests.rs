@@ -5,7 +5,7 @@ use frame_support::{assert_noop, assert_ok, derive_impl, parameter_types, traits
 use frame_system as system;
 use seveny_primitives::{
     types::{ActorId, EpochId, PresenceState, ValidatorId},
-    CryptoCommitment as Commitment,
+    PresenceCommitment,
 };
 use sp_core::H256;
 use sp_runtime::{
@@ -325,7 +325,7 @@ fn declare_presence_with_commitment_success() {
     new_test_ext().execute_with(|| {
         let epoch = EpochId::new(1);
         let randomness = [42u8; 32];
-        let commitment = Commitment::new(&42u64, &randomness);
+        let commitment = PresenceCommitment::new(&42u64, &randomness);
 
         assert_ok!(Presence::declare_presence_with_commitment(
             RuntimeOrigin::signed(1),
@@ -552,7 +552,7 @@ fn compute_test_commitment(
     epoch: &EpochId,
     secret: &[u8; 32],
     randomness: &[u8; 32],
-) -> Commitment {
+) -> PresenceCommitment {
     use seveny_primitives::crypto::DOMAIN_PRESENCE;
 
     let mut preimage = Vec::with_capacity(DOMAIN_PRESENCE.len() + 32 + 8 + 32 + 32);
@@ -563,14 +563,14 @@ fn compute_test_commitment(
     preimage.extend_from_slice(randomness);
 
     let hash = BlakeTwo256::hash(&preimage);
-    Commitment(H256(hash.0))
+    PresenceCommitment(H256(hash.0))
 }
 
 #[test]
 fn commitment_submitted_event_emitted() {
     new_test_ext().execute_with(|| {
         let epoch = EpochId::new(1);
-        let commitment = Commitment(H256([1u8; 32]));
+        let commitment = PresenceCommitment(H256([1u8; 32]));
 
         assert_ok!(Presence::declare_presence_with_commitment(
             RuntimeOrigin::signed(1),
@@ -602,7 +602,7 @@ fn declaration_phase_commit_initially() {
 fn declaration_phase_transitions_to_reveal() {
     new_test_ext().execute_with(|| {
         let epoch = EpochId::new(1);
-        let commitment = Commitment(H256([1u8; 32]));
+        let commitment = PresenceCommitment(H256([1u8; 32]));
 
         assert_ok!(Presence::declare_presence_with_commitment(
             RuntimeOrigin::signed(1),
@@ -622,7 +622,7 @@ fn declaration_phase_transitions_to_reveal() {
 fn declaration_phase_transitions_to_closed() {
     new_test_ext().execute_with(|| {
         let epoch = EpochId::new(1);
-        let commitment = Commitment(H256([1u8; 32]));
+        let commitment = PresenceCommitment(H256([1u8; 32]));
 
         assert_ok!(Presence::declare_presence_with_commitment(
             RuntimeOrigin::signed(1),
@@ -877,7 +877,7 @@ fn commitment_and_reveal_counts_tracked() {
 fn get_reveal_window_returns_correct_bounds() {
     new_test_ext().execute_with(|| {
         let epoch = EpochId::new(1);
-        let commitment = Commitment(H256([1u8; 32]));
+        let commitment = PresenceCommitment(H256([1u8; 32]));
 
         assert!(Presence::get_reveal_window(epoch).is_none());
 
@@ -900,7 +900,7 @@ fn is_in_commit_phase_helper() {
 
         assert!(Presence::is_in_commit_phase(epoch));
 
-        let commitment = Commitment(H256([1u8; 32]));
+        let commitment = PresenceCommitment(H256([1u8; 32]));
         assert_ok!(Presence::declare_presence_with_commitment(
             RuntimeOrigin::signed(1),
             epoch,
@@ -922,7 +922,7 @@ fn is_in_reveal_phase_helper() {
 
         assert!(!Presence::is_in_reveal_phase(epoch));
 
-        let commitment = Commitment(H256([1u8; 32]));
+        let commitment = PresenceCommitment(H256([1u8; 32]));
         assert_ok!(Presence::declare_presence_with_commitment(
             RuntimeOrigin::signed(1),
             epoch,

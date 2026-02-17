@@ -125,11 +125,6 @@ pub mod pallet {
         StorageMap<_, Blake2_128Concat, ValidatorId, ValidatorInfo<T>, OptionQuery>;
 
     #[pallet::storage]
-    #[pallet::getter(fn validator_stake)]
-    pub type ValidatorStake<T: Config> =
-        StorageMap<_, Blake2_128Concat, ValidatorId, BalanceOf<T>, ValueQuery>;
-
-    #[pallet::storage]
     #[pallet::getter(fn total_stake)]
     pub type TotalStake<T: Config> = StorageValue<_, BalanceOf<T>, ValueQuery>;
 
@@ -255,7 +250,6 @@ pub mod pallet {
                 };
 
                 Validators::<T>::insert(validator_id, info);
-                ValidatorStake::<T>::insert(validator_id, stake);
                 ValidatorByController::<T>::insert(controller, validator_id);
                 TotalStake::<T>::mutate(|total| {
                     *total = total.saturating_add(*stake);
@@ -304,7 +298,6 @@ pub mod pallet {
             };
 
             Validators::<T>::insert(validator_id, info);
-            ValidatorStake::<T>::insert(validator_id, stake);
             ValidatorByController::<T>::insert(&who, validator_id);
             TotalStake::<T>::mutate(|total| {
                 *total = total.saturating_add(stake);
@@ -423,11 +416,10 @@ pub mod pallet {
                 Error::<T>::UnbondingPeriodNotElapsed
             );
 
-            let stake = ValidatorStake::<T>::get(validator_id);
+            let stake = info.stake;
             T::Currency::unreserve(&who, stake);
 
             Validators::<T>::remove(validator_id);
-            ValidatorStake::<T>::remove(validator_id);
             ValidatorByController::<T>::remove(&who);
             TotalStake::<T>::mutate(|total| {
                 *total = total.saturating_sub(stake);
@@ -462,7 +454,6 @@ pub mod pallet {
 
             info.stake = new_stake;
             Validators::<T>::insert(validator_id, info);
-            ValidatorStake::<T>::insert(validator_id, new_stake);
             TotalStake::<T>::mutate(|total| {
                 *total = total.saturating_add(additional);
             });
@@ -487,10 +478,9 @@ pub mod pallet {
             let block_number = frame_system::Pallet::<T>::block_number();
 
             let info = Validators::<T>::get(validator).ok_or(Error::<T>::ValidatorNotFound)?;
-            let stake = ValidatorStake::<T>::get(validator);
 
             let slash_pct = Self::get_slash_percentage(&violation);
-            let slash_amount = slash_pct.mul_floor(stake);
+            let slash_amount = slash_pct.mul_floor(info.stake);
 
             let slash_id = SlashCount::<T>::get();
             SlashCount::<T>::put(slash_id.saturating_add(1));
@@ -558,9 +548,7 @@ pub mod pallet {
 
             let _ = T::Currency::slash_reserved(&info.controller, slash_record.amount);
 
-            let new_stake = ValidatorStake::<T>::get(slash_record.validator)
-                .saturating_sub(slash_record.amount);
-            ValidatorStake::<T>::insert(slash_record.validator, new_stake);
+            let new_stake = info.stake.saturating_sub(slash_record.amount);
             TotalStake::<T>::mutate(|total| {
                 *total = total.saturating_sub(slash_record.amount);
             });
@@ -591,10 +579,9 @@ pub mod pallet {
             let block_number = frame_system::Pallet::<T>::block_number();
 
             let info = Validators::<T>::get(validator).ok_or(Error::<T>::ValidatorNotFound)?;
-            let stake = ValidatorStake::<T>::get(validator);
 
             let slash_pct = Self::get_slash_percentage(&violation);
-            let slash_amount = slash_pct.mul_floor(stake);
+            let slash_amount = slash_pct.mul_floor(info.stake);
 
             let reward = Self::calculate_evidence_reward(slash_amount);
 
@@ -681,6 +668,12 @@ pub mod pallet {
             }
         }
 
+        pub fn validator_stake(validator: ValidatorId) -> BalanceOf<T> {
+            Validators::<T>::get(validator)
+                .map(|info| info.stake)
+                .unwrap_or_default()
+        }
+
         pub fn get_validator(validator: ValidatorId) -> Option<ValidatorInfo<T>> {
             Validators::<T>::get(validator)
         }
@@ -704,12 +697,12 @@ pub mod pallet {
         }
 
         pub fn get_stake_ratio(validator: ValidatorId) -> Option<(BalanceOf<T>, BalanceOf<T>)> {
-            let stake = ValidatorStake::<T>::get(validator);
+            let info = Validators::<T>::get(validator)?;
             let total = TotalStake::<T>::get();
             if total.is_zero() {
                 None
             } else {
-                Some((stake, total))
+                Some((info.stake, total))
             }
         }
     }

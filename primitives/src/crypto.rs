@@ -45,9 +45,9 @@ pub fn hash_pair(left: &H256, right: &H256) -> H256 {
     TypeInfo,
     RuntimeDebug,
 )]
-pub struct Commitment(pub H256);
+pub struct PresenceCommitment(pub H256);
 
-impl Commitment {
+impl PresenceCommitment {
     pub fn new<V: Encode>(value: &V, randomness: &[u8; 32]) -> Self {
         let value_bytes = value.encode();
         let mut input = Vec::with_capacity(DOMAIN_COMMITMENT.len() + value_bytes.len() + 32);
@@ -207,7 +207,7 @@ impl StateRoot {
     RuntimeDebug,
 )]
 pub struct PresenceProof {
-    pub commitment: Commitment,
+    pub commitment: PresenceCommitment,
     pub merkle_proof: MerkleProof,
     pub nullifier: Nullifier,
 }
@@ -359,13 +359,13 @@ pub fn eval_polynomial(coeffs: &[[u8; 32]], x: u8) -> [u8; 32] {
     result
 }
 
-impl CryptoHash for Commitment {
+impl CryptoHash for PresenceCommitment {
     fn crypto_hash(&self) -> H256 {
         self.0
     }
 }
 
-impl DomainSeparatedHash for Commitment {
+impl DomainSeparatedHash for PresenceCommitment {
     const DOMAIN: &'static [u8] = DOMAIN_COMMITMENT;
 
     fn domain_hash(&self) -> H256 {
@@ -672,7 +672,7 @@ mod tests {
         let value = 42u64;
         let randomness = [1u8; 32];
 
-        let commitment = Commitment::new(&value, &randomness);
+        let commitment = PresenceCommitment::new(&value, &randomness);
         assert!(commitment.verify(&value, &randomness));
         assert!(!commitment.verify(&43u64, &randomness));
     }
