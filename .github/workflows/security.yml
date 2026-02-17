@@ -51,6 +51,9 @@ jobs:
     name: Dependency Review
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
+    # Requires Dependency Graph enabled in repo settings:
+    # https://github.com/7ayLabs/7aychain/settings/security_analysis
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
