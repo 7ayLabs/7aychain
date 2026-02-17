@@ -7,8 +7,6 @@ on:
     branches: [main, develop]
 
 concurrency:
-  # For PRs: group by head ref to cancel outdated runs on same PR
-  # For pushes to main/develop: group by SHA to never cancel (each push is unique)
   group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.head_ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
@@ -48,13 +46,55 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
-      - name: Run clippy
+      - name: Clippy (library code)
+        run: cargo clippy --workspace --lib -- -D warnings
+
+      - name: Clippy (test code)
         run: |
-          cargo clippy --workspace --all-targets -- \
+          cargo clippy --workspace --tests -- \
             -D warnings \
-            -A clippy::expect_used \
             -A clippy::unwrap_used \
-            -A clippy::derivable_impls
+            -A clippy::expect_used
+
+  check-nostd:
+    name: Check no_std
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            protobuf-compiler \
+            libclang-dev
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          shared-key: nostd
+
+      - name: Check no_std compliance
+        run: |
+          CRATES="seveny-primitives seveny-runtime"
+          for pallet in presence epoch validator dispute governance semantic \
+                        boomerang autonomous octopus device vault zk storage \
+                        lifecycle triangulation device-scanner; do
+            CRATES="$CRATES pallet-${pallet}"
+          done
+          for crate in $CRATES; do
+            echo "::group::Checking ${crate}"
+            cargo check --no-default-features -p "$crate" --target wasm32-unknown-unknown
+            echo "::endgroup::"
+          done
 
   build:
     name: Build
@@ -96,10 +136,53 @@ jobs:
           path: target/release/seveny-node
           retention-days: 7
 
+      - name: Upload WASM runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: seveny-runtime-wasm
+          path: target/release/wbuild/seveny-runtime/seveny_runtime.compact.compressed.wasm
+          retention-days: 7
+          if-no-files-found: warn
+
+  security:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo-audit
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-audit
+          key: cargo-audit-0.21
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --version 0.21.2 --locked || true
+
+      - name: Run security audit
+        run: cargo audit --deny warnings
+
+      - name: Upload audit report
+        if: always()
+        run: cargo audit --json > audit-report.json || true
+
+      - name: Upload report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-audit
+          path: audit-report.json
+          retention-days: 30
+
   test:
     name: Test
     runs-on: ubuntu-latest
-    needs: lint
+    needs: [lint, check-nostd]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -120,50 +203,87 @@ jobs:
           cache-on-failure: true
           shared-key: test
 
-      - name: Run pallet tests
+      - name: Run unit tests
         run: cargo test --workspace --lib
 
       - name: Run integration tests
         run: cargo test --workspace --test '*'
-        continue-on-error: true
 
       - name: Run invariant tests
         run: cargo test invariant_ -- --nocapture
-        continue-on-error: true
 
-  security:
-    name: Security Audit
+  runtime-checks:
+    name: Runtime Checks
     runs-on: ubuntu-latest
-    needs: lint
+    needs: build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download node binary
+        uses: actions/download-artifact@v4
+        with:
+          name: seveny-node
+          path: ./bin
+
+      - name: Make binary executable
+        run: chmod +x ./bin/seveny-node
+
+      - name: Check runtime version
+        run: ./bin/seveny-node --version
+
+      - name: Verify chain spec (dev)
+        run: ./bin/seveny-node build-spec --chain dev --disable-default-bootnode > /dev/null
+
+      - name: Verify chain spec (local)
+        run: ./bin/seveny-node build-spec --chain local --disable-default-bootnode > /dev/null
+
+      - name: Check spec_version bump
+        if: github.event_name == 'pull_request'
+        run: |
+          RUNTIME_CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- runtime/ pallets/ primitives/ | wc -l)
+          if [ "$RUNTIME_CHANGED" -gt 0 ]; then
+            CURRENT_VERSION=$(grep -oP 'spec_version:\s*\K\d+' runtime/src/lib.rs || echo "0")
+            git checkout origin/${{ github.base_ref }} -- runtime/src/lib.rs 2>/dev/null || true
+            BASE_VERSION=$(grep -oP 'spec_version:\s*\K\d+' runtime/src/lib.rs || echo "0")
+            git checkout HEAD -- runtime/src/lib.rs
+            if [ "$CURRENT_VERSION" = "$BASE_VERSION" ]; then
+              echo "::warning::Runtime source changed but spec_version ($CURRENT_VERSION) was not bumped"
+            fi
+          fi
+
+  try-runtime:
+    name: Try-Runtime
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'pull_request'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            protobuf-compiler \
+            libclang-dev
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo-audit
-        uses: actions/cache@v4
         with:
-          path: ~/.cargo/bin/cargo-audit
-          key: cargo-audit-0.21
+          targets: wasm32-unknown-unknown
+          components: rust-src
 
-      - name: Install cargo-audit
-        run: cargo install cargo-audit --version 0.21.2 || true
-
-      - name: Run security audit
-        run: cargo audit --deny warnings
-        continue-on-error: true
-
-      - name: Check for known vulnerabilities
-        run: cargo audit --json > audit-report.json || true
-
-      - name: Upload audit report
-        uses: actions/upload-artifact@v4
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
         with:
-          name: security-audit
-          path: audit-report.json
-          retention-days: 30
+          cache-on-failure: true
+          shared-key: try-runtime
+
+      - name: Build with try-runtime
+        run: cargo build --release --features try-runtime -p seveny-node
 
   coverage:
     name: Coverage
@@ -188,19 +308,86 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
+          shared-key: test
 
       - name: Install tarpaulin
-        run: cargo install cargo-tarpaulin || true
+        run: cargo install cargo-tarpaulin --locked || true
 
       - name: Generate coverage
-        run: cargo tarpaulin --workspace --out Xml --skip-clean
-        continue-on-error: true
+        run: |
+          cargo tarpaulin --workspace --out xml --skip-clean \
+            --exclude-files "*/tests.rs" "*/mock.rs" "*/benchmarking.rs" \
+            --timeout 600
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4
         with:
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
+
+  devnet-smoke:
+    name: Devnet Smoke Test
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download node binary
+        uses: actions/download-artifact@v4
+        with:
+          name: seveny-node
+          path: ./bin
+
+      - name: Make binary executable
+        run: chmod +x ./bin/seveny-node
+
+      - name: Start dev node
+        run: |
+          ./bin/seveny-node \
+            --dev \
+            --sealing=instant \
+            --tmp \
+            --rpc-cors=all \
+            --scanner-mode=mock \
+            --mock-devices=5 &
+          NODE_PID=$!
+          echo "NODE_PID=$NODE_PID" >> $GITHUB_ENV
+
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:9944 \
+              -H "Content-Type: application/json" \
+              -d '{"jsonrpc":"2.0","id":1,"method":"system_health","params":[]}' \
+              | grep -q result; then
+              echo "Node ready after ${i}s"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "::error::Node failed to start within 30s"
+              kill $NODE_PID 2>/dev/null || true
+              exit 1
+            fi
+            sleep 1
+          done
+
+      - name: Verify RPC endpoints
+        run: |
+          for method in system_health system_version chain_getHeader state_getMetadata; do
+            RESULT=$(curl -sf http://localhost:9944 \
+              -H "Content-Type: application/json" \
+              -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"${method}\",\"params\":[]}" \
+              | jq -r '.result')
+            if [ -z "$RESULT" ] || [ "$RESULT" = "null" ]; then
+              echo "::error::${method} returned empty"
+              exit 1
+            fi
+            echo "${method}: OK"
+          done
+
+      - name: Cleanup
+        if: always()
+        run: kill $NODE_PID 2>/dev/null || true
 
   docker:
     name: Docker Build
@@ -223,27 +410,3 @@ jobs:
           tags: 7aychain:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-  runtime-checks:
-    name: Runtime Checks
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download node binary
-        uses: actions/download-artifact@v4
-        with:
-          name: seveny-node
-          path: ./bin
-
-      - name: Make binary executable
-        run: chmod +x ./bin/seveny-node
-
-      - name: Check runtime version
-        run: ./bin/seveny-node --version
-
-      - name: Verify chain spec generation
-        run: ./bin/seveny-node build-spec --chain local --disable-default-bootnode > /dev/null
-        continue-on-error: true
