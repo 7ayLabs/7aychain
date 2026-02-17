@@ -377,6 +377,7 @@ pub mod pallet {
         PositionMismatch,
         ValidatorPositionNotSet,
         SelfAttestation,
+        InvalidBlockNumber,
     }
 
     #[pallet::genesis_config]
@@ -816,7 +817,8 @@ pub mod pallet {
             );
 
             // Validate latency measurement
-            let latency = LatencyMeasurement::new(latency_ms, direct_connection, block_number.try_into().unwrap_or(0));
+            let block_u64: u64 = block_number.try_into().map_err(|_| Error::<T>::InvalidBlockNumber)?;
+            let latency = LatencyMeasurement::new(latency_ms, direct_connection, block_u64);
             ensure!(latency.is_valid(), Error::<T>::InvalidLatencyMeasurement);
 
             let max_distance_km = latency.max_distance_km();

@@ -66,16 +66,19 @@ impl DeviceCommitment {
         nonce: &[u8; 32],
         block_number: u64,
         timestamp: u64,
-    ) -> Self {
+    ) -> Option<Self> {
+        if device_mac_hashes.len() > u8::MAX as usize {
+            return None;
+        }
         let merkle_root = Self::compute_device_merkle_root(device_mac_hashes);
         let commitment = Self::compute_commitment(&merkle_root, nonce, block_number);
 
-        Self {
+        Some(Self {
             commitment,
-            device_count: device_mac_hashes.len().min(255) as u8,
+            device_count: device_mac_hashes.len() as u8,
             timestamp,
             block_number,
-        }
+        })
     }
 
     #[cfg(feature = "std")]
@@ -292,10 +295,12 @@ impl Position {
     }
 
     pub fn distance_squared(&self, other: &Position) -> u64 {
-        let dx = (self.x as i64 - other.x as i64).abs() as u64;
-        let dy = (self.y as i64 - other.y as i64).abs() as u64;
-        let dz = (self.z as i64 - other.z as i64).abs() as u64;
-        dx * dx + dy * dy + dz * dz
+        let dx = (self.x as i64 - other.x as i64).unsigned_abs();
+        let dy = (self.y as i64 - other.y as i64).unsigned_abs();
+        let dz = (self.z as i64 - other.z as i64).unsigned_abs();
+        dx.saturating_mul(dx)
+            .saturating_add(dy.saturating_mul(dy))
+            .saturating_add(dz.saturating_mul(dz))
     }
 
     pub fn within_tolerance(&self, other: &Position, tolerance_meters: u32) -> bool {
@@ -439,7 +444,7 @@ mod tests {
         let block = 100;
         let timestamp = 1234567890;
 
-        let commitment = DeviceCommitment::new(&devices, &nonce, block, timestamp);
+        let commitment = DeviceCommitment::new(&devices, &nonce, block, timestamp).unwrap();
 
         assert_eq!(commitment.device_count, 3);
         assert_eq!(commitment.block_number, block);
@@ -455,7 +460,7 @@ mod tests {
         let block = 100;
         let timestamp = 1234567890;
 
-        let commitment = DeviceCommitment::new(&devices, &nonce, block, timestamp);
+        let commitment = DeviceCommitment::new(&devices, &nonce, block, timestamp).unwrap();
 
         let reveal = DeviceReveal {
             commitment_block: block,
@@ -476,7 +481,7 @@ mod tests {
         let wrong_nonce = [43u8; 32];
         let block = 100;
 
-        let commitment = DeviceCommitment::new(&devices, &nonce, block, 0);
+        let commitment = DeviceCommitment::new(&devices, &nonce, block, 0).unwrap();
 
         let reveal = DeviceReveal {
             commitment_block: block,
