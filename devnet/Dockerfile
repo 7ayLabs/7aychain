@@ -14,6 +14,7 @@ RUN rustup target add wasm32-unknown-unknown && \
 
 WORKDIR /7aychain
 
+COPY rust-toolchain.toml ./
 COPY Cargo.toml Cargo.lock ./
 COPY primitives/Cargo.toml primitives/Cargo.toml
 COPY runtime/Cargo.toml runtime/Cargo.toml

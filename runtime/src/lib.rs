@@ -723,12 +723,12 @@ impl_runtime_apis! {
         }
 
         fn execute_block(
-            block: Block,
+            block: <Block as BlockT>::LazyBlock,
             state_root_check: bool,
             signature_check: bool,
             select: frame_try_runtime::TryStateSelect,
         ) -> Weight {
-            Executive::try_execute_block(block, state_root_check, signature_check, select).unwrap()
+            Executive::try_execute_block(block.into(), state_root_check, signature_check, select).unwrap()
         }
     }
 }

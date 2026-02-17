@@ -27,4 +27,3 @@ docs/
 .cargo/
 .claude/
 
-rust-toolchain.toml

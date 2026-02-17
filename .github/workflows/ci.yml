@@ -100,7 +100,7 @@ jobs:
           done
           for crate in $CRATES; do
             echo "::group::Checking ${crate}"
-            cargo check --no-default-features -p "$crate" --target wasm32-unknown-unknown
+            cargo check --no-default-features -p "$crate" --target wasm32-unknown-unknown --lib
             echo "::endgroup::"
           done
 

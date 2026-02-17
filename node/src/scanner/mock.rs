@@ -82,9 +82,12 @@ impl MockScanner {
 
     pub async fn scan(&mut self) -> Vec<ScannedDevice> {
         let timestamp = self.get_timestamp();
-        let visible_count = self
-            .rng
-            .gen_range(5..(self.config.device_count as usize).min(20));
+        let upper = (self.config.device_count as usize).min(20);
+        let visible_count = if upper <= 5 {
+            upper
+        } else {
+            self.rng.gen_range(5..upper)
+        };
 
         let visible_indices: Vec<usize> = self
             .device_pool
