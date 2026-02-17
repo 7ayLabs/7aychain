@@ -442,6 +442,7 @@ parameter_types! {
     pub const KeyDestructionTimeoutBlocks: BlockNumber = 100;
     pub const MinDestructionAttestations: u32 = 3;
     pub const RotationCooldownBlocks: BlockNumber = 50;
+    pub const RotationTimeoutBlocks: BlockNumber = 200;
 }
 
 impl pallet_lifecycle::Config for Runtime {
@@ -449,6 +450,7 @@ impl pallet_lifecycle::Config for Runtime {
     type KeyDestructionTimeoutBlocks = KeyDestructionTimeoutBlocks;
     type MinDestructionAttestations = MinDestructionAttestations;
     type RotationCooldownBlocks = RotationCooldownBlocks;
+    type RotationTimeoutBlocks = RotationTimeoutBlocks;
 }
 
 parameter_types! {

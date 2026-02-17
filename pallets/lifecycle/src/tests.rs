@@ -51,6 +51,7 @@ parameter_types! {
     pub const KeyDestructionTimeoutBlocks: u64 = 50;
     pub const MinDestructionAttestations: u32 = 3;
     pub const RotationCooldownBlocks: u64 = 10;
+    pub const RotationTimeoutBlocks: u64 = 100;
 }
 
 impl pallet_lifecycle::Config for Test {
@@ -58,6 +59,7 @@ impl pallet_lifecycle::Config for Test {
     type KeyDestructionTimeoutBlocks = KeyDestructionTimeoutBlocks;
     type MinDestructionAttestations = MinDestructionAttestations;
     type RotationCooldownBlocks = RotationCooldownBlocks;
+    type RotationTimeoutBlocks = RotationTimeoutBlocks;
 }
 
 fn new_test_ext() -> sp_io::TestExternalities {

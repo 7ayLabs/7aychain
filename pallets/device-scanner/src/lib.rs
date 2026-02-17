@@ -251,20 +251,20 @@ pub mod pallet {
                 let is_new = !TrackedDevices::<T>::contains_key(device.mac_hash);
 
                 if is_new {
-                    // Enforce MaxTrackedDevices with LRU eviction
                     let current_count = ActiveDeviceCount::<T>::get();
                     if current_count >= T::MaxTrackedDevices::get() {
-                        // Find and evict the least recently used device
-                        if let Some((oldest_hash, oldest_device)) = TrackedDevices::<T>::iter()
-                            .min_by_key(|(_, d)| d.last_seen)
-                        {
-                            // Remove the oldest device
-                            TrackedDevices::<T>::remove(oldest_hash);
-                            DeviceTypeCount::<T>::mutate(oldest_device.device_type, |c| *c = c.saturating_sub(1));
+                        let evict_count = (T::MaxTrackedDevices::get() / 10).max(1);
+                        let mut candidates: Vec<(H256, BlockNumberFor<T>, DetectedDeviceType)> =
+                            TrackedDevices::<T>::iter()
+                                .map(|(h, d)| (h, d.last_seen, d.device_type))
+                                .collect();
+                        candidates.sort_by_key(|(_, last_seen, _)| *last_seen);
+                        for (hash, _, dtype) in candidates.iter().take(evict_count as usize) {
+                            TrackedDevices::<T>::remove(hash);
+                            DeviceTypeCount::<T>::mutate(dtype, |c| *c = c.saturating_sub(1));
                             ActiveDeviceCount::<T>::mutate(|c| *c = c.saturating_sub(1));
-
                             Self::deposit_event(Event::DeviceRemoved {
-                                mac_hash: oldest_hash,
+                                mac_hash: *hash,
                                 reason: RemovalReason::CapacityEviction,
                             });
                         }

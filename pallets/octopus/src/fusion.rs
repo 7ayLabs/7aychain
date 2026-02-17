@@ -10,6 +10,8 @@ pub const GAMMA: u8 = 20;
 
 pub const CRITICAL_HEALTH_THRESHOLD: u8 = 20;
 pub const WARNING_HEALTH_THRESHOLD: u8 = 50;
+pub const HEARTBEAT_CRITICAL_THRESHOLD: u8 = 30;
+pub const REVEAL_TIMEOUT_BLOCKS: u64 = 100;
 pub const MIN_TRIANGULATION_NODES: u32 = 3;
 pub const POSITION_TOLERANCE_CM: u32 = 5000;
 pub const MAX_DEVICES_FOR_FULL_SCORE: u32 = 10;
@@ -360,13 +362,13 @@ pub fn should_trigger_healing(metrics: &FusedHealthMetrics, current_block: u64) 
         return Some(HealingTrigger::FusedScoreCritical);
     }
 
-    if metrics.heartbeat_score < 30 {
+    if metrics.heartbeat_score < HEARTBEAT_CRITICAL_THRESHOLD {
         return Some(HealingTrigger::HeartbeatTimeout);
     }
 
     if metrics.device_metrics.total_observations > 0 {
         let blocks_since_reveal = current_block.saturating_sub(metrics.device_metrics.last_reveal_block);
-        if blocks_since_reveal > 100 {
+        if blocks_since_reveal > REVEAL_TIMEOUT_BLOCKS {
             return Some(HealingTrigger::DeviceObservationMissing);
         }
     }
