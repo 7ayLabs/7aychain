@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: light)" srcset="./.github/7aychain_dark_logo.svg">
-    <img src="./.github/7aychain_white_logo.svg" alt="7aychain" width="500">
+    <source media="(prefers-color-scheme: light)" srcset="./.github/7aychain_dark_logo.svg?v=2">
+    <img src="./.github/7aychain_white_logo.svg?v=2" alt="7aychain" width="500">
   </picture>
 </p>
 
