@@ -25,7 +25,7 @@ RUN mkdir -p primitives/src runtime/src node/src && \
     echo "fn main() {}" > node/src/main.rs && \
     echo "pub fn dummy() {}" > primitives/src/lib.rs && \
     echo "pub fn dummy() {}" > runtime/src/lib.rs && \
-    touch node/build.rs
+    echo "fn main() {}" > node/build.rs
 
 RUN cargo build --release --package seveny-node || true
 
@@ -33,6 +33,9 @@ COPY . .
 
 ENV CARGO_INCREMENTAL=0
 ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
+
+# Clean workspace crates so Cargo recompiles from real sources
+RUN cargo clean -p seveny-primitives -p seveny-runtime -p seveny-node --release 2>/dev/null || true
 
 RUN cargo build --release --package seveny-node
 

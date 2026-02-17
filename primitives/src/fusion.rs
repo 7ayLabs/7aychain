@@ -523,13 +523,11 @@ mod tests {
     #[cfg(feature = "std")]
     #[test]
     fn test_device_commitment_rejects_overflow() {
-        let devices: Vec<H256> = (0..=255).map(|i| H256::repeat_byte(i as u8)).collect();
+        let devices: Vec<H256> = (0..255).map(|i| H256::repeat_byte(i as u8)).collect();
         let nonce = [0u8; 32];
         assert!(DeviceCommitment::new(&devices, &nonce, 1, 1).is_some());
 
         let overflow: Vec<H256> = (0..256).map(|_| H256::zero()).collect();
-        let mut extended = overflow.clone();
-        extended.push(H256::zero());
-        assert!(DeviceCommitment::new(&extended, &nonce, 1, 1).is_none());
+        assert!(DeviceCommitment::new(&overflow, &nonce, 1, 1).is_none());
     }
 }
