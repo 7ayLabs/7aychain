@@ -1,4 +1,4 @@
-use crate::scanner::types::{DetectedDeviceType, Position, ScanSignalType, ScannedDevice};
+use crate::scanner::types::{DetectedDeviceType, ScanSignalType, ScannedDevice};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use sp_core::{blake2_256, H256};
@@ -16,7 +16,6 @@ pub struct MockScanner {
 pub struct MockConfig {
     pub device_count: u32,
     pub device_types: Vec<DetectedDeviceType>,
-    pub position: Position,
     pub rssi_range: (i8, i8),
     pub seed: u64,
 }
@@ -33,7 +32,6 @@ impl Default for MockConfig {
                 DetectedDeviceType::IPad,
                 DetectedDeviceType::IoTDevice,
             ],
-            position: Position::default(),
             rssi_range: (-80, -30),
             seed: 42,
         }
@@ -45,7 +43,6 @@ struct MockDevice {
     device_type: DetectedDeviceType,
     base_rssi: i8,
     visibility_probability: f32,
-    movement_offset: (i32, i32),
 }
 
 impl MockScanner {
@@ -72,14 +69,12 @@ impl MockScanner {
                 let device_type = config.device_types[i as usize % config.device_types.len()];
                 let base_rssi = rng.gen_range(config.rssi_range.0..config.rssi_range.1);
                 let visibility = rng.gen_range(0.3..1.0);
-                let movement = (rng.gen_range(-50..50), rng.gen_range(-50..50));
 
                 MockDevice {
                     mac_hash,
                     device_type,
                     base_rssi,
                     visibility_probability: visibility,
-                    movement_offset: movement,
                 }
             })
             .collect()
@@ -162,18 +157,9 @@ impl MockScanner {
             .iter()
             .position(|(_, _, block)| *block == target_block)?;
 
-        let (commitment, nonce, block) = self.commitment_history.remove(idx)?;
-        let devices = self.get_current_device_hashes();
-        let merkle_root = self.compute_merkle_root(&devices);
+        let (commitment, _nonce, _block) = self.commitment_history.remove(idx)?;
 
         Some(MockReveal {
-            commitment_block: block,
-            nonce,
-            device_merkle_root: merkle_root,
-            rssi_values: devices
-                .iter()
-                .map(|_| self.rng.gen_range(-80..-30))
-                .collect(),
             original_commitment: commitment,
         })
     }
@@ -226,17 +212,9 @@ impl MockScanner {
             .map(|d| d.as_secs())
             .unwrap_or(0)
     }
-
-    pub fn get_position(&self) -> Position {
-        self.config.position
-    }
 }
 
 pub struct MockReveal {
-    pub commitment_block: u64,
-    pub nonce: [u8; 32],
-    pub device_merkle_root: H256,
-    pub rssi_values: Vec<i8>,
     pub original_commitment: H256,
 }
 

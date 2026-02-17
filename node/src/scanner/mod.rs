@@ -1,15 +1,9 @@
-#[allow(dead_code)]
 pub mod inherent;
-#[allow(dead_code)]
 pub mod latency;
-#[allow(dead_code)]
 pub mod mock;
-#[allow(dead_code)]
 pub mod types;
 
 pub use inherent::{DeviceScanInherentDataProvider, ScanResultsHandle};
-#[allow(unused_imports)]
-pub use latency::{LatencyScanner, LatencyScannerConfig, LatencyStatistics, PeerLatency};
 pub use mock::{MockConfig, MockScanner};
 pub use types::*;
 
@@ -116,7 +110,6 @@ async fn run_mock_scanner(config: ScannerConfig, scan_results: ScanResultsHandle
 
     let mock_config = MockConfig {
         device_count: config.mock_device_count,
-        position: config.reporter_position,
         seed: config.mock_seed,
         ..MockConfig::default()
     };

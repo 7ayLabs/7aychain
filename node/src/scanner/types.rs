@@ -71,25 +71,3 @@ pub struct DeviceScanInherentData {
     pub scan_timestamp: u64,
 }
 
-#[derive(Debug)]
-pub enum ScanError {
-    UnsupportedPlatform,
-    PermissionDenied,
-    InterfaceNotFound,
-    ScanFailed(String),
-    BluetoothError(String),
-}
-
-impl std::fmt::Display for ScanError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ScanError::UnsupportedPlatform => write!(f, "Unsupported platform"),
-            ScanError::PermissionDenied => write!(f, "Permission denied"),
-            ScanError::InterfaceNotFound => write!(f, "Interface not found"),
-            ScanError::ScanFailed(msg) => write!(f, "Scan failed: {}", msg),
-            ScanError::BluetoothError(msg) => write!(f, "Bluetooth error: {}", msg),
-        }
-    }
-}
-
-impl std::error::Error for ScanError {}

@@ -4,7 +4,6 @@
 //! without requiring WiFi/Bluetooth hardware.
 
 use std::collections::HashMap;
-use std::time::{Duration, Instant};
 
 use sc_network::PeerId;
 
@@ -17,32 +16,26 @@ pub const MAX_VALID_LATENCY_MS: u32 = 1000;
 /// Latency measurement result for a peer.
 #[derive(Clone, Debug)]
 pub struct PeerLatency {
-    /// Peer identifier
-    pub peer_id: PeerId,
     /// Round-trip time in milliseconds
     pub rtt_ms: u32,
     /// Whether this is a direct connection
     pub direct: bool,
-    /// Estimated number of hops
-    pub hops: Option<u8>,
-    /// When the measurement was taken
-    pub measured_at: Instant,
     /// Maximum possible distance in km
     pub max_distance_km: u32,
 }
 
 impl PeerLatency {
     /// Create from a raw RTT measurement.
-    pub fn new(peer_id: PeerId, rtt_ms: u32, direct: bool) -> Self {
+    pub fn new(peer_id: PeerId, rtt_ms: u32, direct: bool) -> (PeerId, Self) {
         let max_distance_km = (rtt_ms / 2) * NETWORK_SPEED_KM_PER_MS;
-        Self {
+        (
             peer_id,
-            rtt_ms,
-            direct,
-            hops: None,
-            measured_at: Instant::now(),
-            max_distance_km,
-        }
+            Self {
+                rtt_ms,
+                direct,
+                max_distance_km,
+            },
+        )
     }
 
     /// Check if the measurement is valid.
@@ -51,66 +44,26 @@ impl PeerLatency {
     }
 }
 
-/// Network latency scanner configuration.
-#[derive(Clone, Debug)]
-pub struct LatencyScannerConfig {
-    /// How often to measure peer latency
-    pub scan_interval: Duration,
-    /// Timeout for ping requests
-    pub ping_timeout: Duration,
-    /// Maximum peers to measure per scan
-    pub max_peers_per_scan: usize,
-}
-
-impl Default for LatencyScannerConfig {
-    fn default() -> Self {
-        Self {
-            scan_interval: Duration::from_secs(10),
-            ping_timeout: Duration::from_secs(5),
-            max_peers_per_scan: 50,
-        }
-    }
-}
-
 /// Latency scanner that measures RTT to network peers.
 pub struct LatencyScanner {
-    config: LatencyScannerConfig,
     /// Cache of recent measurements
     measurements: HashMap<PeerId, PeerLatency>,
 }
 
 impl LatencyScanner {
     /// Create a new latency scanner.
-    pub fn new(config: LatencyScannerConfig) -> Self {
+    pub fn new() -> Self {
         Self {
-            config,
             measurements: HashMap::new(),
         }
     }
 
     /// Update with new peer latency data from the network layer.
-    /// This is called when the network reports peer statistics.
     pub fn update_peer_latency(&mut self, peer_id: PeerId, rtt_ms: u32, direct: bool) {
-        let measurement = PeerLatency::new(peer_id, rtt_ms, direct);
+        let (id, measurement) = PeerLatency::new(peer_id, rtt_ms, direct);
         if measurement.is_valid() {
-            self.measurements.insert(peer_id, measurement);
+            self.measurements.insert(id, measurement);
         }
-    }
-
-    /// Get all current latency measurements.
-    pub fn get_measurements(&self) -> Vec<PeerLatency> {
-        self.measurements.values().cloned().collect()
-    }
-
-    /// Get latency measurement for a specific peer.
-    pub fn get_peer_latency(&self, peer_id: &PeerId) -> Option<&PeerLatency> {
-        self.measurements.get(peer_id)
-    }
-
-    /// Clear old measurements (older than TTL).
-    pub fn cleanup_old_measurements(&mut self, ttl: Duration) {
-        let cutoff = Instant::now() - ttl;
-        self.measurements.retain(|_, m| m.measured_at > cutoff);
     }
 
     /// Get statistics about current measurements.
@@ -187,21 +140,19 @@ impl MockLatencyScanner {
     }
 
     /// Generate mock latency measurements.
-    pub fn generate_measurements(&mut self, peer_count: usize) -> Vec<PeerLatency> {
+    pub fn generate_measurements(&mut self, peer_count: usize) -> Vec<(PeerId, PeerLatency)> {
         let mut measurements = Vec::with_capacity(peer_count);
 
         for i in 0..peer_count {
-            // Simple deterministic "random" based on seed
             let variance =
                 ((self.seed.wrapping_mul(i as u64 + 1)) % (self.variance_ms as u64 * 2)) as u32;
             let rtt = self.base_latency_ms + variance - self.variance_ms;
 
-            // Create a mock peer ID
             let mut peer_bytes = [0u8; 38];
             peer_bytes[0..8].copy_from_slice(&(i as u64).to_le_bytes());
             let peer_id = PeerId::from_bytes(&peer_bytes).unwrap_or_else(|_| PeerId::random());
 
-            let direct = i % 3 != 0; // 2/3 direct connections
+            let direct = i % 3 != 0;
 
             measurements.push(PeerLatency::new(peer_id, rtt, direct));
         }
@@ -217,23 +168,23 @@ mod tests {
 
     #[test]
     fn test_peer_latency_distance() {
-        let latency = PeerLatency::new(PeerId::random(), 10, true);
+        let (_, latency) = PeerLatency::new(PeerId::random(), 10, true);
         // 10ms RTT -> 5ms one-way -> 5 * 150 = 750km
         assert_eq!(latency.max_distance_km, 750);
     }
 
     #[test]
     fn test_latency_validation() {
-        let valid = PeerLatency::new(PeerId::random(), 100, true);
+        let (_, valid) = PeerLatency::new(PeerId::random(), 100, true);
         assert!(valid.is_valid());
 
-        let too_high = PeerLatency::new(PeerId::random(), 2000, true);
+        let (_, too_high) = PeerLatency::new(PeerId::random(), 2000, true);
         assert!(!too_high.is_valid());
     }
 
     #[test]
     fn test_scanner_statistics() {
-        let mut scanner = LatencyScanner::new(LatencyScannerConfig::default());
+        let mut scanner = LatencyScanner::new();
 
         scanner.update_peer_latency(PeerId::random(), 10, true);
         scanner.update_peer_latency(PeerId::random(), 20, true);
@@ -254,7 +205,7 @@ mod tests {
         let measurements = mock.generate_measurements(5);
 
         assert_eq!(measurements.len(), 5);
-        for m in &measurements {
+        for (_, m) in &measurements {
             assert!(m.is_valid());
         }
     }
