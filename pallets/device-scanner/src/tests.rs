@@ -50,7 +50,6 @@ mod tests {
     }
 
     impl crate::pallet::Config for Test {
-        type RuntimeEvent = RuntimeEvent;
         type WeightInfo = ();
         type MaxTrackedDevices = MaxTrackedDevices;
         type DeviceStaleBlocks = DeviceStaleBlocks;

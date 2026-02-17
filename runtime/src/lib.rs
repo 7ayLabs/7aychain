@@ -481,7 +481,6 @@ parameter_types! {
 }
 
 impl pallet_device_scanner::Config for Runtime {
-    type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
     type MaxTrackedDevices = MaxTrackedDevices;
     type DeviceStaleBlocks = DeviceStaleBlocks;
