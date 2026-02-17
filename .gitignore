@@ -116,3 +116,4 @@ yarn.lock
 *.bak
 *.backup
 .claude/
+CLAUDE.md

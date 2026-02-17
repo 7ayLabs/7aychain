@@ -1,25 +1,82 @@
-[![CI](https://github.com/7ayLabs/7aychain/actions/workflows/ci.yml/badge.svg)](https://github.com/7ayLabs/7aychain/actions/workflows/ci.yml)
-[![License](https://img.shields.io/badge/license-BUSL--1.1-blue.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org/)
-[![Substrate](https://img.shields.io/badge/substrate-polkadot--stable2503-blueviolet)](https://github.com/paritytech/polkadot-sdk)
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: light)" srcset="./.github/7aychain_dark_logo.svg">
+    <img src="./.github/7aychain_white_logo.svg" alt="7aychain" width="500">
+  </picture>
+</p>
 
-7aychain is a standalone Layer 1 blockchain providing on-chain actor presence certification through epoch-bound, validator-quorum finalization. It implements the [7ay Proof of Presence Protocol](https://github.com/7ayLabs/7ay-presence) with 78 enforced invariants ensuring system correctness.
+<p align="center">
+  Standalone Layer 1 blockchain with on-chain Proof of Presence.
+</p>
 
-## Building the source
+<p align="center">
+  <a href="https://github.com/7ayLabs/7aychain/actions/workflows/ci.yml"><img src="https://github.com/7ayLabs/7aychain/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-BUSL--1.1-blue.svg" alt="License"></a>
+  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/rust-stable-orange.svg" alt="Rust"></a>
+  <a href="https://github.com/paritytech/polkadot-sdk"><img src="https://img.shields.io/badge/substrate-polkadot--stable2503-blueviolet" alt="Substrate"></a>
+</p>
 
-Building `7aychain` requires a Rust toolchain (1.85+), Clang, and LLVM.
+---
 
-### Hardware Requirements
+## Building the Source
 
-**Minimum:**
-- 4 GB RAM
-- 2 CPU cores
-- 50 GB SSD storage
+Building `7aychain` requires a Rust toolchain, Clang/LLVM, and protobuf.
 
-**Recommended:**
-- 8 GB RAM
-- 4 CPU cores
-- 100 GB NVMe SSD
+### Prerequisites
+
+Install Rust and the WASM target:
+
+```shell
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+rustup target add wasm32-unknown-unknown
+```
+
+Then install platform-specific dependencies:
+
+<details>
+<summary><b>macOS</b></summary>
+
+```shell
+brew install llvm cmake protobuf
+```
+
+</details>
+
+<details>
+<summary><b>Ubuntu / Debian</b></summary>
+
+```shell
+sudo apt-get update
+sudo apt-get install -y clang libclang-dev protobuf-compiler pkg-config cmake build-essential
+```
+
+</details>
+
+<details>
+<summary><b>Fedora / RHEL</b></summary>
+
+```shell
+sudo dnf install clang clang-devel protobuf-compiler cmake pkg-config
+```
+
+</details>
+
+<details>
+<summary><b>Windows</b></summary>
+
+Install [Visual Studio Build Tools](https://visualstudio.microsoft.com/downloads/) with the "C++ build tools" workload, then:
+
+```powershell
+choco install llvm cmake protoc
+```
+
+Or with Scoop:
+
+```powershell
+scoop install llvm cmake protobuf
+```
+
+</details>
 
 ### Clone and Build
 
@@ -37,122 +94,218 @@ The binary is located at `./target/release/seveny-node`.
 cargo test --workspace
 ```
 
-### Linting
+## Hardware Requirements
 
-```shell
-cargo clippy --workspace --all-targets -- -D warnings
-```
+| | Minimum | Recommended |
+|---|---------|-------------|
+| CPU | 2 cores | 4+ cores |
+| RAM | 4 GB | 8 GB |
+| Storage | 50 GB SSD | 100 GB NVMe SSD |
+| Network | 8 Mbit/s | 25+ Mbit/s |
 
-## Executables
+## Running 7aychain
 
-The build produces the following binary:
+### Development Node
 
-| Command | Description |
-|---------|-------------|
-| `seveny-node` | Main blockchain node implementing the PoP protocol. Runs as validator, full node, or archive node. |
-
-## Running `seveny-node`
-
-### Development Mode
-
-By far the most common scenario is running a local development node for testing:
+Start a single-node dev chain with instant-seal and pre-funded accounts (Alice, Bob, Charlie, Dave, Eve, Ferdie):
 
 ```shell
 ./target/release/seveny-node --dev
 ```
 
-This starts a single-node development chain with temporary storage. The development account `Alice` is pre-funded and can be used for testing.
-
-For detailed logging:
+With debug logging:
 
 ```shell
 RUST_LOG=debug ./target/release/seveny-node --dev
 ```
 
-### Full Node
+### Single Node
 
-To run a full node connecting to the 7aychain network:
-
-```shell
-./target/release/seveny-node \
-  --chain mainnet \
-  --name "my-node" \
-  --base-path /data/7aychain
-```
-
-### Validator Node
-
-Running a validator requires staking and registration. See the [Validator Guide](https://docs.7aylabs.com/validators) for setup instructions.
+Run a single validator on the local testnet:
 
 ```shell
 ./target/release/seveny-node \
-  --chain mainnet \
+  --alice \
   --validator \
-  --name "my-validator" \
-  --base-path /data/7aychain
+  --chain local \
+  --base-path /tmp/alice \
+  --rpc-port 9944 \
+  --rpc-cors all \
+  --rpc-methods unsafe \
+  --scanner-mode mock \
+  --mock-devices 15
 ```
 
-### Docker
+### Multi-Node Devnet
+
+Run the full network with Alice natively and the remaining validators in Docker:
 
 ```shell
-docker run -d \
-  -p 30333:30333 \
-  -p 9944:9944 \
-  -v /data/7aychain:/data \
-  7aylabs/7aychain:latest \
-  --chain mainnet \
-  --base-path /data
+# 1. Start Alice natively (real or mock scanning)
+devnet/scripts/run-native-alice.sh
+
+# 2. Start Bob, Charlie, Dave, Eve, Ferdie in Docker
+cd devnet
+docker compose -f docker-compose.hybrid.yml up -d
+
+# 3. Monitor the network
+devnet/scripts/monitor.sh
 ```
 
-## Pallets
+Each node gets its own RPC port:
 
-7aychain implements 14 custom FRAME pallets organized in three layers:
+| Node | RPC Port | P2P Port |
+|------|----------|----------|
+| Alice (native) | 9944 | 30333 |
+| Bob | 9945 | 30334 |
+| Charlie | 9946 | 30335 |
+| Dave | 9947 | 30336 |
+| Eve | 9948 | 30337 |
+| Ferdie | 9949 | 30338 |
 
-**Protocol Layer**
+Stop and reset:
 
-| Pallet | Description | Invariants |
-|--------|-------------|------------|
-| Presence | Core presence state machine (None → Declared → Validated → Finalized) | INV1-13 |
-| Epoch | Epoch scheduling and lifecycle management | INV14-18 |
-| Validator | Validator registration, staking, and slashing | INV46-49 |
-| Dispute | Dispute resolution with evidence and quorum outcomes | INV48 |
-| Governance | Capability-based access control with delegation | - |
+```shell
+docker compose -f docker-compose.hybrid.yml down       # stop Docker nodes
+docker compose -f docker-compose.hybrid.yml down -v     # stop + clear chain state
+```
 
-**Identity Layer**
+### Configuration
 
-| Pallet | Description | Invariants |
-|--------|-------------|------------|
-| Lifecycle | Actor registration and key destruction | INV76-78 |
-| Semantic | Actor relationships and trust levels | - |
-| Device | Device registration with trust scores | INV64-65 |
-| Autonomous | Behavioral pattern detection | INV34-37 |
+| Flag | Description |
+|------|-------------|
+| `--dev` | Run in development mode with temporary storage |
+| `--chain <spec>` | Chain specification (`dev`, `local`) |
+| `--validator` | Enable validator mode |
+| `--base-path <path>` | Database and keystore location |
+| `--rpc-port <port>` | JSON-RPC port — serves both HTTP and WebSocket (default: 9944) |
+| `--rpc-cors <origins>` | Allowed RPC origins (`all` for development) |
+| `--rpc-methods <mode>` | RPC method set (`safe`, `unsafe`) |
+| `--rpc-external` | Listen on all interfaces (0.0.0.0) |
+| `--port <port>` | P2P network port (default: 30333) |
+| `--name <name>` | Node display name |
+| `--scanner-mode <mode>` | Device scanner mode (`latency`, `mock`) |
+| `--mock-devices <n>` | Number of simulated devices in mock mode |
+| `--scan-interval <secs>` | Seconds between device scans (default: 6) |
+| `--scanner-pos-x/y/z <n>` | Scanner position coordinates |
 
-**Infrastructure Layer**
+## Docker
 
-| Pallet | Description | Invariants |
-|--------|-------------|------------|
-| Storage | Ephemeral data with retention policies | INV70-72 |
-| Vault | Threshold-based secret sharing | INV66-68 |
-| ZK | Zero-knowledge proof verification | INV73-75 |
-| Octopus | Subnode cluster management | INV38-42, INV63 |
-| Boomerang | Bidirectional path verification | INV30-33 |
+Quick start with a single instant-seal devnet node:
 
-## Protocol Constants
+```shell
+cd devnet
+docker compose -f docker-compose.dev.yml up -d --build
+```
 
-| Constant | Value | Invariant |
-|----------|-------|-----------|
-| Minimum Validators | 5 | INV46 |
-| Max Stake Ratio | 33% | INV47 |
-| Recovery Quorum | 80% | INV57 |
-| Emergency Upgrade Quorum | 80% | INV60 |
+Blocks are produced only when extrinsics are submitted.
+
+| Port | Service |
+|------|---------|
+| `9944` | JSON-RPC (HTTP + WebSocket) |
+| `30333` | P2P |
+
+Stop and reset:
+
+```shell
+docker compose -f docker-compose.dev.yml down       # stop
+docker compose -f docker-compose.dev.yml down -v     # stop + clear chain state
+```
+
+## Devnet Scripts
+
+All scripts are in `devnet/scripts/`:
+
+| Script | Description |
+|--------|-------------|
+| `dev.sh` | Start/stop single-node devnet (Docker or native) |
+| `dev.sh native` | Run native binary without Docker |
+| `dev.sh stop` | Stop the Docker container |
+| `dev.sh reset` | Stop + clear chain state |
+| `run-native-alice.sh` | Run Alice natively with real device scanning |
+| `monitor.sh` | Real-time health monitor for multi-node devnet |
+
+## Laud Networks CLI
+
+Interactive testing suite for all protocol features.
+
+### Quick Start
+
+```shell
+pip install substrate-interface
+python3 devnet/scripts/laud-cli.py
+```
+
+Connects to `ws://127.0.0.1:9944` by default. Custom endpoint:
+
+```shell
+python3 devnet/scripts/laud-cli.py --url ws://host:port
+```
+
+### Commands
+
+| Module | Operations |
+|--------|------------|
+| `presence` | declare, commit, reveal, vote, finalize, slash, quorum |
+| `epoch` | schedule, start, close, finalize, register, update, force |
+| `validator` | register, activate, deactivate, withdraw, stake, slash |
+| `pbt` | position, claim, attest, verify, setup, test |
+| `triangulation` | multilaterate, centroid, track |
+| `dispute` | open, evidence, vote, resolve |
+| `device` | register, scan, trust |
+| `lifecycle` | register, destroy, status |
+| `vault` | create, share, recover |
+| `zk` | prove, verify |
+| `governance` | propose, vote, delegate |
+| `semantic` | link, trust, query |
+| `boomerang` | send, verify |
+| `autonomous` | detect, report |
+| `octopus` | create, join, manage |
+| `storage` | store, retrieve, expire |
+
+Pre-loaded accounts: `alice`, `bob`, `charlie`, `dave`, `eve`, `ferdie`.
+
+## Programmatic Access
+
+### Polkadot.js Apps
+
+Connect the hosted [Polkadot.js Apps](https://polkadot.js.org/apps/) to your local node:
+
+```
+Settings → Custom Endpoint → ws://127.0.0.1:9944
+```
+
+### JSON-RPC
+
+```shell
+curl -H "Content-Type: application/json" \
+  -d '{"id":1, "jsonrpc":"2.0", "method":"system_health"}' \
+  http://127.0.0.1:9944
+```
+
+### Subxt (Rust)
+
+```rust
+use subxt::{OnlineClient, PolkadotConfig};
+
+let api = OnlineClient::<PolkadotConfig>::from_url("ws://127.0.0.1:9944").await?;
+```
+
+### @polkadot/api (JavaScript)
+
+```javascript
+const { ApiPromise, WsProvider } = require("@polkadot/api");
+
+const api = await ApiPromise.create({ provider: new WsProvider("ws://127.0.0.1:9944") });
+```
 
 ## Contributing
 
-Thank you for considering contributing to 7aychain. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## Security
 
-For security concerns, see [SECURITY.md](SECURITY.md) for our vulnerability disclosure policy.
+See [SECURITY.md](SECURITY.md) for our vulnerability disclosure policy.
 
 ## License
 
@@ -160,4 +313,6 @@ For security concerns, see [SECURITY.md](SECURITY.md) for our vulnerability disc
 
 ---
 
-Built with [Substrate](https://substrate.io/) by [7ayLabs](https://7aylabs.com)
+<p align="center">
+  Built with <a href="https://substrate.io/">Substrate</a> by <a href="https://7aylabs.com">7ayLabs</a>
+</p>
