@@ -1,5 +1,5 @@
 # Hybrid Devnet Configuration
-# Use this when running Alice natively with real WiFi/Bluetooth scanning
+# Use this when running Alice natively with latency-based scanning
 # Run: docker compose -f docker-compose.hybrid.yml up -d
 
 services:

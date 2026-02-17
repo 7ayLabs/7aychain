@@ -20,7 +20,7 @@ pub struct ExtendedRunCmd {
     #[clap(flatten)]
     pub base: RunCmd,
 
-    #[arg(long, default_value = "real")]
+    #[arg(long, default_value = "latency")]
     pub scanner_mode: String,
 
     #[arg(long, default_value = "15")]
