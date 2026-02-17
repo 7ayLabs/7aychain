@@ -47,19 +47,19 @@ jobs:
             p/security-audit
         continue-on-error: true
 
-  dependency-review:
-    name: Dependency Review
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    # Requires Dependency Graph enabled in repo settings:
-    # https://github.com/7ayLabs/7aychain/settings/security_analysis
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Dependency Review
-        uses: actions/dependency-review-action@v4
-        with:
-          fail-on-severity: high
-          deny-licenses: AGPL-3.0
-          comment-summary-in-pr: always
+  # To enable dependency-review, first enable Dependency Graph in repo settings:
+  # https://github.com/7ayLabs/7aychain/settings/security_analysis
+  # Then uncomment the job below.
+  #
+  # dependency-review:
+  #   name: Dependency Review
+  #   runs-on: ubuntu-latest
+  #   if: github.event_name == 'pull_request'
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Dependency Review
+  #       uses: actions/dependency-review-action@v4
+  #       with:
+  #         fail-on-severity: high
+  #         deny-licenses: AGPL-3.0
+  #         comment-summary-in-pr: always
