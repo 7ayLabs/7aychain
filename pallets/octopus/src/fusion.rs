@@ -426,9 +426,11 @@ mod tests {
 
     #[test]
     fn test_device_score_calculation() {
-        let mut metrics = DeviceObservationMetrics::default();
-        metrics.consistency_score = 100;
-        metrics.average_device_count = 10;
+        let mut metrics = DeviceObservationMetrics {
+            consistency_score: 100,
+            average_device_count: 10,
+            ..Default::default()
+        };
         assert_eq!(metrics.device_score(), 100);
 
         metrics.average_device_count = 5;
