@@ -99,7 +99,7 @@ cargo test --workspace
 | | Minimum | Recommended |
 |---|---------|-------------|
 | CPU | 2 cores | 4+ cores |
-| RAM | 4 GB | 8 GB |
+| RAM | 4 GB | 16 GB |
 | Storage | 50 GB SSD | 100 GB NVMe SSD |
 | Network | 8 Mbit/s | 25+ Mbit/s |
 
