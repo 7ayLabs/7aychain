@@ -104,7 +104,7 @@ impl Default for DeviceStatus {
     MaxEncodedLen,
     Default,
 )]
-pub struct HeartbeatInfo<BlockNumber: Default> {
+pub struct HeartbeatInfo<BlockNumber> {
     pub last_heartbeat: BlockNumber,
     pub sequence: u64,
     pub consecutive_misses: u32,
@@ -617,13 +617,12 @@ pub mod pallet {
                     Error::<T>::DeviceNotActive
                 );
 
-                let mut heartbeat =
-                    Heartbeats::<T>::get(device_id).unwrap_or_else(|| HeartbeatInfo {
-                        last_heartbeat: block_number,
-                        sequence: 0,
-                        consecutive_misses: 0,
-                        health_score: 100,
-                    });
+                let mut heartbeat = Heartbeats::<T>::get(device_id).unwrap_or(HeartbeatInfo {
+                    last_heartbeat: block_number,
+                    sequence: 0,
+                    consecutive_misses: 0,
+                    health_score: 100,
+                });
 
                 ensure!(
                     sequence > heartbeat.sequence,

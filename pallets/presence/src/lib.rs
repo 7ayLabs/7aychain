@@ -927,14 +927,14 @@ pub mod pallet {
         ) -> DispatchResult {
             // Allow root or the validator themselves
             let who = ensure_signed(origin.clone()).ok();
-            if who.is_none() {
-                ensure_root(origin)?;
-            } else {
-                let caller_validator = Self::account_to_validator(&who.unwrap());
+            if let Some(account) = who {
+                let caller_validator = Self::account_to_validator(&account);
                 ensure!(
                     caller_validator == validator,
                     Error::<T>::ValidatorNotActive
                 );
+            } else {
+                ensure_root(origin)?;
             }
 
             ValidatorPositions::<T>::insert(validator, position);
