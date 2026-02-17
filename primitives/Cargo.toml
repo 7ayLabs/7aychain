@@ -29,9 +29,6 @@ sp-core = { workspace = true }
 sp-runtime = { workspace = true }
 sp-arithmetic = { workspace = true }
 
-[dev-dependencies]
-sp-io = { workspace = true, features = ["std"] }
-
 [features]
 default = ["std"]
 std = [
