@@ -137,6 +137,7 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          name: "7aychain (${{ github.ref_name }})"
           files: |
             release/**
             srtool/**
