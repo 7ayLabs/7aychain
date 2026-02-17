@@ -8,14 +8,16 @@
 #         ./scripts/dev.sh reset    # Stop + clear chain state
 
 set -euo pipefail
-cd "$(dirname "$0")/.."
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+DEVNET_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_ROOT="$(cd "$DEVNET_DIR/.." && pwd)"
+cd "$DEVNET_DIR"
 
 case "${1:-docker}" in
   native)
     echo "Starting native instant-seal node..."
-    cd ..
-    cargo build --release --package seveny-node 2>&1 | tail -3
-    ./target/release/seveny-node \
+    cargo build --release --package seveny-node --manifest-path "$PROJECT_ROOT/Cargo.toml" 2>&1 | tail -3
+    "$PROJECT_ROOT/target/release/seveny-node" \
       --dev \
       --sealing=instant \
       --rpc-cors=all \
