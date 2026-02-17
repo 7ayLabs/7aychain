@@ -775,27 +775,24 @@ pub mod pallet {
             VerificationCount::<T>::get()
         }
 
-        /// Stub verifier for Groth16 proofs.
-        /// Accepts if proof is non-empty and has expected minimum structure.
-        /// To be replaced with actual BN254 pairing verification.
+        /// STUB: size-only check, no cryptographic verification.
+        /// TODO: replace with BN254 pairing verification.
         fn verify_groth16_stub(proof: &[u8], inputs: &[[u8; 32]]) -> bool {
-            // Groth16 proof structure: A (64 bytes) + B (128 bytes) + C (64 bytes) = 256 bytes minimum
+            log::warn!(target: "pallet-zk", "STUB: Groth16 verifier — no pairing check");
             proof.len() >= 256 && !inputs.is_empty()
         }
 
-        /// Stub verifier for PlonK proofs.
-        /// Accepts if proof is non-empty and has expected minimum structure.
-        /// To be replaced with actual KZG commitment verification.
+        /// STUB: size-only check, no cryptographic verification.
+        /// TODO: replace with KZG commitment verification.
         fn verify_plonk_stub(proof: &[u8], inputs: &[[u8; 32]]) -> bool {
-            // PlonK proof is typically larger due to multiple polynomial commitments
+            log::warn!(target: "pallet-zk", "STUB: PlonK verifier — no polynomial check");
             proof.len() >= 384 && !inputs.is_empty()
         }
 
-        /// Stub verifier for Halo2 proofs.
-        /// Accepts if proof is non-empty and has expected minimum structure.
-        /// To be replaced with actual IPA verification.
+        /// STUB: size-only check, no cryptographic verification.
+        /// TODO: replace with IPA verification.
         fn verify_halo2_stub(proof: &[u8], inputs: &[[u8; 32]]) -> bool {
-            // Halo2 proofs vary in size but have minimum structure
+            log::warn!(target: "pallet-zk", "STUB: Halo2 verifier — no IPA check");
             proof.len() >= 192 && !inputs.is_empty()
         }
 

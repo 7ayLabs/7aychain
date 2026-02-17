@@ -151,7 +151,7 @@ impl pallet_aura::Config for Runtime {
     type AuthorityId = AuraId;
     type DisabledValidators = ();
     type MaxAuthorities = MaxAuthorities;
-    type AllowMultipleBlocksPerSlot = ConstBool<true>;
+    type AllowMultipleBlocksPerSlot = ConstBool<false>;
     type SlotDuration = pallet_aura::MinimumPeriodTimesTwo<Runtime>;
 }
 
@@ -219,7 +219,7 @@ parameter_types! {
     pub const RevealWindow: BlockNumber = 4;
     // Position-Based Triangulation
     pub const MinWitnessesForVerification: u32 = 3;
-    pub const PositionToleranceMeters: u32 = 1000;
+    pub const PositionToleranceMeters: u32 = 100;
 }
 
 impl pallet_presence::Config for Runtime {
@@ -658,6 +658,8 @@ impl_runtime_apis! {
             >,
             _key_owner_proof: sp_consensus_grandpa::OpaqueKeyOwnershipProof,
         ) -> Option<()> {
+            // TODO: implement equivocation reporting — currently unhandled
+            log::warn!(target: "runtime", "Grandpa equivocation report received but not processed");
             None
         }
 
@@ -665,6 +667,8 @@ impl_runtime_apis! {
             _set_id: sp_consensus_grandpa::SetId,
             _authority_id: GrandpaId,
         ) -> Option<sp_consensus_grandpa::OpaqueKeyOwnershipProof> {
+            // TODO: implement key ownership proofs for equivocation reporting
+            log::warn!(target: "runtime", "Key ownership proof requested but not implemented");
             None
         }
     }
