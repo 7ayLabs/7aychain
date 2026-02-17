@@ -87,7 +87,9 @@ impl MockScanner {
 
     pub async fn scan(&mut self) -> Vec<ScannedDevice> {
         let timestamp = self.get_timestamp();
-        let visible_count = self.rng.gen_range(5..(self.config.device_count as usize).min(20));
+        let visible_count = self
+            .rng
+            .gen_range(5..(self.config.device_count as usize).min(20));
 
         let visible_indices: Vec<usize> = self
             .device_pool
@@ -168,7 +170,10 @@ impl MockScanner {
             commitment_block: block,
             nonce,
             device_merkle_root: merkle_root,
-            rssi_values: devices.iter().map(|_| self.rng.gen_range(-80..-30)).collect(),
+            rssi_values: devices
+                .iter()
+                .map(|_| self.rng.gen_range(-80..-30))
+                .collect(),
             original_commitment: commitment,
         })
     }

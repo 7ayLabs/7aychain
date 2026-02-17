@@ -22,7 +22,18 @@ pub type MaxDevicesPerScan = ConstU32<100>;
 pub const INHERENT_IDENTIFIER: InherentIdentifier = *b"devscan0";
 pub const MAX_DEVICES_PER_INHERENT: u32 = 100;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 pub enum ScanSignalType {
     Wifi,
     Bluetooth,
@@ -35,7 +46,18 @@ impl Default for ScanSignalType {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 pub enum DetectedDeviceType {
     Unknown,
     IPhone,
@@ -59,14 +81,36 @@ impl Default for DetectedDeviceType {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen, Default)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+    Default,
+)]
 pub struct Position {
     pub x: i64,
     pub y: i64,
     pub z: i64,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 pub struct ScannedDevice {
     pub mac_hash: H256,
     pub rssi: i8,
@@ -77,7 +121,9 @@ pub struct ScannedDevice {
     pub frequency: Option<u16>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo)]
+#[derive(
+    Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo,
+)]
 pub struct DeviceScanInherentData {
     pub devices: Vec<ScannedDevice>,
     pub reporter_position: Position,
@@ -97,7 +143,18 @@ pub struct TrackedScannedDevice<BlockNumber> {
 }
 
 /// Reason for device removal from tracking
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 pub enum RemovalReason {
     /// Device became stale (not seen for DeviceStaleBlocks)
     Stale,
@@ -237,7 +294,10 @@ pub mod pallet {
         #[pallet::weight(T::WeightInfo::process_scan_data(data.devices.len() as u32))]
         pub fn set_scan_data(origin: OriginFor<T>, data: DeviceScanInherentData) -> DispatchResult {
             ensure_none(origin)?;
-            ensure!(!ScanDataReceived::<T>::get(), Error::<T>::ScanDataAlreadyReceived);
+            ensure!(
+                !ScanDataReceived::<T>::get(),
+                Error::<T>::ScanDataAlreadyReceived
+            );
             ensure!(
                 data.devices.len() <= MAX_DEVICES_PER_INHERENT as usize,
                 Error::<T>::TooManyDevices

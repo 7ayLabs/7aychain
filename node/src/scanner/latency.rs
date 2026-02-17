@@ -115,7 +115,11 @@ impl LatencyScanner {
 
     /// Get statistics about current measurements.
     pub fn get_statistics(&self) -> LatencyStatistics {
-        let valid_measurements: Vec<_> = self.measurements.values().filter(|m| m.is_valid()).collect();
+        let valid_measurements: Vec<_> = self
+            .measurements
+            .values()
+            .filter(|m| m.is_valid())
+            .collect();
 
         if valid_measurements.is_empty() {
             return LatencyStatistics::default();
@@ -126,8 +130,16 @@ impl LatencyScanner {
 
         let direct_count = valid_measurements.iter().filter(|m| m.direct).count();
 
-        let min_rtt = valid_measurements.iter().map(|m| m.rtt_ms).min().unwrap_or(0);
-        let max_rtt = valid_measurements.iter().map(|m| m.rtt_ms).max().unwrap_or(0);
+        let min_rtt = valid_measurements
+            .iter()
+            .map(|m| m.rtt_ms)
+            .min()
+            .unwrap_or(0);
+        let max_rtt = valid_measurements
+            .iter()
+            .map(|m| m.rtt_ms)
+            .max()
+            .unwrap_or(0);
 
         LatencyStatistics {
             peer_count: valid_measurements.len() as u32,
@@ -180,7 +192,8 @@ impl MockLatencyScanner {
 
         for i in 0..peer_count {
             // Simple deterministic "random" based on seed
-            let variance = ((self.seed.wrapping_mul(i as u64 + 1)) % (self.variance_ms as u64 * 2)) as u32;
+            let variance =
+                ((self.seed.wrapping_mul(i as u64 + 1)) % (self.variance_ms as u64 * 2)) as u32;
             let rtt = self.base_latency_ms + variance - self.variance_ms;
 
             // Create a mock peer ID

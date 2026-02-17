@@ -15,7 +15,11 @@ pub struct DeviceScanInherentDataProvider {
 }
 
 impl DeviceScanInherentDataProvider {
-    pub fn new(scan_results: ScanResultsHandle, reporter_position: Position, max_devices: u32) -> Self {
+    pub fn new(
+        scan_results: ScanResultsHandle,
+        reporter_position: Position,
+        max_devices: u32,
+    ) -> Self {
         Self {
             scan_results,
             reporter_position,
@@ -26,7 +30,10 @@ impl DeviceScanInherentDataProvider {
 
 #[async_trait::async_trait]
 impl InherentDataProvider for DeviceScanInherentDataProvider {
-    async fn provide_inherent_data(&self, inherent_data: &mut InherentData) -> Result<(), sp_inherents::Error> {
+    async fn provide_inherent_data(
+        &self,
+        inherent_data: &mut InherentData,
+    ) -> Result<(), sp_inherents::Error> {
         let results = self.scan_results.read().await;
 
         if results.devices.is_empty() {

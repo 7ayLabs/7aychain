@@ -627,26 +627,21 @@ mod tests {
     fn shamir_roundtrip_simple() {
         let secret = [42u8; 32];
         let shares = ShamirScheme::split(&secret, 2, 3).expect("split failed");
-        let reconstructed = ShamirScheme::reconstruct(&shares[0..2], 2).expect("reconstruct failed");
+        let reconstructed =
+            ShamirScheme::reconstruct(&shares[0..2], 2).expect("reconstruct failed");
         assert_eq!(secret, reconstructed);
     }
 
     #[test]
     fn shamir_roundtrip_random_secret() {
         let secret: [u8; 32] = [
-            0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0,
-            0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
-            0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00,
-            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+            0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
+            0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00, 0x01, 0x02, 0x03, 0x04,
+            0x05, 0x06, 0x07, 0x08,
         ];
         let shares = ShamirScheme::split(&secret, 3, 5).expect("split failed");
 
-        let combos: [(usize, usize, usize); 4] = [
-            (0, 1, 2),
-            (0, 2, 4),
-            (1, 3, 4),
-            (2, 3, 4),
-        ];
+        let combos: [(usize, usize, usize); 4] = [(0, 1, 2), (0, 2, 4), (1, 3, 4), (2, 3, 4)];
 
         for (a, b, c) in combos {
             let subset = vec![shares[a].clone(), shares[b].clone(), shares[c].clone()];
@@ -660,10 +655,12 @@ mod tests {
         let secret = [0xAB; 32];
         let shares = ShamirScheme::split(&secret, 4, 7).expect("split failed");
 
-        let reconstructed = ShamirScheme::reconstruct(&shares[0..4], 4).expect("reconstruct failed");
+        let reconstructed =
+            ShamirScheme::reconstruct(&shares[0..4], 4).expect("reconstruct failed");
         assert_eq!(secret, reconstructed);
 
-        let reconstructed = ShamirScheme::reconstruct(&shares[0..6], 4).expect("reconstruct failed");
+        let reconstructed =
+            ShamirScheme::reconstruct(&shares[0..6], 4).expect("reconstruct failed");
         assert_eq!(secret, reconstructed);
     }
 

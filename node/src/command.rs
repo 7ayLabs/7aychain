@@ -126,7 +126,11 @@ pub fn run() -> sc_cli::Result<()> {
             runner.sync_run(|config| cmd.run::<Block>(&config))
         }
         None => {
-            let scanner_mode = cli.run.scanner_mode.parse::<ScannerMode>().unwrap_or_default();
+            let scanner_mode = cli
+                .run
+                .scanner_mode
+                .parse::<ScannerMode>()
+                .unwrap_or_default();
             let scanner_config = ScannerConfig {
                 mode: scanner_mode,
                 mock_device_count: cli.run.mock_devices,

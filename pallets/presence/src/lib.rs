@@ -27,7 +27,7 @@ pub mod pallet {
         witness::{
             triangulate_from_witnesses, LatencyMeasurement, PositionClaim, WitnessAttestation,
         },
-        PresenceCommitment, Position,
+        Position, PresenceCommitment,
     };
     use sp_runtime::{traits::Hash, Saturating};
 
@@ -803,8 +803,8 @@ pub mod pallet {
             );
 
             // Ensure witness has a registered position
-            let witness_position = ValidatorPositions::<T>::get(witness)
-                .ok_or(Error::<T>::ValidatorPositionNotSet)?;
+            let witness_position =
+                ValidatorPositions::<T>::get(witness).ok_or(Error::<T>::ValidatorPositionNotSet)?;
 
             // Prevent self-attestation
             let witness_as_actor = Self::validator_to_actor(&witness);
@@ -817,7 +817,9 @@ pub mod pallet {
             );
 
             // Validate latency measurement
-            let block_u64: u64 = block_number.try_into().map_err(|_| Error::<T>::InvalidBlockNumber)?;
+            let block_u64: u64 = block_number
+                .try_into()
+                .map_err(|_| Error::<T>::InvalidBlockNumber)?;
             let latency = LatencyMeasurement::new(latency_ms, direct_connection, block_u64);
             ensure!(latency.is_valid(), Error::<T>::InvalidLatencyMeasurement);
 
@@ -859,12 +861,15 @@ pub mod pallet {
         ) -> DispatchResult {
             ensure_signed(origin)?;
 
-            let mut claim = PositionClaims::<T>::get(epoch, target)
-                .ok_or(Error::<T>::PositionNotClaimed)?;
+            let mut claim =
+                PositionClaims::<T>::get(epoch, target).ok_or(Error::<T>::PositionNotClaimed)?;
 
             let attestation_count = AttestationCount::<T>::get(epoch, target);
             let min_witnesses = T::MinWitnessesForVerification::get();
-            ensure!(attestation_count >= min_witnesses, Error::<T>::InsufficientWitnesses);
+            ensure!(
+                attestation_count >= min_witnesses,
+                Error::<T>::InsufficientWitnesses
+            );
 
             // Collect all attestations for this target
             let attestations: Vec<WitnessAttestation<BlockNumberFor<T>>> =
@@ -934,7 +939,10 @@ pub mod pallet {
 
             ValidatorPositions::<T>::insert(validator, position);
 
-            Self::deposit_event(Event::ValidatorPositionUpdated { validator, position });
+            Self::deposit_event(Event::ValidatorPositionUpdated {
+                validator,
+                position,
+            });
 
             Ok(())
         }

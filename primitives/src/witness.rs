@@ -226,7 +226,12 @@ pub struct PositionClaim<BlockNumber> {
 
 impl<BlockNumber: Default + Clone> PositionClaim<BlockNumber> {
     /// Create a new position claim.
-    pub fn new(actor: ActorId, position: Position, epoch: EpochId, claimed_at: BlockNumber) -> Self {
+    pub fn new(
+        actor: ActorId,
+        position: Position,
+        epoch: EpochId,
+        claimed_at: BlockNumber,
+    ) -> Self {
         Self {
             actor,
             claimed_position: position,
@@ -248,9 +253,9 @@ impl<BlockNumber: Default + Clone> PositionClaim<BlockNumber> {
     /// Check if claimed position matches triangulated position within tolerance.
     pub fn is_consistent(&self, tolerance_meters: u32) -> bool {
         match &self.triangulated_position {
-            Some(triangulated) => {
-                self.claimed_position.within_tolerance(triangulated, tolerance_meters)
-            }
+            Some(triangulated) => self
+                .claimed_position
+                .within_tolerance(triangulated, tolerance_meters),
             None => false,
         }
     }
@@ -382,7 +387,10 @@ pub fn triangulate_from_witnesses<BlockNumber: Clone>(
         z: (weighted_z / total_weight as i64) as i32,
     };
 
-    Some(TriangulationResult::new(position, attestations.len() as u32))
+    Some(TriangulationResult::new(
+        position,
+        attestations.len() as u32,
+    ))
 }
 
 #[cfg(test)]

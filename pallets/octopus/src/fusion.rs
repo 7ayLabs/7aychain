@@ -117,8 +117,10 @@ impl DeviceObservationMetrics {
     pub fn record_observation(&mut self, device_count: u8, block: u64, commitment: H256) {
         let prev_avg = self.average_device_count as u32;
         let total = self.total_observations.saturating_add(1);
-        let new_avg = (prev_avg.saturating_mul(self.total_observations)
-            .saturating_add(device_count as u32)) / total;
+        let new_avg = (prev_avg
+            .saturating_mul(self.total_observations)
+            .saturating_add(device_count as u32))
+            / total;
 
         self.average_device_count = new_avg.min(255) as u8;
         self.total_observations = total;
@@ -141,13 +143,16 @@ impl DeviceObservationMetrics {
         } else if diff <= 5 {
             self.consistency_score = self.consistency_score.saturating_sub(2);
         } else {
-            self.consistency_score = self.consistency_score.saturating_sub(CONSISTENCY_DECAY_FACTOR);
+            self.consistency_score = self
+                .consistency_score
+                .saturating_sub(CONSISTENCY_DECAY_FACTOR);
         }
     }
 
     pub fn device_score(&self) -> u8 {
-        let base_score = (self.average_device_count as u32 * 100 / MAX_DEVICES_FOR_FULL_SCORE.max(1))
-            .min(100) as u8;
+        let base_score = (self.average_device_count as u32 * 100
+            / MAX_DEVICES_FOR_FULL_SCORE.max(1))
+        .min(100) as u8;
         ((base_score as u32 * self.consistency_score as u32) / 100) as u8
     }
 }
@@ -178,8 +183,10 @@ impl PositionMetrics {
 
         let prev_var = self.position_variance as u64;
         let confirmations = self.triangulation_confirmations.saturating_add(1);
-        let new_var = (prev_var.saturating_mul(self.triangulation_confirmations as u64)
-            .saturating_add(dist_cm as u64)) / confirmations as u64;
+        let new_var = (prev_var
+            .saturating_mul(self.triangulation_confirmations as u64)
+            .saturating_add(dist_cm as u64))
+            / confirmations as u64;
 
         self.position_variance = new_var.min(u32::MAX as u64) as u32;
         self.triangulation_confirmations = confirmations;
@@ -196,9 +203,8 @@ impl PositionMetrics {
             return 0;
         }
 
-        let score = 100u32.saturating_sub(
-            (self.position_variance.saturating_mul(100)) / max_variance
-        );
+        let score =
+            100u32.saturating_sub((self.position_variance.saturating_mul(100)) / max_variance);
         score.min(100) as u8
     }
 }
@@ -238,8 +244,8 @@ impl FusedHealthMetrics {
     }
 
     pub fn recalculate_fused_score(&mut self, weights: &FusionWeights) {
-        let heartbeat_component = (self.heartbeat_score as u32)
-            .saturating_mul(weights.heartbeat_weight as u32);
+        let heartbeat_component =
+            (self.heartbeat_score as u32).saturating_mul(weights.heartbeat_weight as u32);
 
         let device_component = (self.device_metrics.device_score() as u32)
             .saturating_mul(weights.device_weight as u32);
@@ -267,7 +273,8 @@ impl FusedHealthMetrics {
         commitment: H256,
         weights: &FusionWeights,
     ) {
-        self.device_metrics.record_observation(device_count, block, commitment);
+        self.device_metrics
+            .record_observation(device_count, block, commitment);
         self.last_update_block = block;
         self.recalculate_fused_score(weights);
     }
@@ -339,7 +346,8 @@ pub fn compute_fused_health(
     position_variance: u32,
     triangulation_confirmations: u32,
 ) -> u8 {
-    let device_base = (device_count as u32 * 100 / MAX_DEVICES_FOR_FULL_SCORE.max(1)).min(100) as u8;
+    let device_base =
+        (device_count as u32 * 100 / MAX_DEVICES_FOR_FULL_SCORE.max(1)).min(100) as u8;
     let device_score = ((device_base as u32 * consistency as u32) / 100) as u8;
 
     let position_score = if triangulation_confirmations < MIN_TRIANGULATION_NODES {
@@ -357,7 +365,10 @@ pub fn compute_fused_health(
     (total / 100).min(100) as u8
 }
 
-pub fn should_trigger_healing(metrics: &FusedHealthMetrics, current_block: u64) -> Option<HealingTrigger> {
+pub fn should_trigger_healing(
+    metrics: &FusedHealthMetrics,
+    current_block: u64,
+) -> Option<HealingTrigger> {
     if metrics.fused_score < CRITICAL_HEALTH_THRESHOLD {
         return Some(HealingTrigger::FusedScoreCritical);
     }
@@ -367,7 +378,8 @@ pub fn should_trigger_healing(metrics: &FusedHealthMetrics, current_block: u64) 
     }
 
     if metrics.device_metrics.total_observations > 0 {
-        let blocks_since_reveal = current_block.saturating_sub(metrics.device_metrics.last_reveal_block);
+        let blocks_since_reveal =
+            current_block.saturating_sub(metrics.device_metrics.last_reveal_block);
         if blocks_since_reveal > REVEAL_TIMEOUT_BLOCKS {
             return Some(HealingTrigger::DeviceObservationMissing);
         }

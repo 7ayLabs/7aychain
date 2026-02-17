@@ -1,8 +1,6 @@
 #![allow(clippy::disallowed_macros)]
 
-use crate::{
-    self as pallet_triangulation, DeviceState, Error, Position, ReporterId, SignalType,
-};
+use crate::{self as pallet_triangulation, DeviceState, Error, Position, ReporterId, SignalType};
 use frame_support::{assert_noop, assert_ok, derive_impl, parameter_types, traits::ConstU32};
 use frame_system as system;
 use sp_core::H256;
@@ -86,7 +84,11 @@ fn new_test_ext() -> sp_io::TestExternalities {
 #[test]
 fn register_reporter_success() {
     new_test_ext().execute_with(|| {
-        let position = Position { x: 100, y: 200, z: 0 };
+        let position = Position {
+            x: 100,
+            y: 200,
+            z: 0,
+        };
 
         assert_ok!(Triangulation::register_reporter(
             RuntimeOrigin::signed(1),
@@ -103,7 +105,11 @@ fn register_reporter_success() {
 #[test]
 fn deregister_reporter_success() {
     new_test_ext().execute_with(|| {
-        let position = Position { x: 100, y: 200, z: 0 };
+        let position = Position {
+            x: 100,
+            y: 200,
+            z: 0,
+        };
 
         assert_ok!(Triangulation::register_reporter(
             RuntimeOrigin::signed(1),
@@ -123,7 +129,11 @@ fn deregister_reporter_success() {
 #[test]
 fn report_signal_creates_device() {
     new_test_ext().execute_with(|| {
-        let position = Position { x: 100, y: 200, z: 0 };
+        let position = Position {
+            x: 100,
+            y: 200,
+            z: 0,
+        };
         let mac_hash = H256([1u8; 32]);
 
         assert_ok!(Triangulation::register_reporter(
@@ -150,7 +160,11 @@ fn report_signal_creates_device() {
 #[test]
 fn invalid_rssi_rejected() {
     new_test_ext().execute_with(|| {
-        let position = Position { x: 100, y: 200, z: 0 };
+        let position = Position {
+            x: 100,
+            y: 200,
+            z: 0,
+        };
         let mac_hash = H256([1u8; 32]);
 
         assert_ok!(Triangulation::register_reporter(
@@ -175,7 +189,11 @@ fn invalid_rssi_rejected() {
 #[test]
 fn inactive_reporter_cannot_report() {
     new_test_ext().execute_with(|| {
-        let position = Position { x: 100, y: 200, z: 0 };
+        let position = Position {
+            x: 100,
+            y: 200,
+            z: 0,
+        };
         let mac_hash = H256([1u8; 32]);
 
         assert_ok!(Triangulation::register_reporter(
@@ -205,7 +223,11 @@ fn inactive_reporter_cannot_report() {
 #[test]
 fn signal_history_stored() {
     new_test_ext().execute_with(|| {
-        let position = Position { x: 100, y: 200, z: 0 };
+        let position = Position {
+            x: 100,
+            y: 200,
+            z: 0,
+        };
         let mac_hash = H256([1u8; 32]);
 
         assert_ok!(Triangulation::register_reporter(
@@ -230,8 +252,16 @@ fn signal_history_stored() {
 #[test]
 fn update_reporter_position_success() {
     new_test_ext().execute_with(|| {
-        let position = Position { x: 100, y: 200, z: 0 };
-        let new_position = Position { x: 300, y: 400, z: 10 };
+        let position = Position {
+            x: 100,
+            y: 200,
+            z: 0,
+        };
+        let new_position = Position {
+            x: 300,
+            y: 400,
+            z: 10,
+        };
 
         assert_ok!(Triangulation::register_reporter(
             RuntimeOrigin::signed(1),
@@ -262,7 +292,11 @@ fn genesis_initializes_counts() {
 #[test]
 fn multiple_signals_improve_confidence() {
     new_test_ext().execute_with(|| {
-        let position = Position { x: 100, y: 200, z: 0 };
+        let position = Position {
+            x: 100,
+            y: 200,
+            z: 0,
+        };
         let mac_hash = H256([1u8; 32]);
 
         assert_ok!(Triangulation::register_reporter(
@@ -290,7 +324,11 @@ fn multiple_signals_improve_confidence() {
 #[test]
 fn all_signal_types() {
     new_test_ext().execute_with(|| {
-        let position = Position { x: 100, y: 200, z: 0 };
+        let position = Position {
+            x: 100,
+            y: 200,
+            z: 0,
+        };
 
         assert_ok!(Triangulation::register_reporter(
             RuntimeOrigin::signed(1),
@@ -324,4 +362,3 @@ fn all_signal_types() {
         assert_eq!(Triangulation::device_count(), 5);
     });
 }
-

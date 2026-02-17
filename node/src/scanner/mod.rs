@@ -4,7 +4,7 @@ pub mod mock;
 pub mod types;
 
 pub use inherent::{DeviceScanInherentDataProvider, ScanResultsHandle};
-pub use latency::{LatencyScanner, LatencyScannerConfig, PeerLatency, LatencyStatistics};
+pub use latency::{LatencyScanner, LatencyScannerConfig, LatencyStatistics, PeerLatency};
 pub use mock::{MockConfig, MockScanner};
 pub use types::*;
 
@@ -147,13 +147,11 @@ pub fn start_scanner_task(
     let config_clone = config.clone();
     let results_clone = scan_results.clone();
 
-    task_manager.spawn_handle().spawn(
-        "device-scanner",
-        Some("scanner"),
-        async move {
+    task_manager
+        .spawn_handle()
+        .spawn("device-scanner", Some("scanner"), async move {
             run_scanner(config_clone, results_clone).await;
-        },
-    );
+        });
 
     log::info!("Device scanner task spawned");
 }

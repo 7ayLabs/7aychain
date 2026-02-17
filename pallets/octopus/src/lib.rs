@@ -6,8 +6,7 @@ pub mod fusion;
 pub mod weights;
 
 pub use fusion::{
-    FusedHealthMetrics, FusionWeights, HealingAction, HealingTrigger,
-    Position as FusionPosition,
+    FusedHealthMetrics, FusionWeights, HealingAction, HealingTrigger, Position as FusionPosition,
 };
 
 #[cfg(test)]
@@ -520,9 +519,7 @@ pub mod pallet {
             actions_applied: u32,
         },
         /// Inactive subnode was pruned
-        SubnodePruned {
-            subnode_id: SubnodeId,
-        },
+        SubnodePruned { subnode_id: SubnodeId },
         /// Operator escalation required
         OperatorEscalationRequired {
             subnode_id: SubnodeId,
@@ -825,7 +822,9 @@ pub mod pallet {
                 let old_score = s.health_score;
                 s.last_heartbeat = block_number;
                 s.consecutive_misses = 0;
-                s.health_score = old_score.saturating_add(T::HealthScoreRecovery::get()).min(100);
+                s.health_score = old_score
+                    .saturating_add(T::HealthScoreRecovery::get())
+                    .min(100);
 
                 Self::deposit_event(Event::HeartbeatReceived {
                     subnode_id,
@@ -864,9 +863,8 @@ pub mod pallet {
             let weights = GlobalFusionWeights::<T>::get();
 
             FusedHealth::<T>::mutate(subnode_id, |maybe_health| {
-                let health = maybe_health.get_or_insert_with(|| {
-                    FusedHealthMetrics::new(FusionPosition::default())
-                });
+                let health = maybe_health
+                    .get_or_insert_with(|| FusedHealthMetrics::new(FusionPosition::default()));
 
                 health.record_device_observation(device_count, block_u64, commitment, &weights);
 
@@ -910,9 +908,8 @@ pub mod pallet {
             let weights = GlobalFusionWeights::<T>::get();
 
             FusedHealth::<T>::mutate(subnode_id, |maybe_health| {
-                let health = maybe_health.get_or_insert_with(|| {
-                    FusedHealthMetrics::new(position.clone())
-                });
+                let health =
+                    maybe_health.get_or_insert_with(|| FusedHealthMetrics::new(position.clone()));
 
                 health.record_position_confirmation(position.clone(), block_u64, &weights);
 
@@ -960,7 +957,9 @@ pub mod pallet {
                 let old_score = s.health_score;
                 s.last_heartbeat = block_number;
                 s.consecutive_misses = 0;
-                s.health_score = old_score.saturating_add(T::HealthScoreRecovery::get()).min(100);
+                s.health_score = old_score
+                    .saturating_add(T::HealthScoreRecovery::get())
+                    .min(100);
 
                 Self::deposit_event(Event::HeartbeatReceived {
                     subnode_id,
@@ -973,9 +972,8 @@ pub mod pallet {
             let weights = GlobalFusionWeights::<T>::get();
 
             FusedHealth::<T>::mutate(subnode_id, |maybe_health| {
-                let health = maybe_health.get_or_insert_with(|| {
-                    FusedHealthMetrics::new(FusionPosition::default())
-                });
+                let health = maybe_health
+                    .get_or_insert_with(|| FusedHealthMetrics::new(FusionPosition::default()));
 
                 let new_heartbeat_score = Subnodes::<T>::get(subnode_id)
                     .map(|s| s.health_score)
@@ -1170,9 +1168,7 @@ pub mod pallet {
                         }
                     });
 
-                    ActiveSubnodeCount::<T>::mutate(|count| {
-                        *count = count.saturating_sub(1)
-                    });
+                    ActiveSubnodeCount::<T>::mutate(|count| *count = count.saturating_sub(1));
 
                     Self::deposit_event(Event::SubnodeFailed {
                         subnode_id,
@@ -1186,9 +1182,7 @@ pub mod pallet {
         }
 
         fn auto_heal_clusters(block_number: BlockNumberFor<T>) {
-            let block_u64: u64 = block_number
-                .try_into()
-                .unwrap_or(0);
+            let block_u64: u64 = block_number.try_into().unwrap_or(0);
 
             Self::check_fusion_healing_triggers(block_u64);
 
@@ -1289,7 +1283,9 @@ pub mod pallet {
         }
 
         /// Run diagnostics on a subnode and generate a report.
-        pub fn run_diagnostics(subnode_id: SubnodeId) -> Option<DiagnosticReport<BlockNumberFor<T>>> {
+        pub fn run_diagnostics(
+            subnode_id: SubnodeId,
+        ) -> Option<DiagnosticReport<BlockNumberFor<T>>> {
             let subnode = Subnodes::<T>::get(subnode_id)?;
             let health = FusedHealth::<T>::get(subnode_id);
             let block_number = frame_system::Pallet::<T>::block_number();
@@ -1297,10 +1293,12 @@ pub mod pallet {
             // Perform health checks
             let checks = DiagnosticChecks {
                 heartbeat_ok: subnode.consecutive_misses < T::MaxConsecutiveMisses::get(),
-                device_observations_ok: health.as_ref()
+                device_observations_ok: health
+                    .as_ref()
                     .map(|h| h.device_metrics.total_observations > 0)
                     .unwrap_or(false),
-                position_consistency_ok: health.as_ref()
+                position_consistency_ok: health
+                    .as_ref()
                     .map(|h| h.position_metrics.position_variance < 5000)
                     .unwrap_or(true),
                 cluster_connectivity_ok: subnode.status == SubnodeStatus::Active,
@@ -1350,7 +1348,10 @@ pub mod pallet {
         }
 
         /// Calculate diagnostic severity based on checks and subnode state.
-        fn calculate_severity(checks: &DiagnosticChecks, subnode: &Subnode<T>) -> DiagnosticSeverity {
+        fn calculate_severity(
+            checks: &DiagnosticChecks,
+            subnode: &Subnode<T>,
+        ) -> DiagnosticSeverity {
             if subnode.status == SubnodeStatus::Failed {
                 return DiagnosticSeverity::Failed;
             }
@@ -1360,7 +1361,10 @@ pub mod pallet {
                 !checks.device_observations_ok,
                 !checks.position_consistency_ok,
                 !checks.cluster_connectivity_ok,
-            ].iter().filter(|&&x| x).count();
+            ]
+            .iter()
+            .filter(|&&x| x)
+            .count();
 
             match issues_count {
                 0 if checks.fused_health_score >= 70 => DiagnosticSeverity::Healthy,
@@ -1371,7 +1375,10 @@ pub mod pallet {
         }
 
         /// Apply auto-fix actions to a subnode.
-        pub fn apply_auto_fix(subnode_id: SubnodeId, actions: &[DiagnosticAction]) -> DispatchResult {
+        pub fn apply_auto_fix(
+            subnode_id: SubnodeId,
+            actions: &[DiagnosticAction],
+        ) -> DispatchResult {
             let block_number = frame_system::Pallet::<T>::block_number();
             let block_u64: u64 = block_number.try_into().unwrap_or(0);
             let mut applied_count: u32 = 0;
@@ -1386,7 +1393,7 @@ pub mod pallet {
                             }
                         });
                         applied_count += 1;
-                    },
+                    }
                     DiagnosticAction::ResetFusedHealth => {
                         FusedHealth::<T>::mutate(subnode_id, |h| {
                             if let Some(health) = h {
@@ -1396,7 +1403,7 @@ pub mod pallet {
                             }
                         });
                         applied_count += 1;
-                    },
+                    }
                     DiagnosticAction::ReregisterCluster => {
                         Subnodes::<T>::mutate(subnode_id, |s| {
                             if let Some(subnode) = s {
@@ -1407,7 +1414,7 @@ pub mod pallet {
                             }
                         });
                         applied_count += 1;
-                    },
+                    }
                     DiagnosticAction::RecalibratePosition => {
                         FusedHealth::<T>::mutate(subnode_id, |h| {
                             if let Some(health) = h {
@@ -1415,11 +1422,11 @@ pub mod pallet {
                             }
                         });
                         applied_count += 1;
-                    },
+                    }
                     DiagnosticAction::RotateAuthProfile => {
                         // Auth profile rotation is external - just record intent
                         applied_count += 1;
-                    },
+                    }
                     DiagnosticAction::ClearDeviceCache => {
                         // Device cache is external - just reset metrics
                         FusedHealth::<T>::mutate(subnode_id, |h| {
@@ -1428,7 +1435,7 @@ pub mod pallet {
                             }
                         });
                         applied_count += 1;
-                    },
+                    }
                     DiagnosticAction::EscalateOperator => {
                         if let Some(subnode) = Subnodes::<T>::get(subnode_id) {
                             let severity = if subnode.status == SubnodeStatus::Failed {
@@ -1442,7 +1449,7 @@ pub mod pallet {
                             });
                         }
                         applied_count += 1;
-                    },
+                    }
                 }
             }
 
@@ -1463,7 +1470,8 @@ pub mod pallet {
             for (subnode_id, subnode) in Subnodes::<T>::iter() {
                 let inactive_blocks = current_block.saturating_sub(subnode.last_heartbeat);
 
-                if inactive_blocks >= inactive_threshold && subnode.status == SubnodeStatus::Failed {
+                if inactive_blocks >= inactive_threshold && subnode.status == SubnodeStatus::Failed
+                {
                     // Remove subnode from all storage
                     Subnodes::<T>::remove(subnode_id);
                     FusedHealth::<T>::remove(subnode_id);

@@ -70,7 +70,10 @@ pub fn rssi_to_distance_cm(rssi: i8, tx_power: i8, path_loss_x100: u16) -> u32 {
     distance_cm.max(10).min(100_000_00)
 }
 
-pub fn calculate_weighted_centroid(observations: &[SignalObservation], config: &TriangulationConfig) -> Option<TriangulatedPosition> {
+pub fn calculate_weighted_centroid(
+    observations: &[SignalObservation],
+    config: &TriangulationConfig,
+) -> Option<TriangulatedPosition> {
     if observations.len() < config.min_signals as usize {
         return None;
     }
@@ -78,7 +81,8 @@ pub fn calculate_weighted_centroid(observations: &[SignalObservation], config: &
     let weights: Vec<u64> = observations
         .iter()
         .map(|obs| {
-            let dist = rssi_to_distance_cm(obs.rssi, config.tx_power, config.path_loss_exponent_x100);
+            let dist =
+                rssi_to_distance_cm(obs.rssi, config.tx_power, config.path_loss_exponent_x100);
             if dist == 0 {
                 1
             } else {
@@ -151,7 +155,10 @@ pub fn calculate_weighted_centroid(observations: &[SignalObservation], config: &
     })
 }
 
-pub fn multilateration(observations: &[SignalObservation], config: &TriangulationConfig) -> Option<TriangulatedPosition> {
+pub fn multilateration(
+    observations: &[SignalObservation],
+    config: &TriangulationConfig,
+) -> Option<TriangulatedPosition> {
     if observations.len() < 3 {
         return calculate_weighted_centroid(observations, config);
     }
@@ -159,7 +166,8 @@ pub fn multilateration(observations: &[SignalObservation], config: &Triangulatio
     let distances: Vec<(Position, u32)> = observations
         .iter()
         .map(|obs| {
-            let dist = rssi_to_distance_cm(obs.rssi, config.tx_power, config.path_loss_exponent_x100);
+            let dist =
+                rssi_to_distance_cm(obs.rssi, config.tx_power, config.path_loss_exponent_x100);
             (obs.observer_position, dist)
         })
         .collect();
@@ -242,7 +250,8 @@ impl DeviceTrack {
                 let dy = new_position.position.y - last.position.y;
                 let dz = new_position.position.z - last.position.z;
 
-                let distance_squared = (dx as i64 * dx as i64 + dy as i64 * dy as i64 + dz as i64 * dz as i64) as u64;
+                let distance_squared =
+                    (dx as i64 * dx as i64 + dy as i64 * dy as i64 + dz as i64 * dz as i64) as u64;
                 let distance = integer_sqrt(distance_squared);
                 let speed = ((distance * 100) / time_diff) as u32;
 

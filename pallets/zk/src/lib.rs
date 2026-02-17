@@ -371,12 +371,14 @@ pub mod pallet {
     /// Registry of SNARK circuits and their verification keys
     #[pallet::storage]
     #[pallet::getter(fn circuit_registry)]
-    pub type CircuitRegistry<T: Config> = StorageMap<_, Blake2_128Concat, H256, CircuitData<BlockNumberFor<T>>>;
+    pub type CircuitRegistry<T: Config> =
+        StorageMap<_, Blake2_128Concat, H256, CircuitData<BlockNumberFor<T>>>;
 
     /// Verification key storage (circuit_id -> vk data)
     #[pallet::storage]
     #[pallet::getter(fn verification_keys)]
-    pub type VerificationKeys<T: Config> = StorageMap<_, Blake2_128Concat, H256, BoundedVec<u8, MaxVkSize>>;
+    pub type VerificationKeys<T: Config> =
+        StorageMap<_, Blake2_128Concat, H256, BoundedVec<u8, MaxVkSize>>;
 
     #[pallet::genesis_config]
     #[derive(frame_support::DefaultNoBound)]
@@ -710,8 +712,8 @@ pub mod pallet {
 
             Self::check_verification_limit()?;
 
-            let circuit = CircuitRegistry::<T>::get(circuit_id)
-                .ok_or(Error::<T>::CircuitNotFound)?;
+            let circuit =
+                CircuitRegistry::<T>::get(circuit_id).ok_or(Error::<T>::CircuitNotFound)?;
 
             // Use stub verifiers - actual pairing implementation pending
             let verified = match circuit.proof_type {

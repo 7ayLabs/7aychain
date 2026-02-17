@@ -130,8 +130,11 @@ pub struct DeviceReveal {
 impl DeviceReveal {
     #[cfg(feature = "std")]
     pub fn verify(&self, commitment: &DeviceCommitment) -> bool {
-        let recomputed =
-            DeviceCommitment::compute_commitment(&self.device_merkle_root, &self.nonce, self.commitment_block);
+        let recomputed = DeviceCommitment::compute_commitment(
+            &self.device_merkle_root,
+            &self.nonce,
+            self.commitment_block,
+        );
 
         if recomputed != commitment.commitment {
             return false;
@@ -169,8 +172,8 @@ impl FusedHealthMetrics {
         let position_component =
             (self.position_score as u32 * weights.position_weight as u32) / 100;
 
-        self.fused_score = (heartbeat_component + device_component + position_component)
-            .min(100) as u8;
+        self.fused_score =
+            (heartbeat_component + device_component + position_component).min(100) as u8;
     }
 
     pub fn update_heartbeat(&mut self, decay_rate: u8, recovery_rate: u8, missed: bool) {
@@ -189,9 +192,8 @@ impl FusedHealthMetrics {
         max_devices_for_full_score: u32,
         consistency_decay: u8,
     ) {
-        self.device_observation_count = self
-            .device_observation_count
-            .saturating_add(observed_count);
+        self.device_observation_count =
+            self.device_observation_count.saturating_add(observed_count);
 
         let base_score = if max_devices_for_full_score > 0 {
             ((observed_count * 100) / max_devices_for_full_score).min(100) as u8
@@ -200,10 +202,8 @@ impl FusedHealthMetrics {
         };
 
         if observed_count > 0 {
-            self.device_consistency_score = self
-                .device_consistency_score
-                .saturating_add(5)
-                .min(100);
+            self.device_consistency_score =
+                self.device_consistency_score.saturating_add(5).min(100);
         } else {
             self.device_consistency_score = self
                 .device_consistency_score
@@ -282,7 +282,19 @@ pub struct NodeObservation {
     pub block_number: u64,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
 pub struct Position {
     pub x: i32,
     pub y: i32,

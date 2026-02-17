@@ -151,7 +151,10 @@ impl DeviceState {
 
     /// Whether this state indicates a problem.
     pub const fn is_problematic(&self) -> bool {
-        matches!(self, Self::Suspicious | Self::Lost | Self::Disputed | Self::Unverifiable)
+        matches!(
+            self,
+            Self::Suspicious | Self::Lost | Self::Disputed | Self::Unverifiable
+        )
     }
 }
 
@@ -424,11 +427,13 @@ pub mod pallet {
 
     #[pallet::storage]
     #[pallet::getter(fn reporters)]
-    pub type Reporters<T: Config> = StorageMap<_, Blake2_128Concat, ReporterId, Reporter<BlockNumberFor<T>>>;
+    pub type Reporters<T: Config> =
+        StorageMap<_, Blake2_128Concat, ReporterId, Reporter<BlockNumberFor<T>>>;
 
     #[pallet::storage]
     #[pallet::getter(fn tracked_devices)]
-    pub type TrackedDevices<T: Config> = StorageMap<_, Blake2_128Concat, H256, TrackedDevice<BlockNumberFor<T>>>;
+    pub type TrackedDevices<T: Config> =
+        StorageMap<_, Blake2_128Concat, H256, TrackedDevice<BlockNumberFor<T>>>;
 
     #[pallet::storage]
     #[pallet::getter(fn device_count)]
@@ -447,7 +452,8 @@ pub mod pallet {
 
     #[pallet::storage]
     #[pallet::getter(fn ghost_events)]
-    pub type GhostEvents<T: Config> = StorageMap<_, Blake2_128Concat, H256, GhostEvent<BlockNumberFor<T>>>;
+    pub type GhostEvents<T: Config> =
+        StorageMap<_, Blake2_128Concat, H256, GhostEvent<BlockNumberFor<T>>>;
 
     #[pallet::storage]
     #[pallet::getter(fn active_device_count)]
@@ -460,7 +466,8 @@ pub mod pallet {
     /// Fraud cases filed against reporters
     #[pallet::storage]
     #[pallet::getter(fn fraud_cases)]
-    pub type FraudCases<T: Config> = StorageMap<_, Blake2_128Concat, ReporterId, FraudCase<BlockNumberFor<T>>>;
+    pub type FraudCases<T: Config> =
+        StorageMap<_, Blake2_128Concat, ReporterId, FraudCase<BlockNumberFor<T>>>;
 
     #[pallet::genesis_config]
     #[derive(frame_support::DefaultNoBound)]
@@ -565,14 +572,14 @@ pub mod pallet {
     impl<T: Config> Pallet<T> {
         #[pallet::call_index(0)]
         #[pallet::weight(T::WeightInfo::register_reporter())]
-        pub fn register_reporter(
-            origin: OriginFor<T>,
-            position: Position,
-        ) -> DispatchResult {
+        pub fn register_reporter(origin: OriginFor<T>, position: Position) -> DispatchResult {
             ensure_signed(origin)?;
 
             let count = ReporterCount::<T>::get();
-            ensure!(count < T::MaxReporters::get() as u64, Error::<T>::MaxReportersReached);
+            ensure!(
+                count < T::MaxReporters::get() as u64,
+                Error::<T>::MaxReportersReached
+            );
 
             let reporter_id = ReporterId::new(count);
             let block_number = frame_system::Pallet::<T>::block_number();
@@ -674,7 +681,11 @@ pub mod pallet {
                         d.reading_count = d.reading_count.saturating_add(1);
                         d.consecutive_misses = 0;
 
-                        let new_position = Self::calculate_position(&reporter.position, &d.estimated_position, rssi);
+                        let new_position = Self::calculate_position(
+                            &reporter.position,
+                            &d.estimated_position,
+                            rssi,
+                        );
                         d.estimated_position = new_position.clone();
 
                         d.confidence = d.confidence.saturating_add(5).min(100);
@@ -691,7 +702,10 @@ pub mod pallet {
                             });
                         }
 
-                        if matches!(old_state, DeviceState::Lost | DeviceState::Unverifiable | DeviceState::Offline) {
+                        if matches!(
+                            old_state,
+                            DeviceState::Lost | DeviceState::Unverifiable | DeviceState::Offline
+                        ) {
                             GhostEvents::<T>::remove(mac_hash);
                             GhostCount::<T>::mutate(|c| *c = c.saturating_sub(1));
 
@@ -749,17 +763,24 @@ pub mod pallet {
             ensure_signed(origin)?;
 
             // Validate the submitter exists and is active
-            let submitter = Reporters::<T>::get(submitter_id).ok_or(Error::<T>::ReporterNotFound)?;
+            let submitter =
+                Reporters::<T>::get(submitter_id).ok_or(Error::<T>::ReporterNotFound)?;
             ensure!(submitter.active, Error::<T>::ReporterNotActive);
 
             // Validate the accused reporter exists
-            ensure!(Reporters::<T>::contains_key(proof.accused_reporter), Error::<T>::ReporterNotFound);
+            ensure!(
+                Reporters::<T>::contains_key(proof.accused_reporter),
+                Error::<T>::ReporterNotFound
+            );
 
             // Validate the fraud proof (min 3 readings, Z >= 3.5)
             ensure!(proof.is_valid(), Error::<T>::InvalidFraudProof);
 
             // Ensure no existing fraud case
-            ensure!(!FraudCases::<T>::contains_key(proof.accused_reporter), Error::<T>::FraudCaseAlreadyExists);
+            ensure!(
+                !FraudCases::<T>::contains_key(proof.accused_reporter),
+                Error::<T>::FraudCaseAlreadyExists
+            );
 
             let block_number = frame_system::Pallet::<T>::block_number();
             let z_score = proof.z_score_scaled;
@@ -820,7 +841,11 @@ pub mod pallet {
     }
 
     impl<T: Config> Pallet<T> {
-        fn calculate_position(reporter_pos: &Position, current_pos: &Position, rssi: i8) -> Position {
+        fn calculate_position(
+            reporter_pos: &Position,
+            current_pos: &Position,
+            rssi: i8,
+        ) -> Position {
             let weight = ((rssi + 120) as i64).max(1);
             let total_weight = weight + 100;
 
@@ -900,7 +925,8 @@ pub mod pallet {
             let cutoff = current_block.saturating_sub(retention);
             let max_cleanups: u32 = 100;
             let mut cleaned: u32 = 0;
-            let mut to_remove: Vec<(H256, BlockNumberFor<T>)> = Vec::with_capacity(max_cleanups as usize);
+            let mut to_remove: Vec<(H256, BlockNumberFor<T>)> =
+                Vec::with_capacity(max_cleanups as usize);
 
             // Collect old history entries (bounded iteration)
             for (mac_hash, block, _) in SignalHistory::<T>::iter() {
@@ -926,7 +952,9 @@ pub mod pallet {
             }
         }
 
-        pub fn get_device_history(mac_hash: H256) -> Vec<(BlockNumberFor<T>, SignalHistoryEntry<BlockNumberFor<T>>)> {
+        pub fn get_device_history(
+            mac_hash: H256,
+        ) -> Vec<(BlockNumberFor<T>, SignalHistoryEntry<BlockNumberFor<T>>)> {
             SignalHistory::<T>::iter_prefix(mac_hash).collect()
         }
 

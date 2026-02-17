@@ -43,7 +43,10 @@ impl std::str::FromStr for SealingMode {
         match s.to_lowercase().as_str() {
             "aura" => Ok(Self::Aura),
             "instant" => Ok(Self::Instant),
-            other => Err(format!("Unknown sealing mode '{}'. Use 'aura' or 'instant'.", other)),
+            other => Err(format!(
+                "Unknown sealing mode '{}'. Use 'aura' or 'instant'.",
+                other
+            )),
         }
     }
 }
@@ -181,27 +184,25 @@ fn new_partial_inner(
     } else {
         // Aura: validate slots + timestamps on import.
         let slot_duration = sc_consensus_aura::slot_duration(&*client)?;
-        sc_consensus_aura::import_queue::<AuraPair, _, _, _, _, _>(
-            ImportQueueParams {
-                block_import: grandpa_block_import.clone(),
-                justification_import: Some(Box::new(grandpa_block_import.clone())),
-                client: client.clone(),
-                create_inherent_data_providers: move |_, ()| async move {
-                    let timestamp = sp_timestamp::InherentDataProvider::from_system_time();
-                    let slot =
+        sc_consensus_aura::import_queue::<AuraPair, _, _, _, _, _>(ImportQueueParams {
+            block_import: grandpa_block_import.clone(),
+            justification_import: Some(Box::new(grandpa_block_import.clone())),
+            client: client.clone(),
+            create_inherent_data_providers: move |_, ()| async move {
+                let timestamp = sp_timestamp::InherentDataProvider::from_system_time();
+                let slot =
                         sp_consensus_aura::inherents::InherentDataProvider::from_timestamp_and_slot_duration(
                             *timestamp,
                             slot_duration,
                         );
-                    Ok((slot, timestamp))
-                },
-                spawner: &task_manager.spawn_essential_handle(),
-                registry: config.prometheus_registry(),
-                check_for_equivocation: Default::default(),
-                telemetry: telemetry.as_ref().map(|t: &Telemetry| t.handle()),
-                compatibility_mode: Default::default(),
+                Ok((slot, timestamp))
             },
-        )?
+            spawner: &task_manager.spawn_essential_handle(),
+            registry: config.prometheus_registry(),
+            check_for_equivocation: Default::default(),
+            telemetry: telemetry.as_ref().map(|t: &Telemetry| t.handle()),
+            compatibility_mode: Default::default(),
+        })?
     };
 
     Ok(sc_service::PartialComponents {
@@ -381,8 +382,7 @@ pub fn new_full(
                     pool: transaction_pool.clone(),
                     select_chain,
                     create_inherent_data_providers: move |_, ()| async move {
-                        let timestamp =
-                            sp_timestamp::InherentDataProvider::from_system_time();
+                        let timestamp = sp_timestamp::InherentDataProvider::from_system_time();
                         let slot =
                             sp_consensus_aura::inherents::InherentDataProvider::from_timestamp_and_slot_duration(
                                 *timestamp,
@@ -393,9 +393,11 @@ pub fn new_full(
                 },
             );
 
-            task_manager
-                .spawn_essential_handle()
-                .spawn_blocking("instant-seal", Some("block-authoring"), instant);
+            task_manager.spawn_essential_handle().spawn_blocking(
+                "instant-seal",
+                Some("block-authoring"),
+                instant,
+            );
         } else {
             // ── Aura ─────────────────────────────────────────────────
             let scan_results_for_aura = scan_results.clone();
@@ -410,8 +412,7 @@ pub fn new_full(
                     create_inherent_data_providers: move |_, ()| {
                         let scan_results = scan_results_for_aura.clone();
                         async move {
-                            let timestamp =
-                                sp_timestamp::InherentDataProvider::from_system_time();
+                            let timestamp = sp_timestamp::InherentDataProvider::from_system_time();
 
                             let slot =
                                 sp_consensus_aura::inherents::InherentDataProvider::from_timestamp_and_slot_duration(
@@ -440,9 +441,11 @@ pub fn new_full(
                 },
             )?;
 
-            task_manager
-                .spawn_essential_handle()
-                .spawn_blocking("aura", Some("block-authoring"), aura);
+            task_manager.spawn_essential_handle().spawn_blocking(
+                "aura",
+                Some("block-authoring"),
+                aura,
+            );
         }
     }
 

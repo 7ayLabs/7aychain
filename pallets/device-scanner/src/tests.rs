@@ -1,10 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::*;
-    use frame_support::{
-        assert_noop, assert_ok, derive_impl, parameter_types,
-        traits::ConstU32,
-    };
+    use frame_support::{assert_noop, assert_ok, derive_impl, parameter_types, traits::ConstU32};
     use sp_core::H256;
     use sp_runtime::{
         traits::{BlakeTwo256, IdentityLookup},
@@ -82,7 +79,11 @@ mod tests {
     fn make_scan_data(devices: Vec<ScannedDevice>) -> DeviceScanInherentData {
         DeviceScanInherentData {
             devices,
-            reporter_position: Position { x: 100, y: 200, z: 0 },
+            reporter_position: Position {
+                x: 100,
+                y: 200,
+                z: 0,
+            },
             scan_timestamp: 1000,
         }
     }
@@ -259,9 +260,18 @@ mod tests {
                 make_scan_data(devices)
             ));
 
-            assert_eq!(DeviceScanner::device_type_count(DetectedDeviceType::IPhone), 2);
-            assert_eq!(DeviceScanner::device_type_count(DetectedDeviceType::Android), 1);
-            assert_eq!(DeviceScanner::device_type_count(DetectedDeviceType::MacBook), 0);
+            assert_eq!(
+                DeviceScanner::device_type_count(DetectedDeviceType::IPhone),
+                2
+            );
+            assert_eq!(
+                DeviceScanner::device_type_count(DetectedDeviceType::Android),
+                1
+            );
+            assert_eq!(
+                DeviceScanner::device_type_count(DetectedDeviceType::MacBook),
+                0
+            );
         });
     }
 
@@ -273,7 +283,10 @@ mod tests {
             let device = make_device(0x01, -50, DetectedDeviceType::IPhone);
             let data = make_scan_data(vec![device.clone()]);
 
-            assert_ok!(DeviceScanner::set_scan_data(RuntimeOrigin::none(), data.clone()));
+            assert_ok!(DeviceScanner::set_scan_data(
+                RuntimeOrigin::none(),
+                data.clone()
+            ));
 
             assert_noop!(
                 DeviceScanner::set_scan_data(RuntimeOrigin::none(), data),
@@ -362,7 +375,11 @@ mod tests {
 
             let device = make_device(0x01, -50, DetectedDeviceType::IPhone);
             let mut data = make_scan_data(vec![device.clone()]);
-            data.reporter_position = Position { x: 500, y: 600, z: 700 };
+            data.reporter_position = Position {
+                x: 500,
+                y: 600,
+                z: 700,
+            };
 
             assert_ok!(DeviceScanner::set_scan_data(RuntimeOrigin::none(), data));
 
@@ -572,7 +589,11 @@ mod tests {
 
             let device = make_device(0x01, -50, DetectedDeviceType::IPhone);
             let mut data = make_scan_data(vec![device.clone()]);
-            data.reporter_position = Position { x: -100, y: -200, z: -50 };
+            data.reporter_position = Position {
+                x: -100,
+                y: -200,
+                z: -50,
+            };
 
             assert_ok!(DeviceScanner::set_scan_data(RuntimeOrigin::none(), data));
 

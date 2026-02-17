@@ -617,14 +617,13 @@ pub mod pallet {
                     Error::<T>::DeviceNotActive
                 );
 
-                let mut heartbeat = Heartbeats::<T>::get(device_id).unwrap_or_else(|| {
-                    HeartbeatInfo {
+                let mut heartbeat =
+                    Heartbeats::<T>::get(device_id).unwrap_or_else(|| HeartbeatInfo {
                         last_heartbeat: block_number,
                         sequence: 0,
                         consecutive_misses: 0,
                         health_score: 100,
-                    }
-                });
+                    });
 
                 ensure!(
                     sequence > heartbeat.sequence,
@@ -726,7 +725,8 @@ pub mod pallet {
 
                     let blocks_since = current_block.saturating_sub(heartbeat.last_heartbeat);
                     if blocks_since >= timeout {
-                        heartbeat.consecutive_misses = heartbeat.consecutive_misses.saturating_add(1);
+                        heartbeat.consecutive_misses =
+                            heartbeat.consecutive_misses.saturating_add(1);
                         heartbeat.health_score = heartbeat.health_score.saturating_sub(decay);
 
                         if heartbeat.consecutive_misses >= max_misses {
