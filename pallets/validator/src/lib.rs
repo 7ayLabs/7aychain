@@ -503,9 +503,7 @@ pub mod pallet {
                 defer_until,
             });
 
-            if violation == ViolationType::Critical
-                && info.status != ValidatorStatus::Slashed
-            {
+            if violation == ViolationType::Critical && info.status != ValidatorStatus::Slashed {
                 let mut info_mut = info;
                 info_mut.status = ValidatorStatus::Slashed;
                 Validators::<T>::insert(validator, info_mut);
