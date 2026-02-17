@@ -1,9 +1,14 @@
+#[allow(dead_code)]
 pub mod inherent;
+#[allow(dead_code)]
 pub mod latency;
+#[allow(dead_code)]
 pub mod mock;
+#[allow(dead_code)]
 pub mod types;
 
 pub use inherent::{DeviceScanInherentDataProvider, ScanResultsHandle};
+#[allow(unused_imports)]
 pub use latency::{LatencyScanner, LatencyScannerConfig, LatencyStatistics, PeerLatency};
 pub use mock::{MockConfig, MockScanner};
 pub use types::*;

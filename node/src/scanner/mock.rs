@@ -62,7 +62,7 @@ impl MockScanner {
     }
 
     fn generate_device_pool(rng: &mut ChaCha8Rng, config: &MockConfig) -> Vec<MockDevice> {
-        let count = config.device_count.max(5).min(100);
+        let count = config.device_count.clamp(5, 100);
         (0..count)
             .map(|i| {
                 let mut mac_bytes = [0u8; 32];
