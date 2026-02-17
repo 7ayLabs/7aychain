@@ -1,8 +1,14 @@
+# cargo-deny v2 configuration
+# https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+all-features = true
+
 [advisories]
-vulnerability = "deny"
+# v2 denies all advisories by default
+# ignore = ["RUSTSEC-YYYY-NNNN"]
 
 [licenses]
-unlicensed = "deny"
 allow = [
     "MIT",
     "Apache-2.0",
@@ -18,8 +24,9 @@ allow = [
     "0BSD",
     "MPL-2.0",
     "BUSL-1.1",
+    "OpenSSL",
 ]
-copyleft = "deny"
+confidence-threshold = 0.8
 exceptions = [
     { allow = ["GPL-3.0"], crate = "chain-spec-builder" },
 ]
