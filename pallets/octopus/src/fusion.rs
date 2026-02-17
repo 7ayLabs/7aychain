@@ -132,11 +132,7 @@ impl DeviceObservationMetrics {
 
     fn update_consistency(&mut self, device_count: u8) {
         let expected = self.average_device_count;
-        let diff = if device_count > expected {
-            device_count - expected
-        } else {
-            expected - device_count
-        };
+        let diff = device_count.abs_diff(expected);
 
         if diff <= 2 {
             self.consistency_score = self.consistency_score.saturating_add(5).min(100);
@@ -385,10 +381,10 @@ pub fn should_trigger_healing(
         }
     }
 
-    if metrics.position_metrics.triangulation_confirmations >= MIN_TRIANGULATION_NODES {
-        if metrics.position_metrics.position_variance > POSITION_TOLERANCE_CM {
-            return Some(HealingTrigger::PositionMismatch);
-        }
+    if metrics.position_metrics.triangulation_confirmations >= MIN_TRIANGULATION_NODES
+        && metrics.position_metrics.position_variance > POSITION_TOLERANCE_CM
+    {
+        return Some(HealingTrigger::PositionMismatch);
     }
 
     None
@@ -399,7 +395,7 @@ fn integer_sqrt(n: u128) -> u64 {
         return 0;
     }
     let mut x = n;
-    let mut y = (x + 1) / 2;
+    let mut y = x.div_ceil(2);
     while y < x {
         x = y;
         y = (x + n / x) / 2;

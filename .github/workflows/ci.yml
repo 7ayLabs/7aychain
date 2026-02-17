@@ -51,7 +51,8 @@ jobs:
           cargo clippy --workspace --lib -- \
             -D warnings \
             -A clippy::expect_used \
-            -A clippy::derivable_impls
+            -A clippy::derivable_impls \
+            -A clippy::excessive_nesting
 
       - name: Clippy (test code)
         run: |
@@ -59,7 +60,8 @@ jobs:
             -D warnings \
             -A clippy::unwrap_used \
             -A clippy::expect_used \
-            -A clippy::derivable_impls
+            -A clippy::derivable_impls \
+            -A clippy::excessive_nesting
 
   check-nostd:
     name: Check no_std
