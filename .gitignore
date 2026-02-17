@@ -1,6 +1,5 @@
 /target/
 **/*.rs.bk
-Cargo.lock
 
 #IDE
 .vscode/
@@ -51,8 +50,6 @@ Desktop.ini
 
 # Runtime WASM
 /runtime/target/
-*.wasm
-*.compact.wasm
 
 # Benchmarking output
 /weights/

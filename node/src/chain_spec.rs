@@ -1,5 +1,5 @@
 use sc_service::ChainType;
-use seveny_runtime::{opaque::SessionKeys, AccountId, Signature, WASM_BINARY};
+use seveny_runtime::{AccountId, Signature, WASM_BINARY};
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_consensus_grandpa::AuthorityId as GrandpaId;
 use sp_core::{sr25519, Pair, Public};
@@ -24,11 +24,6 @@ where
 
 pub fn authority_keys_from_seed(s: &str) -> (AuraId, GrandpaId) {
     (get_from_seed::<AuraId>(s), get_from_seed::<GrandpaId>(s))
-}
-
-#[allow(dead_code)]
-pub fn session_keys(aura: AuraId, grandpa: GrandpaId) -> SessionKeys {
-    SessionKeys { aura, grandpa }
 }
 
 pub fn development_config() -> Result<ChainSpec, String> {
@@ -73,6 +68,10 @@ pub fn local_testnet_config() -> Result<ChainSpec, String> {
         vec![
             authority_keys_from_seed("Alice"),
             authority_keys_from_seed("Bob"),
+            authority_keys_from_seed("Charlie"),
+            authority_keys_from_seed("Dave"),
+            authority_keys_from_seed("Eve"),
+            authority_keys_from_seed("Ferdie"),
         ],
         get_account_id_from_seed::<sr25519::Public>("Alice"),
         vec![
@@ -92,6 +91,33 @@ pub fn local_testnet_config() -> Result<ChainSpec, String> {
         true,
     ))
     .build())
+}
+
+pub fn mainnet_config() -> Result<ChainSpec, String> {
+    Ok(ChainSpec::builder(
+        WASM_BINARY.ok_or_else(|| "Mainnet wasm not available".to_string())?,
+        None,
+    )
+    .with_name("7aychain Mainnet")
+    .with_id("seveny_mainnet")
+    .with_chain_type(ChainType::Live)
+    .with_genesis_config_patch(mainnet_genesis())
+    .with_protocol_id("seveny")
+    .build())
+}
+
+fn mainnet_genesis() -> serde_json::Value {
+    serde_json::json!({
+        "balances": {
+            "balances": Vec::<(AccountId, u128)>::new()
+        },
+        "aura": {
+            "authorities": Vec::<AuraId>::new()
+        },
+        "grandpa": {
+            "authorities": Vec::<(GrandpaId, u64)>::new()
+        }
+    })
 }
 
 fn testnet_genesis(

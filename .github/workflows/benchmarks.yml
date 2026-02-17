@@ -41,50 +41,67 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
+          shared-key: bench
 
       - name: Build with benchmarks
         run: cargo build --release --features runtime-benchmarks -p seveny-node
-        continue-on-error: true
 
       - name: Run benchmarks
         run: |
-          if [ -f "./target/release/seveny-node" ]; then
-            ./target/release/seveny-node benchmark pallet \
-              --chain dev \
-              --pallet "*" \
-              --extrinsic "*" \
-              --steps 50 \
-              --repeat 20 \
-              --output pallets/weights/ || true
-          else
-            echo "Binary not found, skipping benchmarks"
-          fi
+          mkdir -p benchmark-output
+          ./target/release/seveny-node benchmark pallet \
+            --chain dev \
+            --pallet "*" \
+            --extrinsic "*" \
+            --steps 20 \
+            --repeat 10 \
+            --output benchmark-output/ \
+            --json-file benchmark-output/results.json || true
         continue-on-error: true
 
-      - name: Upload weights
+      - name: Upload benchmark results
         uses: actions/upload-artifact@v4
         with:
           name: benchmark-weights
-          path: pallets/*/src/weights.rs
+          path: benchmark-output/
+          retention-days: 90
           if-no-files-found: ignore
 
-  compare:
-    name: Compare Weights
+  comment:
+    name: Post Benchmark Summary
     runs-on: ubuntu-latest
     needs: benchmark
     if: github.event_name == 'pull_request'
+    permissions:
+      pull-requests: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download weights
+      - name: Download benchmark results
         uses: actions/download-artifact@v4
         with:
           name: benchmark-weights
-          path: new-weights
+          path: benchmark-output
         continue-on-error: true
 
-      - name: Compare weights
+      - name: Generate summary
         run: |
-          echo "Weight comparison would be performed here"
-          echo "This is a placeholder for weight diff analysis"
+          echo "## Benchmark Results" > benchmark-comment.md
+          echo "" >> benchmark-comment.md
+          if [ -f benchmark-output/results.json ]; then
+            echo "<details><summary>Weight summary</summary>" >> benchmark-comment.md
+            echo "" >> benchmark-comment.md
+            echo '```' >> benchmark-comment.md
+            cat benchmark-output/results.json | jq -r \
+              '.[] | "\(.pallet)::\(.benchmark): \(.average_weight) ps"' \
+              2>/dev/null | head -50 >> benchmark-comment.md \
+              || echo "Could not parse results" >> benchmark-comment.md
+            echo '```' >> benchmark-comment.md
+            echo "</details>" >> benchmark-comment.md
+          else
+            echo "Benchmark results not available for this run." >> benchmark-comment.md
+          fi
+
+      - name: Comment on PR
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          path: benchmark-comment.md
+          header: benchmarks

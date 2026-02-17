@@ -192,6 +192,9 @@ pub mod pallet {
 
         #[pallet::constant]
         type RotationCooldownBlocks: Get<BlockNumberFor<Self>>;
+
+        #[pallet::constant]
+        type RotationTimeoutBlocks: Get<BlockNumberFor<Self>>;
     }
 
     #[pallet::storage]
@@ -248,7 +251,9 @@ pub mod pallet {
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
         fn on_initialize(n: BlockNumberFor<T>) -> Weight {
-            Self::process_destruction_timeouts(n)
+            let w1 = Self::process_destruction_timeouts(n);
+            let w2 = Self::process_rotation_timeouts(n);
+            w1.saturating_add(w2)
         }
     }
 
@@ -670,6 +675,32 @@ pub mod pallet {
         }
 
         #[allow(clippy::excessive_nesting)]
+        fn process_rotation_timeouts(current_block: BlockNumberFor<T>) -> Weight {
+            let timeout = T::RotationTimeoutBlocks::get();
+            let mut cancelled = 0u32;
+
+            for (actor, rotation) in KeyRotations::<T>::iter() {
+                if cancelled >= 5 {
+                    break;
+                }
+                if rotation.completed {
+                    continue;
+                }
+                let elapsed = current_block.saturating_sub(rotation.initiated_at);
+                if elapsed >= timeout {
+                    KeyRotations::<T>::remove(actor);
+                    Actors::<T>::mutate(actor, |l| {
+                        if let Some(ref mut lc) = l {
+                            lc.key_status = KeyStatus::Active;
+                        }
+                    });
+                    cancelled = cancelled.saturating_add(1);
+                }
+            }
+
+            Weight::from_parts(cancelled as u64 * 10_000, 0)
+        }
+
         fn process_destruction_timeouts(current_block: BlockNumberFor<T>) -> Weight {
             let mut processed = 0u32;
             let max_process = 5u32;

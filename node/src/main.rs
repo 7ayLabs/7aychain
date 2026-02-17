@@ -9,6 +9,7 @@ mod chain_spec;
 mod cli;
 mod command;
 mod rpc;
+mod scanner;
 mod service;
 
 fn main() -> sc_cli::Result<()> {

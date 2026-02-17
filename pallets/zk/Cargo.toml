@@ -24,6 +24,7 @@ frame-benchmarking = { workspace = true, optional = true }
 sp-core = { workspace = true }
 sp-runtime = { workspace = true }
 sp-io = { workspace = true }
+log = { version = "0.4", default-features = false }
 
 [dev-dependencies]
 sp-io = { workspace = true, features = ["std"] }

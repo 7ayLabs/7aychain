@@ -20,8 +20,8 @@ pub mod pallet {
     use frame_system::pallet_prelude::*;
     use seveny_primitives::{
         constants::{
-            EVIDENCE_REWARD_MAX, MAX_STAKE_RATIO, MIN_VALIDATORS, SLASH_CRITICAL, SLASH_MINOR,
-            SLASH_MODERATE, SLASH_SEVERE,
+            EVIDENCE_REWARD_MAX, MAX_STAKE_RATIO, SLASH_CRITICAL, SLASH_MINOR, SLASH_MODERATE,
+            SLASH_SEVERE,
         },
         types::{ValidatorId, ViolationType},
     };
@@ -49,6 +49,9 @@ pub mod pallet {
 
         #[pallet::constant]
         type MaxValidators: Get<u32>;
+
+        #[pallet::constant]
+        type MinValidators: Get<u32>;
 
         #[pallet::constant]
         type BondingDuration: Get<BlockNumberFor<Self>>;
@@ -120,11 +123,6 @@ pub mod pallet {
     #[pallet::getter(fn validators)]
     pub type Validators<T: Config> =
         StorageMap<_, Blake2_128Concat, ValidatorId, ValidatorInfo<T>, OptionQuery>;
-
-    #[pallet::storage]
-    #[pallet::getter(fn validator_stake)]
-    pub type ValidatorStake<T: Config> =
-        StorageMap<_, Blake2_128Concat, ValidatorId, BalanceOf<T>, ValueQuery>;
 
     #[pallet::storage]
     #[pallet::getter(fn total_stake)]
@@ -236,8 +234,11 @@ pub mod pallet {
 
             for (controller, stake) in &self.initial_validators {
                 let hash = T::Hashing::hash_of(controller);
-                let validator_id =
-                    ValidatorId::from(sp_core::H256(hash.as_ref().try_into().unwrap_or([0u8; 32])));
+                let hash_bytes: [u8; 32] = hash
+                    .as_ref()
+                    .try_into()
+                    .expect("runtime hash must be 32 bytes in genesis");
+                let validator_id = ValidatorId::from(sp_core::H256(hash_bytes));
 
                 let info = ValidatorInfo {
                     id: validator_id,
@@ -249,7 +250,6 @@ pub mod pallet {
                 };
 
                 Validators::<T>::insert(validator_id, info);
-                ValidatorStake::<T>::insert(validator_id, stake);
                 ValidatorByController::<T>::insert(controller, validator_id);
                 TotalStake::<T>::mutate(|total| {
                     *total = total.saturating_add(*stake);
@@ -298,7 +298,6 @@ pub mod pallet {
             };
 
             Validators::<T>::insert(validator_id, info);
-            ValidatorStake::<T>::insert(validator_id, stake);
             ValidatorByController::<T>::insert(&who, validator_id);
             TotalStake::<T>::mutate(|total| {
                 *total = total.saturating_add(stake);
@@ -370,7 +369,7 @@ pub mod pallet {
 
             let active_count = ActiveValidatorCount::<T>::get();
             ensure!(
-                active_count > MIN_VALIDATORS,
+                active_count > T::MinValidators::get(),
                 Error::<T>::MinValidatorsRequired
             );
 
@@ -417,11 +416,10 @@ pub mod pallet {
                 Error::<T>::UnbondingPeriodNotElapsed
             );
 
-            let stake = ValidatorStake::<T>::get(validator_id);
+            let stake = info.stake;
             T::Currency::unreserve(&who, stake);
 
             Validators::<T>::remove(validator_id);
-            ValidatorStake::<T>::remove(validator_id);
             ValidatorByController::<T>::remove(&who);
             TotalStake::<T>::mutate(|total| {
                 *total = total.saturating_sub(stake);
@@ -456,7 +454,6 @@ pub mod pallet {
 
             info.stake = new_stake;
             Validators::<T>::insert(validator_id, info);
-            ValidatorStake::<T>::insert(validator_id, new_stake);
             TotalStake::<T>::mutate(|total| {
                 *total = total.saturating_add(additional);
             });
@@ -481,10 +478,9 @@ pub mod pallet {
             let block_number = frame_system::Pallet::<T>::block_number();
 
             let info = Validators::<T>::get(validator).ok_or(Error::<T>::ValidatorNotFound)?;
-            let stake = ValidatorStake::<T>::get(validator);
 
             let slash_pct = Self::get_slash_percentage(&violation);
-            let slash_amount = slash_pct.mul_floor(stake);
+            let slash_amount = slash_pct.mul_floor(info.stake);
 
             let slash_id = SlashCount::<T>::get();
             SlashCount::<T>::put(slash_id.saturating_add(1));
@@ -507,16 +503,14 @@ pub mod pallet {
                 defer_until,
             });
 
-            if violation == ViolationType::Critical {
+            if violation == ViolationType::Critical && info.status != ValidatorStatus::Slashed {
                 let mut info_mut = info;
                 info_mut.status = ValidatorStatus::Slashed;
                 Validators::<T>::insert(validator, info_mut);
 
-                if ActiveValidatorCount::<T>::get() > 0 {
-                    ActiveValidatorCount::<T>::mutate(|count| {
-                        *count = count.saturating_sub(1);
-                    });
-                }
+                ActiveValidatorCount::<T>::mutate(|count| {
+                    *count = count.saturating_sub(1);
+                });
             }
 
             Self::deposit_event(Event::ValidatorSlashed {
@@ -552,9 +546,7 @@ pub mod pallet {
 
             let _ = T::Currency::slash_reserved(&info.controller, slash_record.amount);
 
-            let new_stake = ValidatorStake::<T>::get(slash_record.validator)
-                .saturating_sub(slash_record.amount);
-            ValidatorStake::<T>::insert(slash_record.validator, new_stake);
+            let new_stake = info.stake.saturating_sub(slash_record.amount);
             TotalStake::<T>::mutate(|total| {
                 *total = total.saturating_sub(slash_record.amount);
             });
@@ -585,10 +577,9 @@ pub mod pallet {
             let block_number = frame_system::Pallet::<T>::block_number();
 
             let info = Validators::<T>::get(validator).ok_or(Error::<T>::ValidatorNotFound)?;
-            let stake = ValidatorStake::<T>::get(validator);
 
             let slash_pct = Self::get_slash_percentage(&violation);
-            let slash_amount = slash_pct.mul_floor(stake);
+            let slash_amount = slash_pct.mul_floor(info.stake);
 
             let reward = Self::calculate_evidence_reward(slash_amount);
 
@@ -634,7 +625,11 @@ pub mod pallet {
         fn account_to_validator(account: &T::AccountId) -> ValidatorId {
             use sp_runtime::traits::Hash;
             let hash = T::Hashing::hash_of(account);
-            ValidatorId::from(sp_core::H256(hash.as_ref().try_into().unwrap_or([0u8; 32])))
+            let hash_bytes: [u8; 32] = hash
+                .as_ref()
+                .try_into()
+                .expect("runtime hash must be 32 bytes");
+            ValidatorId::from(sp_core::H256(hash_bytes))
         }
 
         fn ensure_stake_ratio_valid(stake: BalanceOf<T>) -> DispatchResult {
@@ -671,6 +666,12 @@ pub mod pallet {
             }
         }
 
+        pub fn validator_stake(validator: ValidatorId) -> BalanceOf<T> {
+            Validators::<T>::get(validator)
+                .map(|info| info.stake)
+                .unwrap_or_default()
+        }
+
         pub fn get_validator(validator: ValidatorId) -> Option<ValidatorInfo<T>> {
             Validators::<T>::get(validator)
         }
@@ -694,12 +695,12 @@ pub mod pallet {
         }
 
         pub fn get_stake_ratio(validator: ValidatorId) -> Option<(BalanceOf<T>, BalanceOf<T>)> {
-            let stake = ValidatorStake::<T>::get(validator);
+            let info = Validators::<T>::get(validator)?;
             let total = TotalStake::<T>::get();
             if total.is_zero() {
                 None
             } else {
-                Some((stake, total))
+                Some((info.stake, total))
             }
         }
     }

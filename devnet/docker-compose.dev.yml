@@ -1,0 +1,44 @@
+# Single-node devnet with instant seal.
+# Blocks are produced ONLY when extrinsics are submitted.
+#
+# Usage:
+#   docker compose -f docker-compose.dev.yml up -d --build
+#   python3 scripts/laud-cli.py          # connect, press b, then explore
+#
+# To reset chain state:
+#   docker compose -f docker-compose.dev.yml down -v
+
+x-node-build: &node-build
+  build:
+    context: ..
+    dockerfile: devnet/Dockerfile
+  image: seveny-node:latest
+
+services:
+  node:
+    <<: *node-build
+    container_name: seveny-dev
+    ports:
+      - "9944:9944"
+      - "9933:9933"
+      - "30333:30333"
+    volumes:
+      - dev-data:/node/data
+    command:
+      - "--dev"
+      - "--sealing=instant"
+      - "--base-path=/node/data"
+      - "--rpc-cors=all"
+      - "--rpc-external"
+      - "--rpc-methods=unsafe"
+      - "--scanner-mode=mock"
+      - "--mock-devices=15"
+      - "--scanner-pos-x=0"
+      - "--scanner-pos-y=0"
+      - "--scanner-pos-z=0"
+      - "--scan-interval=6"
+      - "--mock-seed=42"
+    restart: unless-stopped
+
+volumes:
+  dev-data:

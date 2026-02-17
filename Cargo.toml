@@ -23,6 +23,8 @@ members = [
     "pallets/zk",
     "pallets/storage",
     "pallets/lifecycle",
+    "pallets/triangulation",
+    "pallets/device-scanner",
     "runtime",
     "node",
 ]
@@ -58,7 +60,15 @@ pallet-vault = { path = "pallets/vault", default-features = false }
 pallet-zk = { path = "pallets/zk", default-features = false }
 pallet-storage = { path = "pallets/storage", default-features = false }
 pallet-lifecycle = { path = "pallets/lifecycle", default-features = false }
+pallet-triangulation = { path = "pallets/triangulation", default-features = false }
+pallet-device-scanner = { path = "pallets/device-scanner", default-features = false }
 seveny-runtime = { path = "runtime", default-features = false }
+
+# =============================================================================
+# Scanner Dependencies (node-side only)
+# =============================================================================
+async-trait = "0.1"
+log = { version = "0.4", default-features = false }
 
 # =============================================================================
 # FRAME Pallets
@@ -108,7 +118,9 @@ unsafe_code = "forbid"
 # =============================================================================
 # Prevent panics in production code
 unwrap_used = "deny"
-expect_used = "deny"
+# expect_used: FRAME macros (#[pallet::pallet], #[pallet::storage], #[pallet::error])
+# generate code with .expect() internally — cannot deny at workspace level.
+expect_used = "warn"
 # Prevent information leaks
 dbg_macro = "deny"
 print_stdout = "deny"

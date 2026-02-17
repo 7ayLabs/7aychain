@@ -183,6 +183,61 @@ pub struct VerificationRecord<T: Config> {
 pub const DOMAIN_SHARE_PROOF: &[u8] = b"7ay:share:v1";
 pub const DOMAIN_ACCESS_PROOF: &[u8] = b"7ay:access:v1";
 
+/// SNARK proof system type for future ZK integration
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
+pub enum SnarkProofType {
+    /// Groth16 - smallest proofs, trusted setup required
+    Groth16,
+    /// PlonK - universal setup, larger proofs
+    PlonK,
+    /// Halo2 - no trusted setup, recursive friendly
+    Halo2,
+}
+
+impl Default for SnarkProofType {
+    fn default() -> Self {
+        Self::Groth16
+    }
+}
+
+/// Circuit data stored in the registry
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
+pub struct CircuitData<BlockNumber> {
+    /// The type of SNARK proof system used
+    pub proof_type: SnarkProofType,
+    /// Hash of the verification key
+    pub vk_hash: H256,
+    /// When the circuit was registered
+    pub registered_at: BlockNumber,
+}
+
+/// Maximum size of verification key data
+pub type MaxVkSize = ConstU32<4096>;
+
+/// Maximum number of public inputs
+pub type MaxPublicInputs = ConstU32<16>;
+
 pub trait ZkVerifier {
     fn verify_share_proof(statement: &ShareStatement, proof: &[u8]) -> bool;
     fn verify_presence_proof(statement: &PresenceStatement, proof: &[u8]) -> bool;
@@ -193,12 +248,18 @@ pub struct SimpleHashVerifier;
 
 impl ZkVerifier for SimpleHashVerifier {
     fn verify_share_proof(statement: &ShareStatement, proof: &[u8]) -> bool {
-        if proof.len() < 65 {
+        const SHARE_PROOF_SIZE: usize = 65;
+        if proof.len() != SHARE_PROOF_SIZE {
             return false;
         }
-        let share_value: [u8; 32] = proof[0..32].try_into().unwrap_or([0u8; 32]);
+
+        let Ok(share_value): Result<[u8; 32], _> = proof[0..32].try_into() else {
+            return false;
+        };
         let share_index = proof[32];
-        let randomness: [u8; 32] = proof[33..65].try_into().unwrap_or([0u8; 32]);
+        let Ok(randomness): Result<[u8; 32], _> = proof[33..65].try_into() else {
+            return false;
+        };
 
         let mut input = Vec::with_capacity(DOMAIN_SHARE_PROOF.len() + 65);
         input.extend_from_slice(DOMAIN_SHARE_PROOF);
@@ -211,11 +272,17 @@ impl ZkVerifier for SimpleHashVerifier {
     }
 
     fn verify_presence_proof(statement: &PresenceStatement, proof: &[u8]) -> bool {
-        if proof.len() < 80 {
+        const PRESENCE_PROOF_SIZE: usize = 80;
+        if proof.len() != PRESENCE_PROOF_SIZE {
             return false;
         }
-        let secret: [u8; 32] = proof[0..32].try_into().unwrap_or([0u8; 32]);
-        let nonce_bytes: [u8; 8] = proof[64..72].try_into().unwrap_or([0u8; 8]);
+
+        let Ok(secret): Result<[u8; 32], _> = proof[0..32].try_into() else {
+            return false;
+        };
+        let Ok(nonce_bytes): Result<[u8; 8], _> = proof[64..72].try_into() else {
+            return false;
+        };
         let nonce = u64::from_le_bytes(nonce_bytes);
 
         let derived_nullifier = Nullifier::derive(&secret, statement.epoch_id, nonce);
@@ -224,12 +291,20 @@ impl ZkVerifier for SimpleHashVerifier {
     }
 
     fn verify_access_proof(statement: &AccessStatement, proof: &[u8]) -> bool {
-        if proof.len() < 68 {
+        const ACCESS_PROOF_SIZE: usize = 68;
+        if proof.len() != ACCESS_PROOF_SIZE {
             return false;
         }
-        let actor_bytes: [u8; 32] = proof[0..32].try_into().unwrap_or([0u8; 32]);
-        let ring_position_bytes: [u8; 4] = proof[32..36].try_into().unwrap_or([0u8; 4]);
-        let membership: [u8; 32] = proof[36..68].try_into().unwrap_or([0u8; 32]);
+
+        let Ok(actor_bytes): Result<[u8; 32], _> = proof[0..32].try_into() else {
+            return false;
+        };
+        let Ok(ring_position_bytes): Result<[u8; 4], _> = proof[32..36].try_into() else {
+            return false;
+        };
+        let Ok(membership): Result<[u8; 32], _> = proof[36..68].try_into() else {
+            return false;
+        };
 
         let mut input = Vec::with_capacity(DOMAIN_ACCESS_PROOF.len() + 76);
         input.extend_from_slice(DOMAIN_ACCESS_PROOF);
@@ -293,6 +368,18 @@ pub mod pallet {
     #[pallet::getter(fn trusted_verifiers)]
     pub type TrustedVerifiers<T: Config> = StorageMap<_, Blake2_128Concat, ActorId, bool>;
 
+    /// Registry of SNARK circuits and their verification keys
+    #[pallet::storage]
+    #[pallet::getter(fn circuit_registry)]
+    pub type CircuitRegistry<T: Config> =
+        StorageMap<_, Blake2_128Concat, H256, CircuitData<BlockNumberFor<T>>>;
+
+    /// Verification key storage (circuit_id -> vk data)
+    #[pallet::storage]
+    #[pallet::getter(fn verification_keys)]
+    pub type VerificationKeys<T: Config> =
+        StorageMap<_, Blake2_128Concat, H256, BoundedVec<u8, MaxVkSize>>;
+
     #[pallet::genesis_config]
     #[derive(frame_support::DefaultNoBound)]
     pub struct GenesisConfig<T: Config> {
@@ -346,6 +433,16 @@ pub mod pallet {
         TrustedVerifierRemoved {
             verifier: ActorId,
         },
+        /// A SNARK circuit was registered
+        CircuitRegistered {
+            circuit_id: H256,
+            proof_type: SnarkProofType,
+        },
+        /// A SNARK proof was verified
+        SnarkVerified {
+            circuit_id: H256,
+            verifier: ActorId,
+        },
     }
 
     #[pallet::error]
@@ -358,6 +455,12 @@ pub mod pallet {
         NotTrustedVerifier,
         StatementAlreadyVerified,
         ProofNotFound,
+        /// Circuit not found in registry
+        CircuitNotFound,
+        /// Circuit already registered
+        CircuitAlreadyRegistered,
+        /// SNARK verification failed
+        SnarkVerificationFailed,
     }
 
     #[pallet::call]
@@ -557,6 +660,86 @@ pub mod pallet {
 
             Ok(())
         }
+
+        /// Register a SNARK circuit with its verification key (root only).
+        /// This establishes the upgrade path from hash-based proofs to true ZK.
+        #[pallet::call_index(6)]
+        #[pallet::weight(Weight::from_parts(50_000, 0))]
+        pub fn register_circuit(
+            origin: OriginFor<T>,
+            circuit_id: H256,
+            proof_type: SnarkProofType,
+            vk: BoundedVec<u8, MaxVkSize>,
+        ) -> DispatchResult {
+            ensure_root(origin)?;
+
+            ensure!(
+                !CircuitRegistry::<T>::contains_key(circuit_id),
+                Error::<T>::CircuitAlreadyRegistered
+            );
+
+            let vk_hash = H256(blake2_256(&vk));
+            let block_number = frame_system::Pallet::<T>::block_number();
+
+            let circuit_data = CircuitData {
+                proof_type,
+                vk_hash,
+                registered_at: block_number,
+            };
+
+            CircuitRegistry::<T>::insert(circuit_id, circuit_data);
+            VerificationKeys::<T>::insert(circuit_id, vk);
+
+            Self::deposit_event(Event::CircuitRegistered {
+                circuit_id,
+                proof_type,
+            });
+
+            Ok(())
+        }
+
+        /// Verify a SNARK proof against a registered circuit.
+        /// Currently uses stub verifiers pending actual pairing library integration.
+        #[pallet::call_index(7)]
+        #[pallet::weight(Weight::from_parts(100_000, 0))]
+        pub fn verify_snark(
+            origin: OriginFor<T>,
+            circuit_id: H256,
+            proof: BoundedVec<u8, T::MaxProofSize>,
+            inputs: BoundedVec<[u8; 32], MaxPublicInputs>,
+        ) -> DispatchResult {
+            let who = ensure_signed(origin)?;
+
+            Self::check_verification_limit()?;
+
+            let circuit =
+                CircuitRegistry::<T>::get(circuit_id).ok_or(Error::<T>::CircuitNotFound)?;
+
+            // WARNING: Stub verifiers only check byte length / non-empty inputs.
+            // Do NOT treat SnarkVerified as cryptographic proof until real verifiers land.
+            log::warn!(
+                "verify_snark: using STUB verifier for circuit {:?} — not cryptographically secure",
+                circuit_id
+            );
+            let verified = match circuit.proof_type {
+                SnarkProofType::Groth16 => Self::verify_groth16_stub(&proof, &inputs),
+                SnarkProofType::PlonK => Self::verify_plonk_stub(&proof, &inputs),
+                SnarkProofType::Halo2 => Self::verify_halo2_stub(&proof, &inputs),
+            };
+
+            ensure!(verified, Error::<T>::SnarkVerificationFailed);
+
+            let actor = Self::account_to_actor(who);
+            VerificationsThisBlock::<T>::mutate(|c| *c = c.saturating_add(1));
+            VerificationCount::<T>::mutate(|c| *c = c.saturating_add(1));
+
+            Self::deposit_event(Event::SnarkVerified {
+                circuit_id,
+                verifier: actor,
+            });
+
+            Ok(())
+        }
     }
 
     impl<T: Config> Pallet<T> {
@@ -597,6 +780,27 @@ pub mod pallet {
 
         pub fn total_verifications() -> u64 {
             VerificationCount::<T>::get()
+        }
+
+        /// STUB: size-only check, no cryptographic verification.
+        /// TODO: replace with BN254 pairing verification.
+        fn verify_groth16_stub(proof: &[u8], inputs: &[[u8; 32]]) -> bool {
+            log::warn!(target: "pallet-zk", "STUB: Groth16 verifier — no pairing check");
+            proof.len() >= 256 && !inputs.is_empty()
+        }
+
+        /// STUB: size-only check, no cryptographic verification.
+        /// TODO: replace with KZG commitment verification.
+        fn verify_plonk_stub(proof: &[u8], inputs: &[[u8; 32]]) -> bool {
+            log::warn!(target: "pallet-zk", "STUB: PlonK verifier — no polynomial check");
+            proof.len() >= 384 && !inputs.is_empty()
+        }
+
+        /// STUB: size-only check, no cryptographic verification.
+        /// TODO: replace with IPA verification.
+        fn verify_halo2_stub(proof: &[u8], inputs: &[[u8; 32]]) -> bool {
+            log::warn!(target: "pallet-zk", "STUB: Halo2 verifier — no IPA check");
+            proof.len() >= 192 && !inputs.is_empty()
         }
 
         pub fn generate_share_proof(witness: &ShareWitness) -> (ShareStatement, Vec<u8>) {
