@@ -26,11 +26,9 @@ RUN mkdir -p primitives/src runtime/src node/src && \
     echo "pub fn dummy() {}" > runtime/src/lib.rs && \
     touch node/build.rs
 
-RUN cargo build --release --package seveny-node 2>/dev/null || true
+RUN cargo build --release --package seveny-node || true
 
 COPY . .
-
-RUN touch primitives/src/lib.rs runtime/src/lib.rs node/src/main.rs
 
 ENV CARGO_INCREMENTAL=0
 ENV CARGO_NET_GIT_FETCH_WITH_CLI=true

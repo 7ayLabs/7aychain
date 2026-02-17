@@ -88,7 +88,7 @@ get_block_info() {
     fi
 
     local block_num=$(echo "$header" | jq -r '.number // "0x0"')
-    local block_dec=$((block_num))
+    local block_dec=$(printf '%d' "$block_num")
 
     # Get finalized block number
     if [ -n "$finalized" ]; then
@@ -98,7 +98,7 @@ get_block_info() {
 
         if [ -n "$fin_header" ]; then
             local fin_num=$(echo "$fin_header" | jq -r '.number // "0x0"')
-            local fin_dec=$((fin_num))
+            local fin_dec=$(printf '%d' "$fin_num")
             echo "Block: $block_dec | Finalized: $fin_dec | Lag: $((block_dec - fin_dec))"
             return
         fi
