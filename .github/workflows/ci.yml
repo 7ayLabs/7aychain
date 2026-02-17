@@ -61,7 +61,8 @@ jobs:
             -A clippy::unwrap_used \
             -A clippy::expect_used \
             -A clippy::derivable_impls \
-            -A clippy::excessive_nesting
+            -A clippy::excessive_nesting \
+            -A clippy::print_stdout
 
   check-nostd:
     name: Check no_std
