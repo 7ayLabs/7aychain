@@ -8364,7 +8364,6 @@ dependencies = [
  "scale-info",
  "sp-arithmetic",
  "sp-core",
- "sp-io",
  "sp-runtime",
 ]
 
