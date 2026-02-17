@@ -493,4 +493,31 @@ mod tests {
 
         assert!(!reveal.verify(&commitment));
     }
+
+    #[test]
+    fn test_distance_squared_saturates_on_overflow() {
+        let p1 = Position::new(i32::MIN, i32::MIN, i32::MIN);
+        let p2 = Position::new(i32::MAX, i32::MAX, i32::MAX);
+        let dist = p1.distance_squared(&p2);
+        assert_eq!(dist, u64::MAX);
+    }
+
+    #[test]
+    fn test_distance_squared_zero() {
+        let p = Position::new(100, -200, 300);
+        assert_eq!(p.distance_squared(&p), 0);
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn test_device_commitment_rejects_overflow() {
+        let devices: Vec<H256> = (0..=255).map(|i| H256::repeat_byte(i as u8)).collect();
+        let nonce = [0u8; 32];
+        assert!(DeviceCommitment::new(&devices, &nonce, 1, 1).is_some());
+
+        let overflow: Vec<H256> = (0..256).map(|_| H256::zero()).collect();
+        let mut extended = overflow.clone();
+        extended.push(H256::zero());
+        assert!(DeviceCommitment::new(&extended, &nonce, 1, 1).is_none());
+    }
 }
