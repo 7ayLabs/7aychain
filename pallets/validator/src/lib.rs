@@ -503,16 +503,16 @@ pub mod pallet {
                 defer_until,
             });
 
-            if violation == ViolationType::Critical {
-                if info.status != ValidatorStatus::Slashed {
-                    let mut info_mut = info;
-                    info_mut.status = ValidatorStatus::Slashed;
-                    Validators::<T>::insert(validator, info_mut);
+            if violation == ViolationType::Critical
+                && info.status != ValidatorStatus::Slashed
+            {
+                let mut info_mut = info;
+                info_mut.status = ValidatorStatus::Slashed;
+                Validators::<T>::insert(validator, info_mut);
 
-                    ActiveValidatorCount::<T>::mutate(|count| {
-                        *count = count.saturating_sub(1);
-                    });
-                }
+                ActiveValidatorCount::<T>::mutate(|count| {
+                    *count = count.saturating_sub(1);
+                });
             }
 
             Self::deposit_event(Event::ValidatorSlashed {
