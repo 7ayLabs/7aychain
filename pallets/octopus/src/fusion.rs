@@ -455,4 +455,46 @@ mod tests {
             Some(HealingTrigger::HeartbeatTimeout)
         );
     }
+
+    #[test]
+    fn test_healing_trigger_uses_named_constants() {
+        let mut metrics = FusedHealthMetrics::new(Position::default());
+        metrics.fused_score = CRITICAL_HEALTH_THRESHOLD;
+        metrics.heartbeat_score = 100;
+        assert_eq!(should_trigger_healing(&metrics, 0), None);
+
+        metrics.fused_score = CRITICAL_HEALTH_THRESHOLD - 1;
+        assert_eq!(
+            should_trigger_healing(&metrics, 0),
+            Some(HealingTrigger::FusedScoreCritical)
+        );
+
+        metrics.fused_score = 100;
+        metrics.heartbeat_score = HEARTBEAT_CRITICAL_THRESHOLD;
+        assert_eq!(should_trigger_healing(&metrics, 0), None);
+
+        metrics.heartbeat_score = HEARTBEAT_CRITICAL_THRESHOLD - 1;
+        assert_eq!(
+            should_trigger_healing(&metrics, 0),
+            Some(HealingTrigger::HeartbeatTimeout)
+        );
+    }
+
+    #[test]
+    fn test_reveal_timeout_trigger() {
+        let mut metrics = FusedHealthMetrics::new(Position::default());
+        metrics.fused_score = 100;
+        metrics.heartbeat_score = 100;
+        metrics.device_metrics.total_observations = 5;
+        metrics.device_metrics.last_reveal_block = 0;
+
+        assert_eq!(
+            should_trigger_healing(&metrics, REVEAL_TIMEOUT_BLOCKS),
+            None
+        );
+        assert_eq!(
+            should_trigger_healing(&metrics, REVEAL_TIMEOUT_BLOCKS + 1),
+            Some(HealingTrigger::DeviceObservationMissing)
+        );
+    }
 }
