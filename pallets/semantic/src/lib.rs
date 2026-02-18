@@ -384,8 +384,13 @@ pub mod pallet {
         #[allow(clippy::excessive_nesting)]
         fn on_initialize(now: BlockNumberFor<T>) -> Weight {
             let mut expired_count = 0u32;
+            const MAX_EXPIRY_PER_BLOCK: u32 = 50;
 
             for (id, relationship) in Relationships::<T>::iter() {
+                if expired_count >= MAX_EXPIRY_PER_BLOCK {
+                    break;
+                }
+
                 let should_expire = relationship.status == RelationshipStatus::Active
                     && relationship.expires_at.is_some_and(|exp| now >= exp);
 
@@ -534,13 +539,18 @@ pub mod pallet {
                 Error::<T>::RelationshipRevoked
             );
 
+            // Capture bidirectional+active state BEFORE mutation so the
+            // to_actor profile count decrement is not dead code.
+            let was_active_bidirectional =
+                relationship.bidirectional && relationship.status == RelationshipStatus::Active;
+
             relationship.status = RelationshipStatus::Revoked;
             relationship.updated_at = block_number;
 
             Relationships::<T>::insert(relationship_id, relationship.clone());
 
             Self::update_profile_relationship_count(relationship.from_actor, block_number, false);
-            if relationship.bidirectional && relationship.status == RelationshipStatus::Active {
+            if was_active_bidirectional {
                 Self::update_profile_relationship_count(relationship.to_actor, block_number, false);
             }
 

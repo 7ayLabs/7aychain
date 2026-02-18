@@ -139,7 +139,9 @@ impl ConstantTimeEq for [u8; 32] {
         for i in 0..32 {
             acc |= self[i] ^ other[i];
         }
-        acc == 0
+        // Black-box hint prevents the compiler from short-circuiting
+        // the loop or optimizing away the constant-time property.
+        core::hint::black_box(acc) == 0
     }
 }
 

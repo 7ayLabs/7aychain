@@ -1,6 +1,8 @@
 #![allow(clippy::disallowed_macros)]
 
-use crate::{self as pallet_vault, Error, Event, MemberRole, ShareStatus, VaultId, VaultStatus};
+use crate::{
+    self as pallet_vault, Error, Event, MemberRole, ShareId, ShareStatus, VaultId, VaultStatus,
+};
 use frame_support::{assert_noop, assert_ok, derive_impl, parameter_types, traits::ConstU32};
 use frame_system as system;
 use seveny_primitives::types::ActorId;
@@ -389,10 +391,15 @@ fn recovery_completes_at_threshold() {
 
         assert_ok!(Vault::initiate_recovery(RuntimeOrigin::signed(1), vault_id));
 
-        let shares = Vault::get_vault_shares(vault_id);
-
-        assert_ok!(Vault::reveal_share(RuntimeOrigin::signed(1), shares[0]));
-        assert_ok!(Vault::reveal_share(RuntimeOrigin::signed(2), shares[1]));
+        // Share 0 was committed by account 1, share 1 by account 2
+        assert_ok!(Vault::reveal_share(
+            RuntimeOrigin::signed(1),
+            ShareId::new(0)
+        ));
+        assert_ok!(Vault::reveal_share(
+            RuntimeOrigin::signed(2),
+            ShareId::new(1)
+        ));
 
         let vault = Vault::vaults(vault_id).expect("vault should exist");
         assert_eq!(vault.status, VaultStatus::Active);

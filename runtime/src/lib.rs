@@ -99,6 +99,7 @@ parameter_types! {
 }
 
 impl frame_system::Config for Runtime {
+    // TODO(production): Replace with a restrictive call filter before mainnet
     type BaseCallFilter = frame_support::traits::Everything;
     type BlockWeights = BlockWeightsValue;
     type BlockLength = BlockLengthValue;

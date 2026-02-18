@@ -373,7 +373,7 @@ impl QuorumConfig {
     }
 
     pub const fn is_valid(&self) -> bool {
-        self.threshold <= self.total && self.total > 0
+        self.threshold > 0 && self.threshold <= self.total && self.total > 0
     }
 }
 
