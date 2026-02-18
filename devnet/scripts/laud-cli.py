@@ -171,7 +171,7 @@ class LaudCLI:
                 kp = self.keypairs[signer]
                 ext = self.substrate.create_signed_extrinsic(
                     call=call, keypair=kp)
-                tag = f"{C.DIM}[sudo]{C.R} " if sudo else ""
+                tag = f"{C.DIM}[admin]{C.R} " if sudo else ""
                 self._info(
                     f"{tag}{C.W}{module}.{fn}{C.R} "
                     f"{C.DIM}as{C.R} {C.Y}{signer}{C.R}")
@@ -429,20 +429,20 @@ class LaudCLI:
         z = self._prompt_int(f"{label} Z (m)", 0)
         return {"x": x, "y": y, "z": z}
 
-    def _prompt_h256(self, label="H256"):
+    def _prompt_h256(self, label="32-byte hex"):
         val = self._prompt(label, "0x" + "00" * 32)
         if not val.startswith("0x"):
             val = "0x" + val
         return val
 
-    def _prompt_actor(self, label="Actor"):
-        use_name = self._prompt_bool("Derive ID from account name?")
+    def _prompt_actor(self, label="Identity"):
+        use_name = self._prompt_bool("Use an account name? (alice, bob, ...)")
         if use_name:
             name = self._prompt_account(label)
             aid = self._actor_id(name)
             print(f"  {C.DIM}ID: {aid[:20]}...{C.R}")
             return aid
-        return self._prompt_h256(f"{label} ID (H256)")
+        return self._prompt_h256(f"{label} (32-byte hex)")
 
     def _prompt_enum(self, label, options):
         for i, opt in enumerate(options, 1):
@@ -466,27 +466,43 @@ class LaudCLI:
     # ------------------------------------------------------------------
 
     ERROR_HINTS = {
-        'EpochNotActive': 'Run "bootstrap" to set up the devnet first',
-        'NotAValidator': 'Run "bootstrap" to register validators',
-        'NotAnActiveValidator': 'Run "bootstrap" to register validators',
+        'EpochNotActive':
+            'The time period is not active yet. '
+            'Type "bootstrap" to set up the network.',
+        'NotAValidator':
+            'This account is not a validator. '
+            'Type "bootstrap" to register all test validators.',
+        'NotAnActiveValidator':
+            'This validator is not active. '
+            'Type "bootstrap" to register and activate validators.',
         'PositionAlreadyClaimed':
-            'Already claimed this epoch — try "use epoch <N>"',
+            'You already claimed a position this period. '
+            'Try "use epoch <N>" to switch periods.',
         'DuplicateAttestation':
-            'This witness already attested this epoch',
+            'This witness already confirmed this period. '
+            'Use a different witness account.',
         'DuplicatePresence':
-            'Already declared this epoch — try "use epoch <N>"',
+            'Already declared this period. '
+            'Try "use epoch <N>" to switch periods.',
         'DuplicateVote':
-            'Already voted this epoch — try "use epoch <N>"',
+            'Already voted this period. '
+            'Try "use epoch <N>" to switch periods.',
         'PresenceImmutable':
-            'Presence already finalized — cannot modify',
+            'This presence is already finalized and cannot be changed.',
         'SelfAttestation':
-            'Validators cannot self-attest — use a different witness',
+            'You cannot attest for yourself. '
+            'Use a different witness account.',
         'InsufficientAttestations':
-            'Need 3+ witness attestations first',
+            'Not enough witnesses yet. '
+            'Need at least 3 attestations first.',
         'InsufficientWitnesses':
-            'Need 3+ witness attestations before verify',
-        'AlreadyDeclared': 'Already declared presence this epoch',
-        'QuorumNotReached': 'Need 3+ validator votes to finalize',
+            'Not enough witnesses yet. '
+            'Need at least 3 attestations before verifying.',
+        'AlreadyDeclared':
+            'Already declared presence this period.',
+        'QuorumNotReached':
+            'Not enough votes yet. '
+            'Need at least 3 validator votes to finalize.',
     }
 
     def _error_hint(self, err):
@@ -698,8 +714,8 @@ class LaudCLI:
         if self._ctx_epoch is not None:
             parts.append(f"{C.Y}epoch {self._ctx_epoch}{C.R}")
         acct = self._ctx_account
-        sudo_tag = (f" {C.DIM}(sudo){C.R}" if acct == 'alice' else "")
-        parts.append(f"account: {C.W}{acct}{C.R}{sudo_tag}")
+        admin_tag = (f" {C.DIM}(admin){C.R}" if acct == 'alice' else "")
+        parts.append(f"account: {C.W}{acct}{C.R}{admin_tag}")
         print(f"  {'  '.join(parts)}")
 
     def bootstrap(self):
@@ -1050,7 +1066,7 @@ class LaudCLI:
     def _octopus_update_throughput(self):
         a = self._prompt_account()
         cid = self._prompt_int("Cluster ID", 0)
-        tp = self._prompt_int("Throughput (parts per billion)", 450000000)
+        tp = self._prompt_int("Throughput score", 450000000)
         self._submit("Octopus", "update_throughput",
                      {"cluster_id": cid, "throughput": tp}, a)
 
@@ -1062,7 +1078,7 @@ class LaudCLI:
     def _octopus_update_subnode_throughput(self):
         a = self._prompt_account()
         sid = self._prompt_int("Subnode ID", 0)
-        tp = self._prompt_int("Throughput (ppb)", 500000000)
+        tp = self._prompt_int("Throughput score", 500000000)
         pr = self._prompt_int("Processed", 100)
         self._submit("Octopus", "update_subnode_throughput",
                      {"subnode_id": sid, "throughput": tp,
@@ -1829,7 +1845,7 @@ class LaudCLI:
 
     def _crypto_random(self):
         h = "0x" + secrets.token_hex(32)
-        self._val("Random H256", h)
+        self._val("Random 32-byte hex", h)
 
     # ------------------------------------------------------------------
     # Custom handlers: Account Inspector
@@ -2205,11 +2221,11 @@ class LaudCLI:
 
     def show_guide(self):
         self._header("QUICK START GUIDE")
-        print(f"""  {C.W}GLOSSARY{C.R}
-  {C.DIM}  Epoch     = time period for presence proofs
-    Validator = node that votes on presence claims
-    Actor     = identity identified by blake2b(pubkey)
-    PBT       = position-based triangulation{C.R}
+        print(f"""  {C.W}KEY CONCEPTS{C.R}
+  {C.DIM}  Time Period = a window during which presence proofs happen
+    Validator   = a node that votes on presence claims
+    Identity    = a participant identified by their public key
+    PBT         = position-based triangulation (location proofs){C.R}
 
   {C.W}1. Start the devnet{C.R}
      {C.Y}cd devnet && ./scripts/dev.sh{C.R}
@@ -2217,7 +2233,7 @@ class LaudCLI:
 
   {C.W}2. Connect + bootstrap{C.R}
      {C.DIM}CLI auto-connects on start. Type {C.Y}bootstrap{C.DIM} or {C.Y}b{C.DIM}:
-     activates epoch 1, registers 6 validators, sets positions.{C.R}
+     activates time period 1, registers 6 validators, sets positions.{C.R}
 
   {C.W}3. Run automated tests{C.R}
      {C.Y}t1{C.R}  {C.DIM}Full PoP lifecycle    {C.Y}test pop{C.R}
@@ -2225,7 +2241,7 @@ class LaudCLI:
      {C.Y}t3{C.R}  {C.DIM}Commit-reveal        {C.Y}test commit{C.R}
 
   {C.W}4. Set context{C.R}
-     {C.Y}use epoch 5{C.R}   {C.DIM}all commands use epoch 5{C.R}
+     {C.Y}use epoch 5{C.R}   {C.DIM}all commands use time period 5{C.R}
      {C.Y}use bob{C.R}       {C.DIM}all commands sign as bob{C.R}
      {C.Y}use clear{C.R}     {C.DIM}reset to defaults{C.R}
 
@@ -2235,11 +2251,11 @@ class LaudCLI:
      {C.Y}pbt test{C.R}           {C.DIM}full PBT test flow{C.R}
 
   {C.W}6. Instructions{C.R}
-     {C.DIM}Type {C.Y}i{C.DIM} inside any submenu to see how it works.
+     {C.DIM}Type {C.Y}i{C.DIM} inside any submenu to learn how it works.
      Type {C.Y}i 1{C.DIM} to see details about a specific command.{C.R}
 
   {C.W}7. Accounts{C.R}
-     {C.DIM}alice {C.Y}(sudo){C.DIM}, bob, charlie, dave, eve, ferdie
+     {C.DIM}alice {C.Y}(admin){C.DIM}, bob, charlie, dave, eve, ferdie
      All pre-funded with 10M UNIT on devnet{C.R}
 """)
 
