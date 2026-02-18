@@ -531,10 +531,8 @@ impl FeldmanVSS {
         let shares = ShamirScheme::split(secret, threshold, total, entropy)?;
 
         // Store per-share commitments: H(DOMAIN_SHARE || index || value)
-        let share_commitments: Vec<H256> = shares
-            .iter()
-            .map(|s| ShamirScheme::create_commitment(s))
-            .collect();
+        let share_commitments: Vec<H256> =
+            shares.iter().map(ShamirScheme::create_commitment).collect();
 
         Some((
             shares,
