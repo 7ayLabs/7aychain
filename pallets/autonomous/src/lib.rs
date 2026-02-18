@@ -601,10 +601,8 @@ pub mod pallet {
     impl<T: Config> Pallet<T> {
         fn account_to_actor(account: &T::AccountId) -> ActorId {
             let encoded = account.encode();
-            let mut bytes = [0u8; 32];
-            let len = encoded.len().min(32);
-            bytes[..len].copy_from_slice(&encoded[..len]);
-            ActorId::from_raw(bytes)
+            let hash = sp_core::blake2_256(&encoded);
+            ActorId::from_raw(hash)
         }
 
         fn next_behavior_id() -> BehaviorId {

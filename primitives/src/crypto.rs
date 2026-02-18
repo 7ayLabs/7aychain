@@ -30,14 +30,14 @@ pub fn hash_with_domain(domain: &[u8], data: &[u8]) -> H256 {
 }
 
 /// Hash two values together (for Merkle trees).
-/// Uses DOMAIN_MERKLE prefix to separate internal nodes from leaf hashes.
+/// Uses DOMAIN_MERKLE via hash_with_domain to separate internal nodes
+/// from leaf hashes with consistent length-prefixed domain separation.
 #[inline]
 pub fn hash_pair(left: &H256, right: &H256) -> H256 {
-    let mut input = Vec::with_capacity(DOMAIN_MERKLE.len() + 64);
-    input.extend_from_slice(DOMAIN_MERKLE);
-    input.extend_from_slice(left.as_bytes());
-    input.extend_from_slice(right.as_bytes());
-    H256(blake2_256(&input))
+    let mut data = Vec::with_capacity(64);
+    data.extend_from_slice(left.as_bytes());
+    data.extend_from_slice(right.as_bytes());
+    hash_with_domain(DOMAIN_MERKLE, &data)
 }
 
 /// Pedersen-style commitment: C = H(domain || value || randomness)
@@ -153,11 +153,10 @@ impl Nullifier {
     /// ensuring the same actor cannot produce different nullifiers for the
     /// same epoch, which would defeat double-presence prevention.
     pub fn derive(secret: &[u8; 32], epoch_id: u64) -> Self {
-        let mut input = Vec::with_capacity(DOMAIN_NULLIFIER.len() + 32 + 8);
-        input.extend_from_slice(DOMAIN_NULLIFIER);
-        input.extend_from_slice(secret);
-        input.extend_from_slice(&epoch_id.to_le_bytes());
-        Self(H256(blake2_256(&input)))
+        let mut data = Vec::with_capacity(32 + 8);
+        data.extend_from_slice(secret);
+        data.extend_from_slice(&epoch_id.to_le_bytes());
+        Self(hash_with_domain(DOMAIN_NULLIFIER, &data))
     }
 }
 
