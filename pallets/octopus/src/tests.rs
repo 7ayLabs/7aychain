@@ -96,9 +96,10 @@ fn new_test_ext() -> sp_io::TestExternalities {
 }
 
 fn account_to_actor(account: u64) -> ActorId {
-    let mut bytes = [0u8; 32];
-    bytes[0..8].copy_from_slice(&account.to_le_bytes());
-    ActorId::from_raw(bytes)
+    use parity_scale_codec::Encode;
+    let encoded = account.encode();
+    let hash = sp_core::blake2_256(&encoded);
+    ActorId::from_raw(hash)
 }
 
 #[test]
@@ -129,7 +130,7 @@ fn register_subnode_success() {
         let cluster_id = ClusterId::new(0);
 
         assert_ok!(Octopus::register_subnode(
-            RuntimeOrigin::signed(1),
+            RuntimeOrigin::signed(2),
             cluster_id,
             operator
         ));
@@ -151,7 +152,7 @@ fn activate_subnode_success() {
 
         assert_ok!(Octopus::create_cluster(RuntimeOrigin::signed(1), owner));
         assert_ok!(Octopus::register_subnode(
-            RuntimeOrigin::signed(1),
+            RuntimeOrigin::signed(2),
             ClusterId::new(0),
             operator
         ));
@@ -182,7 +183,7 @@ fn cannot_activate_already_active() {
 
         assert_ok!(Octopus::create_cluster(RuntimeOrigin::signed(1), owner));
         assert_ok!(Octopus::register_subnode(
-            RuntimeOrigin::signed(1),
+            RuntimeOrigin::signed(2),
             ClusterId::new(0),
             operator
         ));
@@ -209,12 +210,12 @@ fn start_deactivation_success() {
 
         assert_ok!(Octopus::create_cluster(RuntimeOrigin::signed(1), owner));
         assert_ok!(Octopus::register_subnode(
-            RuntimeOrigin::signed(1),
+            RuntimeOrigin::signed(2),
             ClusterId::new(0),
             operator1
         ));
         assert_ok!(Octopus::register_subnode(
-            RuntimeOrigin::signed(1),
+            RuntimeOrigin::signed(3),
             ClusterId::new(0),
             operator2
         ));
@@ -247,7 +248,7 @@ fn cannot_deactivate_below_minimum() {
 
         assert_ok!(Octopus::create_cluster(RuntimeOrigin::signed(1), owner));
         assert_ok!(Octopus::register_subnode(
-            RuntimeOrigin::signed(1),
+            RuntimeOrigin::signed(2),
             ClusterId::new(0),
             operator
         ));
@@ -272,12 +273,12 @@ fn deactivation_completes_after_duration() {
 
         assert_ok!(Octopus::create_cluster(RuntimeOrigin::signed(1), owner));
         assert_ok!(Octopus::register_subnode(
-            RuntimeOrigin::signed(1),
+            RuntimeOrigin::signed(2),
             ClusterId::new(0),
             operator1
         ));
         assert_ok!(Octopus::register_subnode(
-            RuntimeOrigin::signed(1),
+            RuntimeOrigin::signed(3),
             ClusterId::new(0),
             operator2
         ));
@@ -341,7 +342,7 @@ fn scaling_decision_scale_up() {
 
         assert_ok!(Octopus::create_cluster(RuntimeOrigin::signed(1), owner));
         assert_ok!(Octopus::register_subnode(
-            RuntimeOrigin::signed(1),
+            RuntimeOrigin::signed(2),
             ClusterId::new(0),
             operator
         ));
@@ -377,12 +378,12 @@ fn scaling_decision_scale_down() {
 
         assert_ok!(Octopus::create_cluster(RuntimeOrigin::signed(1), owner));
         assert_ok!(Octopus::register_subnode(
-            RuntimeOrigin::signed(1),
+            RuntimeOrigin::signed(2),
             ClusterId::new(0),
             operator1
         ));
         assert_ok!(Octopus::register_subnode(
-            RuntimeOrigin::signed(1),
+            RuntimeOrigin::signed(3),
             ClusterId::new(0),
             operator2
         ));
@@ -415,7 +416,7 @@ fn scaling_cooldown_enforced() {
 
         assert_ok!(Octopus::create_cluster(RuntimeOrigin::signed(1), owner));
         assert_ok!(Octopus::register_subnode(
-            RuntimeOrigin::signed(1),
+            RuntimeOrigin::signed(2),
             ClusterId::new(0),
             operator
         ));
@@ -499,7 +500,7 @@ fn get_active_subnodes_helper() {
 
         for i in 0..3 {
             assert_ok!(Octopus::register_subnode(
-                RuntimeOrigin::signed(1),
+                RuntimeOrigin::signed(i + 10),
                 ClusterId::new(0),
                 account_to_actor(i + 10)
             ));
@@ -550,7 +551,7 @@ fn update_subnode_throughput_success() {
 
         assert_ok!(Octopus::create_cluster(RuntimeOrigin::signed(1), owner));
         assert_ok!(Octopus::register_subnode(
-            RuntimeOrigin::signed(1),
+            RuntimeOrigin::signed(2),
             ClusterId::new(0),
             operator
         ));

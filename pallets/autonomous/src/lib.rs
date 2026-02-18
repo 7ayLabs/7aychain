@@ -354,11 +354,13 @@ pub mod pallet {
         #[pallet::weight(T::WeightInfo::record_behavior())]
         pub fn record_behavior(
             origin: OriginFor<T>,
-            actor: ActorId,
+            _actor: ActorId,
             behavior_type: BehaviorType,
             data_hash: H256,
         ) -> DispatchResult {
-            ensure_signed(origin)?;
+            let who = ensure_signed(origin)?;
+            // Caller can only record their own behavior
+            let actor = Self::account_to_actor(&who);
 
             let behavior_count = BehaviorCountPerActor::<T>::get(actor);
             ensure!(
@@ -566,8 +568,10 @@ pub mod pallet {
 
         #[pallet::call_index(6)]
         #[pallet::weight(T::WeightInfo::create_profile())]
-        pub fn create_profile(origin: OriginFor<T>, actor: ActorId) -> DispatchResult {
-            ensure_signed(origin)?;
+        pub fn create_profile(origin: OriginFor<T>, _actor: ActorId) -> DispatchResult {
+            let who = ensure_signed(origin)?;
+            // Caller can only create their own profile
+            let actor = Self::account_to_actor(&who);
 
             ensure!(
                 !ActorProfiles::<T>::contains_key(actor),
@@ -596,6 +600,14 @@ pub mod pallet {
     }
 
     impl<T: Config> Pallet<T> {
+        fn account_to_actor(account: &T::AccountId) -> ActorId {
+            let encoded = account.encode();
+            let mut bytes = [0u8; 32];
+            let len = encoded.len().min(32);
+            bytes[..len].copy_from_slice(&encoded[..len]);
+            ActorId::from_raw(bytes)
+        }
+
         fn next_behavior_id() -> BehaviorId {
             let id = BehaviorCount::<T>::get();
             BehaviorCount::<T>::put(id.saturating_add(1));
@@ -715,12 +727,11 @@ pub mod pallet {
         }
 
         fn compute_pattern_signature(behavior_type: BehaviorType, data_hash: H256) -> H256 {
+            const DOMAIN_AUTONOMOUS: &[u8] = b"7ay:autonomous:v1";
             let mut data = Vec::new();
             data.push(behavior_type as u8);
             data.extend_from_slice(data_hash.as_bytes());
-            let hash = <T as frame_system::Config>::Hashing::hash(&data);
-            let hash_bytes: [u8; 32] = hash.as_ref().try_into().unwrap_or([0u8; 32]);
-            H256(hash_bytes)
+            seveny_primitives::crypto::hash_with_domain(DOMAIN_AUTONOMOUS, &data)
         }
 
         pub fn is_autonomous(actor: ActorId) -> bool {

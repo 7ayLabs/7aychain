@@ -435,7 +435,7 @@ fn cannot_double_attest() {
 }
 
 #[test]
-fn suspended_actor_can_initiate_destruction() {
+fn suspended_actor_cannot_initiate_destruction() {
     new_test_ext().execute_with(|| {
         let key_hash = create_key_hash(1);
         register_and_activate(1, key_hash);
@@ -443,11 +443,14 @@ fn suspended_actor_can_initiate_destruction() {
         let actor = account_to_actor(1);
         assert_ok!(Lifecycle::suspend_actor(RuntimeOrigin::root(), actor));
 
-        assert_ok!(Lifecycle::initiate_destruction(
-            RuntimeOrigin::signed(1),
-            DestructionReason::OwnerRequest
-        ));
+        assert_noop!(
+            Lifecycle::initiate_destruction(
+                RuntimeOrigin::signed(1),
+                DestructionReason::OwnerRequest
+            ),
+            Error::<Test>::ActorNotActive
+        );
 
-        assert!(Lifecycle::is_destruction_pending(actor));
+        assert!(!Lifecycle::is_destruction_pending(actor));
     });
 }
