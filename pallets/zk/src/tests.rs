@@ -251,7 +251,7 @@ fn add_trusted_verifier_success() {
         let verifier = ActorId::from_raw([1u8; 32]);
 
         assert_ok!(Zk::add_trusted_verifier(RuntimeOrigin::root(), verifier));
-        assert!(Zk::trusted_verifiers(verifier).unwrap_or(false));
+        assert!(Zk::trusted_verifiers(verifier));
     });
 }
 
@@ -262,7 +262,7 @@ fn remove_trusted_verifier_success() {
 
         assert_ok!(Zk::add_trusted_verifier(RuntimeOrigin::root(), verifier));
         assert_ok!(Zk::remove_trusted_verifier(RuntimeOrigin::root(), verifier));
-        assert!(!Zk::trusted_verifiers(verifier).unwrap_or(false));
+        assert!(!Zk::trusted_verifiers(verifier));
     });
 }
 

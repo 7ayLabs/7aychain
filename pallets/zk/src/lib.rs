@@ -367,7 +367,8 @@ pub mod pallet {
 
     #[pallet::storage]
     #[pallet::getter(fn trusted_verifiers)]
-    pub type TrustedVerifiers<T: Config> = StorageMap<_, Blake2_128Concat, ActorId, bool>;
+    pub type TrustedVerifiers<T: Config> =
+        StorageMap<_, Blake2_128Concat, ActorId, bool, ValueQuery>;
 
     /// Registry of SNARK circuits and their verification keys
     #[pallet::storage]
@@ -645,7 +646,7 @@ pub mod pallet {
             let actor = Self::account_to_actor(who);
 
             ensure!(
-                TrustedVerifiers::<T>::get(actor).unwrap_or(false),
+                TrustedVerifiers::<T>::get(actor),
                 Error::<T>::NotTrustedVerifier
             );
 
@@ -716,7 +717,7 @@ pub mod pallet {
 
             // Restrict to trusted verifiers since stubs are not cryptographic
             ensure!(
-                TrustedVerifiers::<T>::get(actor).unwrap_or(false),
+                TrustedVerifiers::<T>::get(actor),
                 Error::<T>::NotTrustedVerifier
             );
 
