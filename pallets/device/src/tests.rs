@@ -85,9 +85,10 @@ fn new_test_ext() -> sp_io::TestExternalities {
 }
 
 fn account_to_actor(account: u64) -> ActorId {
-    let mut bytes = [0u8; 32];
-    bytes[0..8].copy_from_slice(&account.to_le_bytes());
-    ActorId::from_raw(bytes)
+    use parity_scale_codec::Encode;
+    let encoded = account.encode();
+    let hash = sp_core::blake2_256(&encoded);
+    ActorId::from_raw(hash)
 }
 
 #[test]

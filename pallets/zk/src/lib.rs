@@ -271,6 +271,10 @@ impl ZkVerifier for SimpleHashVerifier {
         computed == statement.commitment_hash
     }
 
+    /// SECURITY WARNING: This stub verifier requires the raw secret in the proof,
+    /// which means the secret is exposed on-chain in extrinsic call data. This
+    /// completely defeats ZK privacy. Replace with a real ZK circuit (e.g. Groth16)
+    /// before any production deployment. The state_root is also not verified.
     fn verify_presence_proof(statement: &PresenceStatement, proof: &[u8]) -> bool {
         const PRESENCE_PROOF_SIZE: usize = 80;
         if proof.len() != PRESENCE_PROOF_SIZE {
@@ -280,12 +284,9 @@ impl ZkVerifier for SimpleHashVerifier {
         let Ok(secret): Result<[u8; 32], _> = proof[0..32].try_into() else {
             return false;
         };
-        let Ok(nonce_bytes): Result<[u8; 8], _> = proof[64..72].try_into() else {
-            return false;
-        };
-        let nonce = u64::from_le_bytes(nonce_bytes);
 
-        let derived_nullifier = Nullifier::derive(&secret, statement.epoch_id, nonce);
+        // INV1: Nullifier derived from (secret, epoch) only — no nonce
+        let derived_nullifier = Nullifier::derive(&secret, statement.epoch_id);
 
         derived_nullifier == statement.nullifier
     }
@@ -366,7 +367,8 @@ pub mod pallet {
 
     #[pallet::storage]
     #[pallet::getter(fn trusted_verifiers)]
-    pub type TrustedVerifiers<T: Config> = StorageMap<_, Blake2_128Concat, ActorId, bool>;
+    pub type TrustedVerifiers<T: Config> =
+        StorageMap<_, Blake2_128Concat, ActorId, bool, ValueQuery>;
 
     /// Registry of SNARK circuits and their verification keys
     #[pallet::storage]
@@ -644,7 +646,7 @@ pub mod pallet {
             let actor = Self::account_to_actor(who);
 
             ensure!(
-                TrustedVerifiers::<T>::get(actor).unwrap_or(false),
+                TrustedVerifiers::<T>::get(actor),
                 Error::<T>::NotTrustedVerifier
             );
 
@@ -700,6 +702,8 @@ pub mod pallet {
 
         /// Verify a SNARK proof against a registered circuit.
         /// Currently uses stub verifiers pending actual pairing library integration.
+        /// SECURITY: Restricted to trusted verifiers only — stub verifiers are
+        /// NOT cryptographically secure and only check byte length.
         #[pallet::call_index(7)]
         #[pallet::weight(Weight::from_parts(100_000, 0))]
         pub fn verify_snark(
@@ -709,6 +713,13 @@ pub mod pallet {
             inputs: BoundedVec<[u8; 32], MaxPublicInputs>,
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
+            let actor = Self::account_to_actor(who);
+
+            // Restrict to trusted verifiers since stubs are not cryptographic
+            ensure!(
+                TrustedVerifiers::<T>::get(actor),
+                Error::<T>::NotTrustedVerifier
+            );
 
             Self::check_verification_limit()?;
 
@@ -729,7 +740,6 @@ pub mod pallet {
 
             ensure!(verified, Error::<T>::SnarkVerificationFailed);
 
-            let actor = Self::account_to_actor(who);
             VerificationsThisBlock::<T>::mutate(|c| *c = c.saturating_add(1));
             VerificationCount::<T>::mutate(|c| *c = c.saturating_add(1));
 
@@ -824,10 +834,10 @@ pub mod pallet {
         pub fn generate_presence_proof(
             secret: &[u8; 32],
             epoch_id: u64,
-            nonce: u64,
             state_root: StateRoot,
         ) -> (PresenceStatement, Vec<u8>) {
-            let nullifier = Nullifier::derive(secret, epoch_id, nonce);
+            // INV1: Nullifier from (secret, epoch) — no nonce
+            let nullifier = Nullifier::derive(secret, epoch_id);
 
             let statement = PresenceStatement {
                 epoch_id,
@@ -835,11 +845,11 @@ pub mod pallet {
                 nullifier,
             };
 
+            // Proof layout: secret[32] || padding[32] || reserved[16]
             let mut proof = Vec::with_capacity(80);
             proof.extend_from_slice(secret);
             proof.extend_from_slice(&[0u8; 32]);
-            proof.extend_from_slice(&nonce.to_le_bytes());
-            proof.extend_from_slice(&[0u8; 8]);
+            proof.extend_from_slice(&[0u8; 16]);
 
             (statement, proof)
         }

@@ -356,12 +356,13 @@ pub mod pallet {
         #[pallet::weight(T::WeightInfo::register_device())]
         pub fn register_device(
             origin: OriginFor<T>,
-            owner: ActorId,
+            _owner: ActorId,
             device_type: DeviceType,
             public_key_hash: H256,
             attestation_type: AttestationType,
         ) -> DispatchResult {
-            ensure_signed(origin)?;
+            let caller = ensure_signed(origin)?;
+            let owner = Self::account_to_actor(&caller);
 
             ensure!(
                 !PublicKeyDevice::<T>::contains_key(public_key_hash),
@@ -406,11 +407,13 @@ pub mod pallet {
         #[pallet::call_index(1)]
         #[pallet::weight(T::WeightInfo::activate_device())]
         pub fn activate_device(origin: OriginFor<T>, device_id: DeviceId) -> DispatchResult {
-            ensure_signed(origin)?;
+            let caller = ensure_signed(origin)?;
+            let caller_actor = Self::account_to_actor(&caller);
 
             Devices::<T>::try_mutate(device_id, |device| -> DispatchResult {
                 let d = device.as_mut().ok_or(Error::<T>::DeviceNotFound)?;
 
+                ensure!(d.owner == caller_actor, Error::<T>::NotDeviceOwner);
                 ensure!(
                     d.status == DeviceStatus::Pending,
                     Error::<T>::DeviceAlreadyActive
@@ -433,11 +436,13 @@ pub mod pallet {
             device_id: DeviceId,
             reason: H256,
         ) -> DispatchResult {
-            ensure_signed(origin)?;
+            let caller = ensure_signed(origin)?;
+            let caller_actor = Self::account_to_actor(&caller);
 
             Devices::<T>::try_mutate(device_id, |device| -> DispatchResult {
                 let d = device.as_mut().ok_or(Error::<T>::DeviceNotFound)?;
 
+                ensure!(d.owner == caller_actor, Error::<T>::NotDeviceOwner);
                 ensure!(
                     d.status == DeviceStatus::Active,
                     Error::<T>::DeviceNotActive
@@ -456,11 +461,13 @@ pub mod pallet {
         #[pallet::call_index(3)]
         #[pallet::weight(T::WeightInfo::revoke_device())]
         pub fn revoke_device(origin: OriginFor<T>, device_id: DeviceId) -> DispatchResult {
-            ensure_signed(origin)?;
+            let caller = ensure_signed(origin)?;
+            let caller_actor = Self::account_to_actor(&caller);
 
             Devices::<T>::try_mutate(device_id, |device| -> DispatchResult {
                 let d = device.as_mut().ok_or(Error::<T>::DeviceNotFound)?;
 
+                ensure!(d.owner == caller_actor, Error::<T>::NotDeviceOwner);
                 if d.status == DeviceStatus::Active {
                     ActiveDeviceCount::<T>::mutate(|count| *count = count.saturating_sub(1));
                 }
@@ -501,12 +508,11 @@ pub mod pallet {
             attestation_hash: H256,
             attester: Option<ActorId>,
         ) -> DispatchResult {
-            ensure_signed(origin)?;
+            let caller = ensure_signed(origin)?;
+            let caller_actor = Self::account_to_actor(&caller);
 
-            ensure!(
-                Devices::<T>::contains_key(device_id),
-                Error::<T>::DeviceNotFound
-            );
+            let device = Devices::<T>::get(device_id).ok_or(Error::<T>::DeviceNotFound)?;
+            ensure!(device.owner == caller_actor, Error::<T>::NotDeviceOwner);
 
             let block_number = frame_system::Pallet::<T>::block_number();
             let valid_until =
@@ -559,13 +565,15 @@ pub mod pallet {
         #[pallet::call_index(7)]
         #[pallet::weight(T::WeightInfo::record_activity())]
         pub fn record_activity(origin: OriginFor<T>, device_id: DeviceId) -> DispatchResult {
-            ensure_signed(origin)?;
+            let caller = ensure_signed(origin)?;
+            let caller_actor = Self::account_to_actor(&caller);
 
             let block_number = frame_system::Pallet::<T>::block_number();
 
             Devices::<T>::try_mutate(device_id, |device| -> DispatchResult {
                 let d = device.as_mut().ok_or(Error::<T>::DeviceNotFound)?;
 
+                ensure!(d.owner == caller_actor, Error::<T>::NotDeviceOwner);
                 ensure!(
                     d.status == DeviceStatus::Active,
                     Error::<T>::DeviceNotActive
@@ -582,11 +590,13 @@ pub mod pallet {
         #[pallet::call_index(8)]
         #[pallet::weight(T::WeightInfo::reactivate_device())]
         pub fn reactivate_device(origin: OriginFor<T>, device_id: DeviceId) -> DispatchResult {
-            ensure_signed(origin)?;
+            let caller = ensure_signed(origin)?;
+            let caller_actor = Self::account_to_actor(&caller);
 
             Devices::<T>::try_mutate(device_id, |device| -> DispatchResult {
                 let d = device.as_mut().ok_or(Error::<T>::DeviceNotFound)?;
 
+                ensure!(d.owner == caller_actor, Error::<T>::NotDeviceOwner);
                 ensure!(
                     d.status == DeviceStatus::Suspended || d.status == DeviceStatus::Offline,
                     Error::<T>::CannotReactivateRevokedDevice
@@ -609,13 +619,15 @@ pub mod pallet {
             device_id: DeviceId,
             sequence: u64,
         ) -> DispatchResult {
-            ensure_signed(origin)?;
+            let caller = ensure_signed(origin)?;
+            let caller_actor = Self::account_to_actor(&caller);
 
             let block_number = frame_system::Pallet::<T>::block_number();
 
             Devices::<T>::try_mutate(device_id, |device| -> DispatchResult {
                 let d = device.as_mut().ok_or(Error::<T>::DeviceNotFound)?;
 
+                ensure!(d.owner == caller_actor, Error::<T>::NotDeviceOwner);
                 ensure!(
                     d.status == DeviceStatus::Active || d.status == DeviceStatus::Offline,
                     Error::<T>::DeviceNotActive
@@ -670,6 +682,12 @@ pub mod pallet {
     }
 
     impl<T: Config> Pallet<T> {
+        fn account_to_actor(account: &T::AccountId) -> ActorId {
+            let encoded = account.encode();
+            let hash = sp_core::blake2_256(&encoded);
+            ActorId::from_raw(hash)
+        }
+
         fn next_device_id() -> DeviceId {
             let id = DeviceCount::<T>::get();
             DeviceCount::<T>::put(id.saturating_add(1));

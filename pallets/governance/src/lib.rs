@@ -311,8 +311,13 @@ pub mod pallet {
         #[allow(clippy::excessive_nesting)]
         fn on_initialize(now: BlockNumberFor<T>) -> Weight {
             let mut expired_count = 0u32;
+            const MAX_EXPIRY_PER_BLOCK: u32 = 50;
 
             for (id, capability) in Capabilities::<T>::iter() {
+                if expired_count >= MAX_EXPIRY_PER_BLOCK {
+                    break;
+                }
+
                 let should_expire = capability.status == CapabilityStatus::Active
                     && capability.expires_at.is_some_and(|exp| now >= exp);
 
@@ -351,6 +356,17 @@ pub mod pallet {
             let block_number = frame_system::Pallet::<T>::block_number();
 
             ensure!(!permissions.is_empty(), Error::<T>::InvalidPermissions);
+
+            // Authorization: if the resource already has capabilities,
+            // the caller must hold ADMIN permission on it.
+            let resource_caps = ResourceCapabilities::<T>::get(resource);
+            if !resource_caps.is_empty() {
+                let caller_actor = Self::account_to_actor(&who);
+                ensure!(
+                    Self::has_permission(caller_actor, resource, Permissions::ADMIN),
+                    Error::<T>::NotAuthorized
+                );
+            }
 
             let capability_id = CapabilityId::new(CapabilityCount::<T>::get());
             CapabilityCount::<T>::put(capability_id.inner().saturating_add(1));
@@ -607,31 +623,42 @@ pub mod pallet {
             chain
         }
 
+        /// Revokes all capabilities delegated from `parent_capability_id`.
+        /// Uses iterative BFS bounded by `MaxDelegationDepth` to prevent
+        /// unbounded stack growth from recursive delegation chains.
         #[allow(clippy::excessive_nesting)]
         fn revoke_delegated_capabilities(
             parent_capability_id: CapabilityId,
             _block_number: BlockNumberFor<T>,
         ) {
-            for (delegated_id, _) in Delegations::<T>::iter_prefix(parent_capability_id) {
-                Capabilities::<T>::mutate(delegated_id, |cap| {
-                    if let Some(c) = cap
-                        .as_mut()
-                        .filter(|c| c.status == CapabilityStatus::Active)
-                    {
-                        c.status = CapabilityStatus::Revoked;
-                    }
-                });
+            let max_depth = T::MaxDelegationDepth::get();
+            let mut queue = alloc::vec![parent_capability_id];
+            let mut depth: u32 = 0;
 
-                Self::revoke_delegated_capabilities(delegated_id, _block_number);
+            while !queue.is_empty() && depth < max_depth {
+                let mut next_queue = alloc::vec::Vec::new();
+                for parent_id in &queue {
+                    for (delegated_id, _) in Delegations::<T>::iter_prefix(*parent_id) {
+                        Capabilities::<T>::mutate(delegated_id, |cap| {
+                            if let Some(c) = cap
+                                .as_mut()
+                                .filter(|c| c.status == CapabilityStatus::Active)
+                            {
+                                c.status = CapabilityStatus::Revoked;
+                            }
+                        });
+                        next_queue.push(delegated_id);
+                    }
+                }
+                queue = next_queue;
+                depth = depth.saturating_add(1);
             }
         }
 
         fn account_to_actor(account: &T::AccountId) -> ActorId {
             let encoded = account.encode();
-            let mut bytes = [0u8; 32];
-            let len = encoded.len().min(32);
-            bytes[..len].copy_from_slice(&encoded[..len]);
-            ActorId::from_raw(bytes)
+            let hash = sp_core::blake2_256(&encoded);
+            ActorId::from_raw(hash)
         }
     }
 }

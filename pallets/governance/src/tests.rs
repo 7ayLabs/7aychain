@@ -83,9 +83,10 @@ fn new_test_ext() -> sp_io::TestExternalities {
 }
 
 fn account_to_actor(account: u64) -> ActorId {
-    let mut bytes = [0u8; 32];
-    bytes[0..8].copy_from_slice(&account.to_le_bytes());
-    ActorId::from_raw(bytes)
+    use parity_scale_codec::Encode;
+    let encoded = account.encode();
+    let hash = sp_core::blake2_256(&encoded);
+    ActorId::from_raw(hash)
 }
 
 fn test_resource(id: u8) -> ResourceId {
@@ -627,6 +628,38 @@ fn self_delegation_prevented() {
                 None
             ),
             Error::<Test>::SelfDelegation
+        );
+    });
+}
+
+#[test]
+fn grant_capability_requires_admin_on_existing_resource() {
+    new_test_ext().execute_with(|| {
+        let grantee1 = account_to_actor(2);
+        let grantee2 = account_to_actor(3);
+        let resource = test_resource(1);
+
+        // First grant succeeds (no existing capabilities on resource)
+        assert_ok!(Governance::grant_capability(
+            RuntimeOrigin::signed(1),
+            grantee1,
+            resource,
+            Permissions::READ,
+            None,
+            false
+        ));
+
+        // Second grant by a different account without ADMIN fails
+        assert_noop!(
+            Governance::grant_capability(
+                RuntimeOrigin::signed(5),
+                grantee2,
+                resource,
+                Permissions::WRITE,
+                None,
+                false
+            ),
+            Error::<Test>::NotAuthorized
         );
     });
 }
