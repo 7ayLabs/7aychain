@@ -103,6 +103,47 @@ fn register_reporter_success() {
 }
 
 #[test]
+fn register_reporter_sets_owner() {
+    new_test_ext().execute_with(|| {
+        let position = Position {
+            x: 100,
+            y: 200,
+            z: 0,
+        };
+
+        assert_ok!(Triangulation::register_reporter(
+            RuntimeOrigin::signed(1),
+            position
+        ));
+
+        let reporter_id = ReporterId::new(0);
+        let owner = pallet_triangulation::ReporterOwner::<Test>::get(reporter_id);
+        assert_eq!(owner, Some(1));
+    });
+}
+
+#[test]
+fn non_owner_cannot_deregister_reporter() {
+    new_test_ext().execute_with(|| {
+        let position = Position {
+            x: 100,
+            y: 200,
+            z: 0,
+        };
+
+        assert_ok!(Triangulation::register_reporter(
+            RuntimeOrigin::signed(1),
+            position
+        ));
+
+        assert_noop!(
+            Triangulation::deregister_reporter(RuntimeOrigin::signed(2), ReporterId::new(0)),
+            Error::<Test>::NotReporterOwner
+        );
+    });
+}
+
+#[test]
 fn deregister_reporter_success() {
     new_test_ext().execute_with(|| {
         let position = Position {

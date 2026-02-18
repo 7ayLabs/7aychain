@@ -430,9 +430,8 @@ pub mod pallet {
             let lifecycle = Actors::<T>::get(actor).ok_or(Error::<T>::ActorNotFound)?;
 
             ensure!(
-                lifecycle.status == ActorStatus::Active
-                    || lifecycle.status == ActorStatus::Suspended,
-                Error::<T>::ActorDestroyed
+                lifecycle.status == ActorStatus::Active,
+                Error::<T>::ActorNotActive
             );
             ensure!(
                 !DestructionRequests::<T>::contains_key(actor),

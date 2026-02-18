@@ -564,8 +564,9 @@ pub mod pallet {
     impl<T: Config> Pallet<T> {
         #[pallet::call_index(0)]
         #[pallet::weight(T::WeightInfo::create_cluster())]
-        pub fn create_cluster(origin: OriginFor<T>, owner: ActorId) -> DispatchResult {
-            ensure_signed(origin)?;
+        pub fn create_cluster(origin: OriginFor<T>, _owner: ActorId) -> DispatchResult {
+            let caller = ensure_signed(origin)?;
+            let owner = Self::account_to_actor(&caller);
 
             let block_number = frame_system::Pallet::<T>::block_number();
             let cluster_id = Self::next_cluster_id();
@@ -593,9 +594,10 @@ pub mod pallet {
         pub fn register_subnode(
             origin: OriginFor<T>,
             cluster_id: ClusterId,
-            operator: ActorId,
+            _operator: ActorId,
         ) -> DispatchResult {
-            ensure_signed(origin)?;
+            let caller = ensure_signed(origin)?;
+            let operator = Self::account_to_actor(&caller);
 
             let cluster = Clusters::<T>::get(cluster_id).ok_or(Error::<T>::ClusterNotFound)?;
 
@@ -639,13 +641,15 @@ pub mod pallet {
         #[pallet::call_index(2)]
         #[pallet::weight(T::WeightInfo::activate_subnode())]
         pub fn activate_subnode(origin: OriginFor<T>, subnode_id: SubnodeId) -> DispatchResult {
-            ensure_signed(origin)?;
+            let caller = ensure_signed(origin)?;
+            let caller_actor = Self::account_to_actor(&caller);
 
             let block_number = frame_system::Pallet::<T>::block_number();
 
             Subnodes::<T>::try_mutate(subnode_id, |subnode| -> DispatchResult {
                 let s = subnode.as_mut().ok_or(Error::<T>::SubnodeNotFound)?;
 
+                ensure!(s.operator == caller_actor, Error::<T>::NotSubnodeOperator);
                 ensure!(
                     s.status == SubnodeStatus::Inactive,
                     Error::<T>::SubnodeAlreadyActive
@@ -684,13 +688,15 @@ pub mod pallet {
         #[pallet::call_index(3)]
         #[pallet::weight(T::WeightInfo::start_deactivation())]
         pub fn start_deactivation(origin: OriginFor<T>, subnode_id: SubnodeId) -> DispatchResult {
-            ensure_signed(origin)?;
+            let caller = ensure_signed(origin)?;
+            let caller_actor = Self::account_to_actor(&caller);
 
             let block_number = frame_system::Pallet::<T>::block_number();
 
             Subnodes::<T>::try_mutate(subnode_id, |subnode| -> DispatchResult {
                 let s = subnode.as_mut().ok_or(Error::<T>::SubnodeNotFound)?;
 
+                ensure!(s.operator == caller_actor, Error::<T>::NotSubnodeOperator);
                 ensure!(
                     s.status == SubnodeStatus::Active,
                     Error::<T>::SubnodeNotActive
@@ -755,9 +761,11 @@ pub mod pallet {
         #[pallet::call_index(5)]
         #[pallet::weight(T::WeightInfo::evaluate_scaling())]
         pub fn evaluate_scaling(origin: OriginFor<T>, cluster_id: ClusterId) -> DispatchResult {
-            ensure_signed(origin)?;
+            let caller = ensure_signed(origin)?;
+            let caller_actor = Self::account_to_actor(&caller);
 
             let cluster = Clusters::<T>::get(cluster_id).ok_or(Error::<T>::ClusterNotFound)?;
+            ensure!(cluster.owner == caller_actor, Error::<T>::NotClusterOwner);
             let block_number = frame_system::Pallet::<T>::block_number();
 
             let cooldown_elapsed = block_number.saturating_sub(cluster.last_scaling_at)
@@ -794,10 +802,12 @@ pub mod pallet {
             throughput: Perbill,
             processed: u64,
         ) -> DispatchResult {
-            ensure_signed(origin)?;
+            let caller = ensure_signed(origin)?;
+            let caller_actor = Self::account_to_actor(&caller);
 
             Subnodes::<T>::try_mutate(subnode_id, |subnode| -> DispatchResult {
                 let s = subnode.as_mut().ok_or(Error::<T>::SubnodeNotFound)?;
+                ensure!(s.operator == caller_actor, Error::<T>::NotSubnodeOperator);
                 s.throughput = throughput;
                 s.processed_count = s.processed_count.saturating_add(processed);
                 Ok(())
@@ -807,13 +817,15 @@ pub mod pallet {
         #[pallet::call_index(7)]
         #[pallet::weight(T::WeightInfo::activate_subnode())]
         pub fn record_heartbeat(origin: OriginFor<T>, subnode_id: SubnodeId) -> DispatchResult {
-            ensure_signed(origin)?;
+            let caller = ensure_signed(origin)?;
+            let caller_actor = Self::account_to_actor(&caller);
 
             let block_number = frame_system::Pallet::<T>::block_number();
 
             Subnodes::<T>::try_mutate(subnode_id, |subnode| -> DispatchResult {
                 let s = subnode.as_mut().ok_or(Error::<T>::SubnodeNotFound)?;
 
+                ensure!(s.operator == caller_actor, Error::<T>::NotSubnodeOperator);
                 ensure!(
                     s.status == SubnodeStatus::Active,
                     Error::<T>::SubnodeNotActive
@@ -851,14 +863,19 @@ pub mod pallet {
             device_count: u8,
             commitment: sp_core::H256,
         ) -> DispatchResult {
-            ensure_signed(origin)?;
+            let caller = ensure_signed(origin)?;
+            let caller_actor = Self::account_to_actor(&caller);
 
             let block_number = frame_system::Pallet::<T>::block_number();
             let block_u64: u64 = block_number
                 .try_into()
                 .map_err(|_| Error::<T>::SubnodeNotFound)?;
 
-            Subnodes::<T>::get(subnode_id).ok_or(Error::<T>::SubnodeNotFound)?;
+            let subnode = Subnodes::<T>::get(subnode_id).ok_or(Error::<T>::SubnodeNotFound)?;
+            ensure!(
+                subnode.operator == caller_actor,
+                Error::<T>::NotSubnodeOperator
+            );
 
             let weights = GlobalFusionWeights::<T>::get();
 
@@ -895,14 +912,19 @@ pub mod pallet {
             position_y: i64,
             position_z: i64,
         ) -> DispatchResult {
-            ensure_signed(origin)?;
+            let caller = ensure_signed(origin)?;
+            let caller_actor = Self::account_to_actor(&caller);
 
             let block_number = frame_system::Pallet::<T>::block_number();
             let block_u64: u64 = block_number
                 .try_into()
                 .map_err(|_| Error::<T>::SubnodeNotFound)?;
 
-            Subnodes::<T>::get(subnode_id).ok_or(Error::<T>::SubnodeNotFound)?;
+            let subnode = Subnodes::<T>::get(subnode_id).ok_or(Error::<T>::SubnodeNotFound)?;
+            ensure!(
+                subnode.operator == caller_actor,
+                Error::<T>::NotSubnodeOperator
+            );
 
             let position = FusionPosition::new(position_x, position_y, position_z);
             let weights = GlobalFusionWeights::<T>::get();
@@ -939,7 +961,8 @@ pub mod pallet {
             device_count: u8,
             commitment: sp_core::H256,
         ) -> DispatchResult {
-            ensure_signed(origin)?;
+            let caller = ensure_signed(origin)?;
+            let caller_actor = Self::account_to_actor(&caller);
 
             let block_number = frame_system::Pallet::<T>::block_number();
             let block_u64: u64 = block_number
@@ -949,6 +972,7 @@ pub mod pallet {
             Subnodes::<T>::try_mutate(subnode_id, |subnode| -> DispatchResult {
                 let s = subnode.as_mut().ok_or(Error::<T>::SubnodeNotFound)?;
 
+                ensure!(s.operator == caller_actor, Error::<T>::NotSubnodeOperator);
                 ensure!(
                     s.status == SubnodeStatus::Active,
                     Error::<T>::SubnodeNotActive
@@ -1020,6 +1044,12 @@ pub mod pallet {
     }
 
     impl<T: Config> Pallet<T> {
+        fn account_to_actor(account: &T::AccountId) -> ActorId {
+            let encoded = account.encode();
+            let hash = sp_core::blake2_256(&encoded);
+            ActorId::from_raw(hash)
+        }
+
         fn next_subnode_id() -> SubnodeId {
             let id = SubnodeCount::<T>::get();
             SubnodeCount::<T>::put(id.saturating_add(1));
@@ -1066,8 +1096,13 @@ pub mod pallet {
         #[allow(clippy::excessive_nesting)]
         fn process_deactivations(block_number: BlockNumberFor<T>) {
             let duration = T::DeactivationDurationBlocks::get();
+            const MAX_PER_BLOCK: u32 = 50;
+            let mut processed: u32 = 0;
 
             for (subnode_id, mut subnode) in Subnodes::<T>::iter() {
+                if processed >= MAX_PER_BLOCK {
+                    break;
+                }
                 if subnode.status == SubnodeStatus::Deactivating {
                     if let Some(started) = subnode.deactivation_started {
                         if block_number.saturating_sub(started) >= duration {
@@ -1091,6 +1126,8 @@ pub mod pallet {
                                 subnode_id,
                                 cluster_id,
                             });
+
+                            processed = processed.saturating_add(1);
                         }
                     }
                 }
@@ -1129,8 +1166,14 @@ pub mod pallet {
             let timeout = T::HeartbeatTimeoutBlocks::get();
             let max_misses = T::MaxConsecutiveMisses::get();
             let decay = T::HealthScoreDecay::get();
+            const MAX_PER_BLOCK: u32 = 100;
+            let mut processed: u32 = 0;
 
             for (subnode_id, mut subnode) in Subnodes::<T>::iter() {
+                if processed >= MAX_PER_BLOCK {
+                    break;
+                }
+                processed = processed.saturating_add(1);
                 if subnode.status != SubnodeStatus::Active {
                     continue;
                 }
@@ -1186,7 +1229,14 @@ pub mod pallet {
 
             Self::check_fusion_healing_triggers(block_u64);
 
+            const MAX_CLUSTERS_PER_BLOCK: u32 = 10;
+            let mut cluster_count: u32 = 0;
+
             for (cluster_id, cluster) in Clusters::<T>::iter() {
+                if cluster_count >= MAX_CLUSTERS_PER_BLOCK {
+                    break;
+                }
+                cluster_count = cluster_count.saturating_add(1);
                 if cluster.status != ClusterStatus::Degraded {
                     continue;
                 }
@@ -1235,7 +1285,14 @@ pub mod pallet {
         }
 
         fn check_fusion_healing_triggers(current_block: u64) {
+            const MAX_PER_BLOCK: u32 = 50;
+            let mut processed: u32 = 0;
+
             for (subnode_id, health) in FusedHealth::<T>::iter() {
+                if processed >= MAX_PER_BLOCK {
+                    break;
+                }
+                processed = processed.saturating_add(1);
                 if let Some(trigger) = fusion::should_trigger_healing(&health, current_block) {
                     let previous_score = health.fused_score;
 
@@ -1466,8 +1523,12 @@ pub mod pallet {
         pub fn prune_inactive_subnodes(current_block: BlockNumberFor<T>) -> u32 {
             let inactive_threshold = T::HeartbeatTimeoutBlocks::get() * 10u32.into();
             let mut pruned: u32 = 0;
+            const MAX_PRUNE_PER_BLOCK: u32 = 50;
 
             for (subnode_id, subnode) in Subnodes::<T>::iter() {
+                if pruned >= MAX_PRUNE_PER_BLOCK {
+                    break;
+                }
                 let inactive_blocks = current_block.saturating_sub(subnode.last_heartbeat);
 
                 if inactive_blocks >= inactive_threshold && subnode.status == SubnodeStatus::Failed
