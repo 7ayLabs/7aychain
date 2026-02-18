@@ -14,7 +14,6 @@ use parity_scale_codec::{Decode, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
 use seveny_primitives::types::ActorId;
 use sp_core::H256;
-use sp_runtime::traits::Hash;
 
 #[derive(
     Clone,
