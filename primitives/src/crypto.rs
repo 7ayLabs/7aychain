@@ -548,10 +548,7 @@ impl FeldmanVSS {
     ///
     /// Checks that H(DOMAIN_SHARE || index || value) matches the stored
     /// commitment at the share's index position.
-    pub fn verify_share_against_commitments(
-        share: &Share,
-        commitments: &VssCommitment,
-    ) -> bool {
+    pub fn verify_share_against_commitments(share: &Share, commitments: &VssCommitment) -> bool {
         if share.index.0 == 0 {
             return false;
         }
@@ -869,18 +866,23 @@ mod tests {
         let secret = [99u8; 32];
         let entropy = [0x66; 32];
         let (shares, commitments) =
-            FeldmanVSS::share_with_commitments(&secret, 2, 3, &entropy)
-                .expect("vss failed");
+            FeldmanVSS::share_with_commitments(&secret, 2, 3, &entropy).expect("vss failed");
 
         // Each share should verify against its commitment
         for share in &shares {
-            assert!(FeldmanVSS::verify_share_against_commitments(share, &commitments));
+            assert!(FeldmanVSS::verify_share_against_commitments(
+                share,
+                &commitments
+            ));
         }
 
         // Tampered share should not verify
         let mut tampered = shares[0].clone();
         tampered.value[0] ^= 0xFF;
-        assert!(!FeldmanVSS::verify_share_against_commitments(&tampered, &commitments));
+        assert!(!FeldmanVSS::verify_share_against_commitments(
+            &tampered,
+            &commitments
+        ));
     }
 
     #[test]

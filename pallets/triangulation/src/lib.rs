@@ -572,8 +572,7 @@ pub mod pallet {
 
     /// Maps ReporterId to the AccountId that registered it.
     #[pallet::storage]
-    pub type ReporterOwner<T: Config> =
-        StorageMap<_, Blake2_128Concat, ReporterId, T::AccountId>;
+    pub type ReporterOwner<T: Config> = StorageMap<_, Blake2_128Concat, ReporterId, T::AccountId>;
 
     #[pallet::call]
     impl<T: Config> Pallet<T> {
@@ -618,8 +617,7 @@ pub mod pallet {
             reporter_id: ReporterId,
         ) -> DispatchResult {
             let caller = ensure_signed(origin)?;
-            let owner = ReporterOwner::<T>::get(reporter_id)
-                .ok_or(Error::<T>::ReporterNotFound)?;
+            let owner = ReporterOwner::<T>::get(reporter_id).ok_or(Error::<T>::ReporterNotFound)?;
             ensure!(caller == owner, Error::<T>::NotReporterOwner);
 
             Reporters::<T>::try_mutate(reporter_id, |reporter| -> DispatchResult {
@@ -643,8 +641,7 @@ pub mod pallet {
             frequency: u16,
         ) -> DispatchResult {
             let caller = ensure_signed(origin)?;
-            let owner = ReporterOwner::<T>::get(reporter_id)
-                .ok_or(Error::<T>::ReporterNotFound)?;
+            let owner = ReporterOwner::<T>::get(reporter_id).ok_or(Error::<T>::ReporterNotFound)?;
             ensure!(caller == owner, Error::<T>::NotReporterOwner);
 
             ensure!((-120..=0).contains(&rssi), Error::<T>::InvalidRssi);
@@ -757,8 +754,7 @@ pub mod pallet {
             new_position: Position,
         ) -> DispatchResult {
             let caller = ensure_signed(origin)?;
-            let owner = ReporterOwner::<T>::get(reporter_id)
-                .ok_or(Error::<T>::ReporterNotFound)?;
+            let owner = ReporterOwner::<T>::get(reporter_id).ok_or(Error::<T>::ReporterNotFound)?;
             ensure!(caller == owner, Error::<T>::NotReporterOwner);
 
             Reporters::<T>::try_mutate(reporter_id, |reporter| -> DispatchResult {
@@ -778,8 +774,8 @@ pub mod pallet {
             proof: FraudProof,
         ) -> DispatchResult {
             let caller = ensure_signed(origin)?;
-            let owner = ReporterOwner::<T>::get(submitter_id)
-                .ok_or(Error::<T>::ReporterNotFound)?;
+            let owner =
+                ReporterOwner::<T>::get(submitter_id).ok_or(Error::<T>::ReporterNotFound)?;
             ensure!(caller == owner, Error::<T>::NotReporterOwner);
 
             // Validate the submitter exists and is active
@@ -870,13 +866,19 @@ pub mod pallet {
             let total_weight = weight.saturating_add(100);
 
             Position {
-                x: reporter_pos.x.saturating_mul(weight)
+                x: reporter_pos
+                    .x
+                    .saturating_mul(weight)
                     .saturating_add(current_pos.x.saturating_mul(100))
                     / total_weight,
-                y: reporter_pos.y.saturating_mul(weight)
+                y: reporter_pos
+                    .y
+                    .saturating_mul(weight)
                     .saturating_add(current_pos.y.saturating_mul(100))
                     / total_weight,
-                z: reporter_pos.z.saturating_mul(weight)
+                z: reporter_pos
+                    .z
+                    .saturating_mul(weight)
                     .saturating_add(current_pos.z.saturating_mul(100))
                     / total_weight,
             }
