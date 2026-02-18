@@ -511,8 +511,7 @@ pub mod pallet {
             let caller = ensure_signed(origin)?;
             let caller_actor = Self::account_to_actor(&caller);
 
-            let device = Devices::<T>::get(device_id)
-                .ok_or(Error::<T>::DeviceNotFound)?;
+            let device = Devices::<T>::get(device_id).ok_or(Error::<T>::DeviceNotFound)?;
             ensure!(device.owner == caller_actor, Error::<T>::NotDeviceOwner);
 
             let block_number = frame_system::Pallet::<T>::block_number();

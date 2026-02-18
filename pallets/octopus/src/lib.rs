@@ -871,9 +871,11 @@ pub mod pallet {
                 .try_into()
                 .map_err(|_| Error::<T>::SubnodeNotFound)?;
 
-            let subnode = Subnodes::<T>::get(subnode_id)
-                .ok_or(Error::<T>::SubnodeNotFound)?;
-            ensure!(subnode.operator == caller_actor, Error::<T>::NotSubnodeOperator);
+            let subnode = Subnodes::<T>::get(subnode_id).ok_or(Error::<T>::SubnodeNotFound)?;
+            ensure!(
+                subnode.operator == caller_actor,
+                Error::<T>::NotSubnodeOperator
+            );
 
             let weights = GlobalFusionWeights::<T>::get();
 
@@ -918,9 +920,11 @@ pub mod pallet {
                 .try_into()
                 .map_err(|_| Error::<T>::SubnodeNotFound)?;
 
-            let subnode = Subnodes::<T>::get(subnode_id)
-                .ok_or(Error::<T>::SubnodeNotFound)?;
-            ensure!(subnode.operator == caller_actor, Error::<T>::NotSubnodeOperator);
+            let subnode = Subnodes::<T>::get(subnode_id).ok_or(Error::<T>::SubnodeNotFound)?;
+            ensure!(
+                subnode.operator == caller_actor,
+                Error::<T>::NotSubnodeOperator
+            );
 
             let position = FusionPosition::new(position_x, position_y, position_z);
             let weights = GlobalFusionWeights::<T>::get();
