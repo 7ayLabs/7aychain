@@ -108,10 +108,12 @@ cargo test --workspace
 
 | | Minimum | Recommended |
 |---|---------|-------------|
-| CPU | 2 cores | 4+ cores |
-| RAM | 4 GB | 16 GB |
+| CPU | 4 cores | 8+ cores |
+| RAM | 8 GB | 16 GB |
 | Storage | 50 GB SSD | 100 GB NVMe SSD |
-| Network | 8 Mbit/s | 25+ Mbit/s |
+| Network | 10 Mbit/s | 25+ Mbit/s |
+
+> Validators running witness-circle triangulation and ZK verification benefit from higher single-thread performance. Apple Silicon (M1 Pro/Max/Ultra) and modern x86-64 (AMD Zen 3+, Intel 12th gen+) are well suited.
 
 ## Running 7aychain
 
