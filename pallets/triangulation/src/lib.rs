@@ -566,14 +566,21 @@ pub mod pallet {
         FraudCaseAlreadyExists,
         /// No fraud case found for this reporter
         FraudCaseNotFound,
+        /// Caller is not the owner of this reporter
+        NotReporterOwner,
     }
+
+    /// Maps ReporterId to the AccountId that registered it.
+    #[pallet::storage]
+    pub type ReporterOwner<T: Config> =
+        StorageMap<_, Blake2_128Concat, ReporterId, T::AccountId>;
 
     #[pallet::call]
     impl<T: Config> Pallet<T> {
         #[pallet::call_index(0)]
         #[pallet::weight(T::WeightInfo::register_reporter())]
         pub fn register_reporter(origin: OriginFor<T>, position: Position) -> DispatchResult {
-            ensure_signed(origin)?;
+            let caller = ensure_signed(origin)?;
 
             let count = ReporterCount::<T>::get();
             ensure!(
@@ -593,6 +600,7 @@ pub mod pallet {
             };
 
             Reporters::<T>::insert(reporter_id, reporter);
+            ReporterOwner::<T>::insert(reporter_id, caller);
             ReporterCount::<T>::put(count.saturating_add(1));
 
             Self::deposit_event(Event::ReporterRegistered {
@@ -609,7 +617,10 @@ pub mod pallet {
             origin: OriginFor<T>,
             reporter_id: ReporterId,
         ) -> DispatchResult {
-            ensure_signed(origin)?;
+            let caller = ensure_signed(origin)?;
+            let owner = ReporterOwner::<T>::get(reporter_id)
+                .ok_or(Error::<T>::ReporterNotFound)?;
+            ensure!(caller == owner, Error::<T>::NotReporterOwner);
 
             Reporters::<T>::try_mutate(reporter_id, |reporter| -> DispatchResult {
                 let r = reporter.as_mut().ok_or(Error::<T>::ReporterNotFound)?;
@@ -631,7 +642,10 @@ pub mod pallet {
             signal_type: SignalType,
             frequency: u16,
         ) -> DispatchResult {
-            ensure_signed(origin)?;
+            let caller = ensure_signed(origin)?;
+            let owner = ReporterOwner::<T>::get(reporter_id)
+                .ok_or(Error::<T>::ReporterNotFound)?;
+            ensure!(caller == owner, Error::<T>::NotReporterOwner);
 
             ensure!((-120..=0).contains(&rssi), Error::<T>::InvalidRssi);
 
@@ -742,7 +756,10 @@ pub mod pallet {
             reporter_id: ReporterId,
             new_position: Position,
         ) -> DispatchResult {
-            ensure_signed(origin)?;
+            let caller = ensure_signed(origin)?;
+            let owner = ReporterOwner::<T>::get(reporter_id)
+                .ok_or(Error::<T>::ReporterNotFound)?;
+            ensure!(caller == owner, Error::<T>::NotReporterOwner);
 
             Reporters::<T>::try_mutate(reporter_id, |reporter| -> DispatchResult {
                 let r = reporter.as_mut().ok_or(Error::<T>::ReporterNotFound)?;
@@ -760,7 +777,10 @@ pub mod pallet {
             submitter_id: ReporterId,
             proof: FraudProof,
         ) -> DispatchResult {
-            ensure_signed(origin)?;
+            let caller = ensure_signed(origin)?;
+            let owner = ReporterOwner::<T>::get(submitter_id)
+                .ok_or(Error::<T>::ReporterNotFound)?;
+            ensure!(caller == owner, Error::<T>::NotReporterOwner);
 
             // Validate the submitter exists and is active
             let submitter =
@@ -846,21 +866,33 @@ pub mod pallet {
             current_pos: &Position,
             rssi: i8,
         ) -> Position {
-            let weight = ((rssi + 120) as i64).max(1);
-            let total_weight = weight + 100;
+            let weight = ((rssi as i64).saturating_add(120)).max(1);
+            let total_weight = weight.saturating_add(100);
 
             Position {
-                x: (reporter_pos.x * weight + current_pos.x * 100) / total_weight,
-                y: (reporter_pos.y * weight + current_pos.y * 100) / total_weight,
-                z: (reporter_pos.z * weight + current_pos.z * 100) / total_weight,
+                x: reporter_pos.x.saturating_mul(weight)
+                    .saturating_add(current_pos.x.saturating_mul(100))
+                    / total_weight,
+                y: reporter_pos.y.saturating_mul(weight)
+                    .saturating_add(current_pos.y.saturating_mul(100))
+                    / total_weight,
+                z: reporter_pos.z.saturating_mul(weight)
+                    .saturating_add(current_pos.z.saturating_mul(100))
+                    / total_weight,
             }
         }
 
         fn detect_ghosts(current_block: BlockNumberFor<T>) {
+            const MAX_GHOST_DETECTION_PER_BLOCK: u32 = 200;
             let inactive_timeout = T::InactiveTimeoutBlocks::get();
             let lost_timeout = T::LostTimeoutBlocks::get();
+            let mut processed: u32 = 0;
 
             for (mac_hash, mut device) in TrackedDevices::<T>::iter() {
+                if processed >= MAX_GHOST_DETECTION_PER_BLOCK {
+                    break;
+                }
+                processed = processed.saturating_add(1);
                 let blocks_since = current_block.saturating_sub(device.last_seen);
                 let old_state = device.state;
 

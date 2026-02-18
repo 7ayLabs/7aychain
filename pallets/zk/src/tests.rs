@@ -82,12 +82,11 @@ fn create_share_witness() -> ShareWitness {
     }
 }
 
-fn create_presence_params() -> ([u8; 32], u64, u64, StateRoot) {
+fn create_presence_params() -> ([u8; 32], u64, StateRoot) {
     let secret = [3u8; 32];
     let epoch_id = 1u64;
-    let nonce = 42u64;
     let state_root = StateRoot::EMPTY;
-    (secret, epoch_id, nonce, state_root)
+    (secret, epoch_id, state_root)
 }
 
 fn create_access_params() -> (u64, ActorId, u32, H256) {
@@ -119,8 +118,8 @@ fn verify_share_proof_success() {
 #[test]
 fn verify_presence_proof_success() {
     new_test_ext().execute_with(|| {
-        let (secret, epoch_id, nonce, state_root) = create_presence_params();
-        let (statement, proof) = Zk::generate_presence_proof(&secret, epoch_id, nonce, state_root);
+        let (secret, epoch_id, state_root) = create_presence_params();
+        let (statement, proof) = Zk::generate_presence_proof(&secret, epoch_id, state_root);
         let bounded_proof = BoundedVec::try_from(proof).expect("proof fits");
 
         assert_ok!(Zk::verify_presence_proof(
@@ -156,8 +155,8 @@ fn verify_access_proof_success() {
 #[test]
 fn cannot_reuse_nullifier() {
     new_test_ext().execute_with(|| {
-        let (secret, epoch_id, nonce, state_root) = create_presence_params();
-        let (statement, proof) = Zk::generate_presence_proof(&secret, epoch_id, nonce, state_root);
+        let (secret, epoch_id, state_root) = create_presence_params();
+        let (statement, proof) = Zk::generate_presence_proof(&secret, epoch_id, state_root);
         let bounded_proof = BoundedVec::try_from(proof.clone()).expect("proof fits");
 
         assert_ok!(Zk::verify_presence_proof(
@@ -373,9 +372,9 @@ fn multiple_proof_types() {
             share_bounded
         ));
 
-        let (secret, epoch_id, nonce, state_root) = create_presence_params();
+        let (secret, epoch_id, state_root) = create_presence_params();
         let (presence_statement, presence_proof) =
-            Zk::generate_presence_proof(&secret, epoch_id, nonce, state_root);
+            Zk::generate_presence_proof(&secret, epoch_id, state_root);
         let presence_bounded = BoundedVec::try_from(presence_proof).expect("proof fits");
 
         assert_ok!(Zk::verify_presence_proof(
@@ -450,10 +449,9 @@ fn genesis_initializes_correctly() {
 fn different_epochs_different_nullifiers() {
     new_test_ext().execute_with(|| {
         let secret = [3u8; 32];
-        let nonce = 42u64;
         let state_root = StateRoot::EMPTY;
 
-        let (statement1, proof1) = Zk::generate_presence_proof(&secret, 1, nonce, state_root);
+        let (statement1, proof1) = Zk::generate_presence_proof(&secret, 1, state_root);
         let bounded1 = BoundedVec::try_from(proof1).expect("proof fits");
 
         assert_ok!(Zk::verify_presence_proof(
@@ -462,7 +460,7 @@ fn different_epochs_different_nullifiers() {
             bounded1
         ));
 
-        let (statement2, proof2) = Zk::generate_presence_proof(&secret, 2, nonce, state_root);
+        let (statement2, proof2) = Zk::generate_presence_proof(&secret, 2, state_root);
         let bounded2 = BoundedVec::try_from(proof2).expect("proof fits");
 
         assert_ok!(Zk::verify_presence_proof(
