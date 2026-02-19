@@ -210,6 +210,10 @@ class LaudCLI:
                     ev_str = (f" {C.DIM}({', '.join(pallet_events)}){C.R}"
                               if pallet_events else "")
                     self._ok(f"Block {blk_num}{ev_str}")
+                    # Delay after successful submission to prevent Aura
+                    # "Slot must increase" panic in instant-seal devnet.
+                    # Each block needs a unique slot (1-second granularity).
+                    time.sleep(1)
                 else:
                     self._err(f"{receipt.error_message}")
                     if (hasattr(receipt, 'error_message')
