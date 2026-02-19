@@ -59,6 +59,7 @@ pub enum DataType {
     Proof,
     Metadata,
     Temporary,
+    VaultFile,
 }
 
 impl Default for DataType {
