@@ -255,9 +255,9 @@ class LaudCLI:
                               if pallet_events else "")
                     self._ok(f"Block {blk_num}{ev_str}")
                     # Delay after successful submission to prevent Aura
-                    # "Slot must increase" panic in instant-seal devnet.
-                    # Each block needs a unique slot (1-second granularity).
-                    time.sleep(1)
+                    # "Slot must increase" panic. Aura slot = 7s
+                    # (MinimumPeriod 3500ms * 2).
+                    time.sleep(7)
                 else:
                     self._err(f"{receipt.error_message}")
                     if (hasattr(receipt, 'error_message')
