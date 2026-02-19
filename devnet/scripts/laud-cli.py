@@ -462,7 +462,6 @@ class LaudCLI:
             else:
                 print(f"  {C.Y}{key:>2}{C.R}  {label}")
         print()
-        return self._prompt("", "0")
 
     # ------------------------------------------------------------------
     # Prompt helpers
