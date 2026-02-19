@@ -375,6 +375,15 @@ impl DomainSeparatedHash for PresenceCommitment {
 
 pub const DOMAIN_SHARE: &[u8] = b"7ay:share:v1";
 pub const DOMAIN_VSS: &[u8] = b"7ay:vss:v1";
+pub const DOMAIN_VAULT_FEK: &[u8] = b"7ay:vault:fek:v1";
+pub const DOMAIN_VAULT_FILE: &[u8] = b"7ay:vault:file:v1";
+pub const DOMAIN_UNLOCK: &[u8] = b"7ay:unlock:v1";
+
+/// Compute a fingerprint of a File Encryption Key.
+/// The FEK itself is never stored on-chain; only this fingerprint is.
+pub fn key_fingerprint(fek: &[u8; 32]) -> H256 {
+    hash_with_domain(DOMAIN_VAULT_FEK, fek)
+}
 
 pub struct ShamirScheme;
 
@@ -902,5 +911,35 @@ mod tests {
             siblings: vec![H256::repeat_byte(0x02)],
         };
         assert!(!proof_extra.verify(&leaf, &leaf));
+    }
+
+    #[test]
+    fn key_fingerprint_deterministic() {
+        let fek = [0xABu8; 32];
+        let fp1 = key_fingerprint(&fek);
+        let fp2 = key_fingerprint(&fek);
+        assert_eq!(fp1, fp2);
+    }
+
+    #[test]
+    fn key_fingerprint_different_keys() {
+        let fek1 = [0xABu8; 32];
+        let fek2 = [0xCDu8; 32];
+        assert_ne!(key_fingerprint(&fek1), key_fingerprint(&fek2));
+    }
+
+    #[test]
+    fn vault_domain_separators_unique() {
+        let data = [42u8; 32];
+        let h_fek = hash_with_domain(DOMAIN_VAULT_FEK, &data);
+        let h_file = hash_with_domain(DOMAIN_VAULT_FILE, &data);
+        let h_unlock = hash_with_domain(DOMAIN_UNLOCK, &data);
+        let h_share = hash_with_domain(DOMAIN_SHARE, &data);
+        assert_ne!(h_fek, h_file);
+        assert_ne!(h_fek, h_unlock);
+        assert_ne!(h_fek, h_share);
+        assert_ne!(h_file, h_unlock);
+        assert_ne!(h_file, h_share);
+        assert_ne!(h_unlock, h_share);
     }
 }
