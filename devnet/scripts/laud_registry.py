@@ -60,12 +60,40 @@ DOMAINS = [
         name="presence", title="PRESENCE PROTOCOL",
         number="2", shortcut="p", group="core", check_epoch=True,
         help_summary="Declare, vote on, and finalize proof-of-presence claims",
+        instructions="""
+  The Presence Protocol lets participants prove they are active on the
+  network during a given time period.
+
+  TYPICAL FLOW:
+    1. Make sure a time period is active (use "bootstrap" to set up)
+    2. Declare your presence (option 1)
+    3. Validators vote to confirm (option 4)
+    4. After enough votes, finalize (option 5)
+
+  PREREQUISITES:
+    - An active time period (type "bootstrap" if first time)
+    - A funded account (all test accounts are pre-funded)
+""",
         commands=[
             Command("1", "Declare Presence", "submit",
                     pallet="Presence", function="declare_presence",
                     params=[Param("epoch", "Time period", "epoch")],
                     aliases=["declare", "d"],
-                    help_text="Tell the network you are present in this time period"),
+                    help_text="Tell the network you are present in this time period",
+                    instructions="""
+  DECLARE PRESENCE
+
+  What this does:
+    Tells the network you are present during the chosen time period.
+
+  What you need:
+    - An active time period number
+    - A funded account
+
+  What happens next:
+    - Validators can now vote on your claim
+    - Once enough votes arrive, you can finalize
+"""),
             Command("2", "Declare with Commitment", "custom",
                     custom_handler="_presence_commit",
                     aliases=["commit", "cm"],
@@ -87,7 +115,22 @@ DOMAINS = [
                         Param("approve", "Approve?", "bool", True),
                     ],
                     aliases=["vote", "v"],
-                    help_text="Cast your vote on someone's presence claim"),
+                    help_text="Cast your vote on someone's presence claim",
+                    instructions="""
+  VOTE ON PRESENCE
+
+  What this does:
+    As a validator, cast your vote approving or rejecting
+    someone's presence claim.
+
+  What you need:
+    - You must be an active validator
+    - The target identity must have declared presence
+    - You haven't already voted for this identity this period
+
+  What happens next:
+    - Once enough validators vote, the presence can be finalized
+"""),
             Command("5", "Finalize Presence", "submit",
                     pallet="Presence", function="finalize_presence",
                     params=[
@@ -95,7 +138,21 @@ DOMAINS = [
                         Param("epoch", "Time period", "epoch"),
                     ],
                     aliases=["finalize", "f"],
-                    help_text="Lock in a presence claim after enough votes"),
+                    help_text="Lock in a presence claim after enough votes",
+                    instructions="""
+  FINALIZE PRESENCE
+
+  What this does:
+    Locks in a presence claim permanently after enough votes.
+
+  What you need:
+    - Enough validator votes (check with option c)
+    - The presence must be in "Validated" state
+
+  After this:
+    - The presence is permanently recorded
+    - It cannot be changed or reversed
+"""),
             Command("6", "Penalize Presence [admin]", "submit",
                     pallet="Presence", function="slash_presence",
                     params=[
@@ -159,6 +216,18 @@ DOMAINS = [
         name="epoch", title="TIME PERIODS (Epochs)",
         number="3", shortcut="e", group="core",
         help_summary="Schedule, start, close, and finalize time periods",
+        instructions="""
+  Time Periods (Epochs) are windows during which presence proofs
+  happen. Each period moves through: Scheduled -> Active -> Closed -> Finalized.
+
+  TYPICAL FLOW:
+    1. Schedule a new time period (option 1)
+    2. Start it when the block arrives (option 2)
+    3. Let participants declare and vote
+    4. Close and finalize when done (options 3-4)
+
+  TIP: Use "bootstrap" to automatically set up time period 1.
+""",
         commands=[
             Command("1", "Schedule Time Period [admin]", "submit",
                     pallet="Epoch", function="schedule_epoch",
@@ -227,6 +296,18 @@ DOMAINS = [
         name="validator", title="VALIDATORS",
         number="4", shortcut="val", group="core",
         help_summary="Register, stake, activate, and manage network validators",
+        instructions="""
+  Validators are network participants who vote on presence claims.
+  They must stake tokens to participate and can be penalized for misbehavior.
+
+  TYPICAL FLOW:
+    1. Register with a stake (option 1)
+    2. Activate your validator (option 2)
+    3. Vote on presence claims (via Presence menu)
+    4. Withdraw stake when done (option 4)
+
+  TIP: "bootstrap" registers 6 test validators automatically.
+""",
         commands=[
             Command("1", "Register as Validator", "submit",
                     pallet="Validator", function="register_validator",
@@ -293,6 +374,18 @@ DOMAINS = [
         name="pbt", title="POSITION-BASED TRIANGULATION",
         number="5", shortcut="", group="positioning", check_epoch=True,
         help_summary="Claim and verify physical positions via witnesses",
+        instructions="""
+  Position-Based Triangulation lets participants prove their physical
+  location using witness attestations from nearby validators.
+
+  TYPICAL FLOW:
+    1. Set up validators at known positions (option 1 or 5 for auto)
+    2. Claim your position (option 2)
+    3. Nearby witnesses attest to your location (option 3)
+    4. Verify the position once enough attestations arrive (option 4)
+
+  TIP: Option 6 runs a complete test automatically.
+""",
         commands=[
             Command("1", "Set Validator Position", "custom",
                     custom_handler="_pbt_set_position",
@@ -358,6 +451,16 @@ DOMAINS = [
         name="triangulation", title="SIGNAL TRIANGULATION",
         number="6", shortcut="tri", group="positioning",
         help_summary="Signal-based location reporting and fraud detection",
+        instructions="""
+  Signal Triangulation uses signal reports from multiple reporters
+  to estimate device locations and detect fraudulent signals.
+
+  TYPICAL FLOW:
+    1. Register a reporter at a known position (option 1)
+    2. Submit signal observations (option 3)
+    3. The system estimates positions from multiple reports
+    4. Submit fraud proofs if you detect anomalies (option 5)
+""",
         commands=[
             Command("1", "Register Reporter", "submit",
                     pallet="Triangulation", function="register_reporter",
@@ -409,6 +512,15 @@ DOMAINS = [
         name="dispute", title="DISPUTE RESOLUTION",
         number="7", shortcut="dis", group="security",
         help_summary="Open disputes, submit evidence, resolve cases",
+        instructions="""
+  Dispute Resolution handles disagreements about validator behavior.
+  Anyone can open a dispute and submit evidence for review.
+
+  TYPICAL FLOW:
+    1. Open a dispute against a validator (option 1)
+    2. Submit supporting evidence (option 2)
+    3. An admin resolves the dispute (option 3)
+""",
         commands=[
             Command("1", "Open Dispute", "submit",
                     pallet="Dispute", function="open_dispute",
@@ -458,6 +570,16 @@ DOMAINS = [
         name="zk", title="PRIVACY PROOFS (Zero-Knowledge)",
         number="8", shortcut="", group="security",
         help_summary="Verify claims without revealing private data",
+        instructions="""
+  Privacy Proofs use zero-knowledge cryptography to verify claims
+  without revealing the underlying private data.
+
+  PROOF TYPES:
+    - Share proofs: verify a secret share is valid
+    - Presence proofs: verify someone was present without details
+    - Access proofs: verify authorization without credentials
+    - SNARK proofs: verify using registered circuits
+""",
         commands=[
             Command("1", "Verify Share Proof", "custom",
                     custom_handler="_zk_share_proof",
@@ -492,6 +614,19 @@ DOMAINS = [
         name="vault", title="SECURE VAULT (Shared Keys)",
         number="9", shortcut="", group="security",
         help_summary="Secure shared key management with split secrets",
+        instructions="""
+  The Secure Vault uses threshold cryptography (t-of-n) so that
+  a secret is split among multiple members and can only be
+  reconstructed when enough members cooperate.
+
+  TYPICAL FLOW:
+    1. Create a vault with a threshold (option 1)
+    2. Add members (option 2)
+    3. Activate the vault (option 3)
+    4. Members commit and reveal their shares (options 4-5)
+
+  EXAMPLE: A 2-of-3 vault needs any 2 of 3 members to reconstruct.
+""",
         commands=[
             Command("1", "Create Vault", "submit",
                     pallet="Vault", function="create_vault",
@@ -552,6 +687,16 @@ DOMAINS = [
         name="device", title="DEVICES",
         number="10", shortcut="dev", group="identity",
         help_summary="Register, activate, suspend, and monitor devices",
+        instructions="""
+  Devices represent physical hardware registered on the network.
+  Each device has a trust score and must send heartbeats to stay active.
+
+  TYPICAL FLOW:
+    1. Register a device with its type and key (option 1)
+    2. Activate the device (option 2)
+    3. Send periodic heartbeats (option 6)
+    4. Submit attestations to build trust (option 5)
+""",
         commands=[
             Command("1", "Register Device", "submit",
                     pallet="Device", function="register_device",
@@ -607,6 +752,19 @@ DOMAINS = [
         name="lifecycle", title="IDENTITY LIFECYCLE",
         number="11", shortcut="life", group="identity",
         help_summary="Register identities, manage key rotation and destruction",
+        instructions="""
+  Identity Lifecycle manages the full life of network identities:
+  registration, activation, key rotation, and destruction.
+
+  TYPICAL FLOW:
+    1. Register a new identity (option 1)
+    2. Admin activates it (option 2)
+    3. Rotate keys periodically (options 7-8)
+    4. Destroy when no longer needed (options 4-6)
+
+  KEY ROTATION: Always initiate first, then complete.
+  DESTRUCTION: Requires multiple attestations for safety.
+""",
         commands=[
             Command("1", "Register Identity", "submit",
                     pallet="Lifecycle", function="register_actor",
@@ -661,6 +819,19 @@ DOMAINS = [
         name="governance", title="PERMISSIONS & ACCESS",
         number="12", shortcut="gov", group="identity",
         help_summary="Grant, revoke, and delegate access permissions",
+        instructions="""
+  Permissions & Access controls what identities can do on the network.
+  Capabilities are fine-grained permissions that can be delegated.
+
+  PERMISSIONS BITMASK:
+    R=1  W=2  X=4  D=8  A=16
+    Example: 7 = Read + Write + Execute
+
+  TYPICAL FLOW:
+    1. Grant a capability to someone (option 1)
+    2. They can delegate it further (option 3)
+    3. Revoke when no longer needed (option 2)
+""",
         commands=[
             Command("1", "Grant Capability", "custom",
                     custom_handler="_gov_grant",
@@ -694,6 +865,16 @@ DOMAINS = [
         name="semantic", title="TRUST RELATIONSHIPS",
         number="13", shortcut="sem", group="intelligence",
         help_summary="Create and manage trust relationships between identities",
+        instructions="""
+  Trust Relationships create verifiable connections between identities.
+  Each relationship has a trust level (0-100) and can be bidirectional.
+
+  TYPICAL FLOW:
+    1. Create a relationship request (option 1)
+    2. The other party accepts (option 2)
+    3. Adjust trust levels over time (option 4)
+    4. Revoke if the relationship ends (option 3)
+""",
         commands=[
             Command("1", "Create Relationship", "custom",
                     custom_handler="_semantic_create",
@@ -734,6 +915,18 @@ DOMAINS = [
         name="boomerang", title="ROUND-TRIP VERIFICATION",
         number="14", shortcut="boom", group="intelligence",
         help_summary="Round-trip path verification between identities",
+        instructions="""
+  Round-Trip Verification tests network paths by sending a signal
+  through a chain of identities and verifying it returns.
+
+  TYPICAL FLOW:
+    1. Initiate a path to a target (option 1)
+    2. Each intermediate identity records a hop (option 2)
+    3. The path completes when the signal returns
+    4. Extend timeout if needed (option 3)
+
+  TIMEOUT: Default 30 seconds, max 60 second extension.
+""",
         commands=[
             Command("1", "Initiate Path", "submit",
                     pallet="Boomerang", function="initiate_path",
@@ -773,6 +966,17 @@ DOMAINS = [
         name="autonomous", title="BEHAVIOR PATTERNS",
         number="15", shortcut="auto", group="intelligence",
         help_summary="Track behavior patterns and anomaly detection",
+        instructions="""
+  Behavior Patterns tracks and classifies identity behaviors
+  to detect anomalies and build reputation profiles.
+
+  TYPICAL FLOW:
+    1. Create a profile for an identity (option 1)
+    2. Record behaviors as they happen (option 2)
+    3. Register known patterns (option 3)
+    4. Match behaviors against patterns (option 4)
+    5. Flag suspicious identities (option 7)
+""",
         commands=[
             Command("1", "Create Profile", "submit",
                     pallet="Autonomous", function="create_profile",
@@ -845,6 +1049,19 @@ DOMAINS = [
         name="octopus", title="MULTI-NODE CLUSTERS",
         number="16", shortcut="oct", group="intelligence",
         help_summary="Multi-node orchestration with sub-node management",
+        instructions="""
+  Multi-Node Clusters let multiple sub-nodes work together as a
+  single logical entity for distributed processing.
+
+  TYPICAL FLOW:
+    1. Create a cluster (option 1)
+    2. Register and activate sub-nodes (options 2-3)
+    3. Sub-nodes send heartbeats (option 8)
+    4. Monitor throughput (options 5, 7)
+    5. Evaluate if scaling is needed (option 6)
+
+  MAX SUB-NODES: 8 per cluster.
+""",
         commands=[
             Command("1", "Create Cluster", "custom",
                     custom_handler="_octopus_create_cluster",
@@ -901,6 +1118,18 @@ DOMAINS = [
         name="storage", title="DATA STORAGE",
         number="17", shortcut="store", group="intelligence",
         help_summary="Time-period-bound encrypted data storage",
+        instructions="""
+  Data Storage provides encrypted, time-period-bound storage.
+  Data is tied to a specific time period and can be archived
+  when the period ends.
+
+  TYPICAL FLOW:
+    1. Store data with a key and type (option 1)
+    2. Update or delete as needed (options 2-3)
+    3. Admin finalizes storage when the period ends (option 5)
+
+  DATA TYPES: Presence, Commitment, Proof, Metadata, Temporary
+""",
         commands=[
             Command("1", "Store Data", "submit",
                     pallet="Storage", function="store_data",
@@ -959,6 +1188,10 @@ DOMAINS = [
         name="chain", title="CHAIN STATUS",
         number="18", shortcut="", group="status",
         help_summary="Node health, blocks, balances, and pallets",
+        instructions="""
+  Chain Status shows the health and state of the connected node.
+  Use this to verify the node is running and check balances.
+""",
         commands=[
             Command("1", "Node health & info", "custom",
                     custom_handler="_chain_health",
@@ -988,6 +1221,11 @@ DOMAINS = [
         name="blocks", title="BLOCK EXPLORER",
         number="19", shortcut="blk", group="devtools",
         help_summary="Inspect blocks, transactions, and finalization",
+        instructions="""
+  Block Explorer lets you inspect individual blocks, decode
+  transactions, and view events. Useful for debugging what
+  happened on-chain.
+""",
         commands=[
             Command("1", "Get block by number", "custom",
                     custom_handler="_blocks_by_number",
@@ -1017,6 +1255,10 @@ DOMAINS = [
         name="inspect", title="STORAGE INSPECTOR",
         number="20", shortcut="si", group="devtools",
         help_summary="Query raw storage, enumerate keys, view proofs",
+        instructions="""
+  Storage Inspector provides low-level access to the chain's
+  key-value storage. Advanced tool for debugging storage state.
+""",
         commands=[
             Command("1", "Query storage by pallet + item", "custom",
                     custom_handler="_si_query_pallet",
@@ -1043,6 +1285,11 @@ DOMAINS = [
         name="runtime", title="RUNTIME EXPLORER",
         number="21", shortcut="rt", group="devtools",
         help_summary="Explore pallets, calls, storage, events, errors",
+        instructions="""
+  Runtime Explorer lets you browse the runtime metadata: pallets,
+  callable functions, storage items, events, and errors. Useful
+  for discovering what the chain can do.
+""",
         commands=[
             Command("1", "List all pallets", "custom",
                     custom_handler="_rt_list_pallets",
@@ -1069,6 +1316,10 @@ DOMAINS = [
         name="network", title="NETWORK & PEERS",
         number="22", shortcut="net", group="devtools",
         help_summary="View peers, sync status, and manage connections",
+        instructions="""
+  Network & Peers shows connection status, peer information, and
+  sync state. Useful for monitoring the network health.
+""",
         commands=[
             Command("1", "Connected peers", "custom",
                     custom_handler="_net_peers",
@@ -1101,6 +1352,11 @@ DOMAINS = [
         name="crypto", title="CRYPTO TOOLKIT",
         number="23", shortcut="cr", group="devtools",
         help_summary="Keypairs, hashing, signing, SCALE encoding",
+        instructions="""
+  Crypto Toolkit provides cryptographic utilities: key generation,
+  hashing, signing, and SCALE encoding/decoding. These are local
+  operations that don't interact with the chain.
+""",
         commands=[
             Command("1", "Generate keypair", "custom",
                     custom_handler="_crypto_generate",
@@ -1145,6 +1401,11 @@ DOMAINS = [
         name="accounts", title="ACCOUNTS",
         number="24", shortcut="acct", group="devtools",
         help_summary="Account info, balances, nonces, fee estimation",
+        instructions="""
+  Accounts shows detailed information about test accounts including
+  balances, nonces, and fee estimation. Useful for checking account
+  state before and after transactions.
+""",
         commands=[
             Command("1", "Full account info", "custom",
                     custom_handler="_acct_full_info",
@@ -1168,6 +1429,11 @@ DOMAINS = [
         name="events", title="EVENTS",
         number="25", shortcut="ev", group="devtools",
         help_summary="Decode and filter blockchain events",
+        instructions="""
+  Events are emitted by the chain when state changes happen.
+  Use this tool to decode events, filter by pallet, and browse
+  recent history.
+""",
         commands=[
             Command("1", "Events at latest block", "custom",
                     custom_handler="_ev_latest",
