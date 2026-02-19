@@ -32,8 +32,14 @@ from laud_registry import (
     build_cmd_names_for_mode, build_cmd_subs_for_mode,
 )
 from laud_files import (
-    hash_file_blake2b, store_file, export_file as export_vault_file,
+    hash_file_blake2b, store_encrypted_file, retrieve_and_decrypt,
     add_to_index, get_vault_files, verify_file as verify_vault_file,
+    store_share, load_share, load_all_shares,
+    export_share_hex, import_share_hex, secure_zero,
+)
+from laud_crypto import (
+    ShamirScheme, key_fingerprint, generate_fek,
+    DOMAIN_VAULT_FEK,
 )
 
 
@@ -2259,10 +2265,11 @@ class LaudCLI:
             self._info("No events at latest block")
 
     # ------------------------------------------------------------------
-    # Custom handlers: Vault Files
+    # Custom handlers: Vault Secure Documents
     # ------------------------------------------------------------------
 
-    def _vault_upload_file(self):
+    def _vault_secure_file(self):
+        """Encrypt a file with AES-256-GCM, split key via Shamir, register on-chain."""
         if not self._ensure():
             return
         vault_id = self._prompt_int("Vault ID", 0)
@@ -2270,39 +2277,201 @@ class LaudCLI:
         if not vault_info or not vault_info.value:
             self._err("Vault not found")
             return
+        vi = vault_info.value
+        status = vi.get('status')
+        if status != 'Active':
+            self._err(f"Vault is not active (status: {status})")
+            return
+        threshold = vi.get('threshold', 2)
+        ring_size = vi.get('ring_size', 3)
+        self._val("Vault", f"#{vault_id}  t={threshold} n={ring_size}")
+
         file_path = self._prompt("File path", "")
         path = pathlib.Path(file_path).expanduser().resolve()
         if not path.is_file():
             self._err(f"File not found: {path}")
             return
-        self._info(f"Hashing {path.name} ({path.stat().st_size} bytes)...")
-        file_hash, dest = store_file(vault_id, str(path))
-        self._val("Blake2-256", f"0x{file_hash}")
+        size = path.stat().st_size
+        if size > 100 * 1024 * 1024:
+            self._err(f"File too large: {size:,} bytes (max 100 MB)")
+            return
+        self._info(f"Securing {path.name} ({size:,} bytes)...")
+        self._info(f"Protection: {threshold}-of-{ring_size} threshold")
+
+        # Generate FEK and encrypt
+        fek = bytearray(generate_fek())
+        try:
+            enc_hash, pt_hash, sz, dest = store_encrypted_file(
+                vault_id, str(path), bytes(fek))
+        except Exception as e:
+            secure_zero(fek)
+            self._err(f"Encryption failed: {e}")
+            return
+
+        # Compute key fingerprint
+        fp = key_fingerprint(bytes(fek))
+        fp_hex = fp.hex()
+
+        # Split FEK via Shamir
+        shares = ShamirScheme.split(bytes(fek), threshold, ring_size)
+        if shares is None:
+            secure_zero(fek)
+            self._err("Shamir split failed")
+            return
+
+        # Store shares locally
+        for idx, value in shares:
+            store_share(vault_id, idx, value)
+
+        self._val("Encrypted hash", f"0x{enc_hash[:32]}...")
+        self._val("Plaintext hash", f"0x{pt_hash[:32]}...")
+        self._val("Key fingerprint", f"0x{fp_hex[:32]}...")
+        self._val("Shares created", f"{len(shares)}")
+        self._val("Local .enc file", str(dest))
+
+        # Register on-chain
         epoch = self._prompt_epoch()
         signer = self._prompt_account("Signer")
-        self._info("Storing hash on-chain via Storage.store_data...")
-        receipt = self._submit("Storage", "store_data", {
+
+        self._info("Registering file on-chain (Vault.register_file)...")
+        receipt = self._submit("Vault", "register_file", {
+            "vault_id": vault_id,
+            "enc_hash": f"0x{enc_hash}",
+            "plaintext_hash": f"0x{pt_hash}",
+            "key_fingerprint": f"0x{fp_hex}",
+            "size_bytes": sz,
+        }, signer)
+
+        if not (receipt and receipt.is_success):
+            secure_zero(fek)
+            self._err("On-chain file registration failed")
+            return
+
+        self._info("Storing proof in Storage pallet...")
+        self._submit("Storage", "store_data", {
             "epoch": epoch,
-            "key": f"0x{file_hash}",
-            "data_hash": f"0x{file_hash}",
-            "data_type": "Metadata",
-            "size_bytes": path.stat().st_size,
+            "key": f"0x{enc_hash}",
+            "data_hash": f"0x{enc_hash}",
+            "data_type": "VaultFile",
+            "size_bytes": sz,
             "retention": "Persistent",
         }, signer)
-        if receipt and receipt.is_success:
-            add_to_index(
-                vault_id=vault_id,
-                file_hash=file_hash,
-                original_name=path.name,
-                size_bytes=path.stat().st_size,
-                uploader=signer,
-                epoch=epoch,
-            )
-            self._ok(f"File uploaded: {path.name}")
-            self._val("On-chain key", f"0x{file_hash}")
-            self._val("Local copy", str(dest))
-        else:
-            self._err("On-chain storage failed.")
+
+        # Commit shares on-chain
+        self._info("Committing share hashes on-chain...")
+        for idx, value in shares:
+            commitment = ShamirScheme.create_commitment(idx, value)
+            self._submit("Vault", "commit_share", {
+                "vault_id": vault_id,
+                "commitment": f"0x{commitment.hex()}",
+            }, signer)
+
+        # Update local index
+        add_to_index(
+            vault_id=vault_id,
+            enc_hash=enc_hash,
+            plaintext_hash=pt_hash,
+            original_name=path.name,
+            size_bytes=sz,
+            uploader=signer,
+            epoch=epoch,
+            key_fingerprint_hex=fp_hex,
+            threshold=threshold,
+            ring_size=ring_size,
+        )
+
+        secure_zero(fek)
+        self._ok(f"Document secured: {path.name}")
+        self._info(f"Requires {threshold} of {ring_size} shares to unlock")
+
+    def _vault_unlock_file(self):
+        """Collect shares, reconstruct FEK, decrypt and export a vault file."""
+        if not self._ensure():
+            return
+        vault_id = self._prompt_int("Vault ID", 0)
+        files = get_vault_files(vault_id)
+        if not files:
+            self._info("No files in this vault")
+            return
+
+        for i, f in enumerate(files):
+            print(f"    {C.Y}{i+1}{C.R} {f['original_name']} "
+                  f"{C.DIM}({f.get('enc_hash', '?')[:16]}...){C.R}")
+        idx = self._prompt_int("File #", 1) - 1
+        if not (0 <= idx < len(files)):
+            return
+        f = files[idx]
+        enc_hash = f.get('enc_hash', '')
+        threshold = f.get('threshold', 2)
+
+        self._val("File", f['original_name'])
+        self._val("Threshold", f"{threshold} shares needed")
+
+        # Request unlock on-chain
+        signer = self._prompt_account("Signer")
+        self._info("Requesting unlock on-chain (Vault.request_unlock)...")
+        receipt = self._submit("Vault", "request_unlock", {
+            "vault_id": vault_id,
+            "file_enc_hash": f"0x{enc_hash}",
+        }, signer)
+
+        if not (receipt and receipt.is_success):
+            self._err("Unlock request failed (may need approvals first)")
+
+        # Collect shares
+        self._info("Loading local shares...")
+        local_shares = load_all_shares(vault_id)
+        self._val("Local shares found", str(len(local_shares)))
+
+        all_shares = list(local_shares)
+
+        while len(all_shares) < threshold:
+            self._info(f"Need {threshold - len(all_shares)} more share(s)")
+            hex_input = self._prompt("Paste share hex (or 'done')", "done")
+            if hex_input.lower() == 'done':
+                break
+            parsed = import_share_hex(hex_input)
+            if parsed is None:
+                self._err("Invalid share format (expected: XX:hex...)")
+                continue
+            # Avoid duplicate indices
+            existing_indices = {s[0] for s in all_shares}
+            if parsed[0] in existing_indices:
+                self._err(f"Share index {parsed[0]} already loaded")
+                continue
+            all_shares.append(parsed)
+            self._ok(f"Share #{parsed[0]} imported")
+
+        if len(all_shares) < threshold:
+            self._err(f"Not enough shares ({len(all_shares)}/{threshold})")
+            return
+
+        # Reconstruct FEK
+        self._info("Reconstructing encryption key...")
+        fek = bytearray(ShamirScheme.reconstruct(all_shares, threshold))
+        if fek is None:
+            self._err("Reconstruction failed")
+            return
+
+        # Verify fingerprint matches
+        expected_fp = f.get('key_fingerprint', '')
+        computed_fp = key_fingerprint(bytes(fek)).hex()
+        if expected_fp and computed_fp != expected_fp:
+            secure_zero(fek)
+            self._err("Key fingerprint mismatch - wrong shares?")
+            return
+        self._ok("Key fingerprint verified")
+
+        # Decrypt
+        dest = self._prompt("Export to", f"./{f['original_name']}")
+        try:
+            resolved = retrieve_and_decrypt(
+                vault_id, enc_hash, bytes(fek), dest)
+            self._ok(f"Document decrypted to {resolved}")
+        except Exception as e:
+            self._err(f"Decryption failed: {e}")
+        finally:
+            secure_zero(fek)
 
     def _vault_list_files(self):
         vault_id = self._prompt_int("Vault ID", 0)
@@ -2312,15 +2481,16 @@ class LaudCLI:
             return
         rows = []
         for f in files:
+            h = f.get('enc_hash', f.get('file_hash', '?'))
             rows.append([
                 f['original_name'][:24],
                 f"{f['size_bytes']:,}",
-                f['file_hash'][:16] + '...',
+                h[:16] + '...',
                 f['uploaded_at'][:10],
-                'ok' if f.get('verified') else '?',
+                f"{f.get('threshold', '?')}/{f.get('ring_size', '?')}",
             ])
         self._table(
-            ["Name", "Size", "Hash", "Date", "OK"], rows)
+            ["Name", "Size", "Hash", "Date", "t/n"], rows)
 
     def _vault_verify_file(self):
         vault_id = self._prompt_int("Vault ID", 0)
@@ -2329,40 +2499,124 @@ class LaudCLI:
             self._info("No files in this vault")
             return
         for i, f in enumerate(files):
+            h = f.get('enc_hash', f.get('file_hash', '?'))
             print(f"    {C.Y}{i+1}{C.R} {f['original_name']} "
-                  f"{C.DIM}({f['file_hash'][:16]}...){C.R}")
+                  f"{C.DIM}({h[:16]}...){C.R}")
         idx = self._prompt_int("File #", 1) - 1
         if not (0 <= idx < len(files)):
             return
         f = files[idx]
-        ok, current_hash = verify_vault_file(vault_id, f['file_hash'])
+        enc_hash = f.get('enc_hash', f.get('file_hash', ''))
+        ok, current_hash = verify_vault_file(vault_id, enc_hash)
         if ok is None:
             self._err("Local file not found (may have been deleted)")
         elif ok:
             self._ok("File integrity verified (hash matches)")
         else:
             self._err("HASH MISMATCH -- file has been modified!")
-            self._val("Expected", f['file_hash'][:32] + '...')
+            self._val("Expected", enc_hash[:32] + '...')
             self._val("Got", current_hash[:32] + '...')
 
-    def _vault_export_file(self):
+    def _vault_export_share(self):
         vault_id = self._prompt_int("Vault ID", 0)
-        files = get_vault_files(vault_id)
-        if not files:
-            self._info("No files in this vault")
+        share_idx = self._prompt_int("Share index", 1)
+        hex_str = export_share_hex(vault_id, share_idx)
+        if hex_str is None:
+            self._err(f"Share #{share_idx} not found for vault {vault_id}")
             return
-        for i, f in enumerate(files):
-            print(f"    {C.Y}{i+1}{C.R} {f['original_name']}")
-        idx = self._prompt_int("File #", 1) - 1
-        if not (0 <= idx < len(files)):
+        self._ok("Share exported (copy this hex string):")
+        print(f"    {C.CY}{hex_str}{C.R}")
+
+    def _vault_import_share(self):
+        vault_id = self._prompt_int("Vault ID", 0)
+        hex_input = self._prompt("Share hex (XX:value...)", "")
+        parsed = import_share_hex(hex_input)
+        if parsed is None:
+            self._err("Invalid share format (expected: XX:hex...)")
             return
-        f = files[idx]
-        dest = self._prompt("Export to", f"./{f['original_name']}")
+        idx, value = parsed
+        path = store_share(vault_id, idx, value)
+        self._ok(f"Share #{idx} imported and saved to {path}")
+
+    # -- Dev mode vault tools --
+
+    def _vault_dev_split(self):
+        secret_hex = self._prompt("Secret (64-char hex)", "")
         try:
-            resolved = export_vault_file(
-                vault_id, f['file_hash'], dest)
-            self._ok(f"Exported to {resolved}")
-        except FileNotFoundError as e:
+            secret = bytes.fromhex(secret_hex)
+        except ValueError:
+            self._err("Invalid hex")
+            return
+        if len(secret) != 32:
+            self._err("Secret must be exactly 32 bytes (64 hex chars)")
+            return
+        threshold = self._prompt_int("Threshold (t)", 2)
+        total = self._prompt_int("Total shares (n)", 3)
+        shares = ShamirScheme.split(secret, threshold, total)
+        if shares is None:
+            self._err("Invalid parameters (need 2 <= t <= n)")
+            return
+        self._ok(f"Split into {len(shares)} shares (t={threshold})")
+        for idx, value in shares:
+            print(f"    Share {C.Y}#{idx}{C.R}: {value.hex()}")
+
+    def _vault_dev_reconstruct(self):
+        threshold = self._prompt_int("Threshold (t)", 2)
+        shares = []
+        for i in range(threshold):
+            hex_input = self._prompt(f"Share {i+1} (XX:value...)", "")
+            parsed = import_share_hex(hex_input)
+            if parsed is None:
+                self._err(f"Invalid share format for share {i+1}")
+                return
+            shares.append(parsed)
+        result = ShamirScheme.reconstruct(shares, threshold)
+        if result is None:
+            self._err("Reconstruction failed")
+            return
+        self._ok("Reconstructed secret:")
+        print(f"    {C.CY}{result.hex()}{C.R}")
+
+    def _vault_dev_encrypt(self):
+        file_path = self._prompt("File path", "")
+        fek_hex = self._prompt("FEK (64-char hex)", "")
+        try:
+            fek = bytes.fromhex(fek_hex)
+        except ValueError:
+            self._err("Invalid hex")
+            return
+        if len(fek) != 32:
+            self._err("FEK must be 32 bytes")
+            return
+        vault_id = self._prompt_int("Vault ID (for storage)", 0)
+        try:
+            enc_hash, pt_hash, sz, dest = store_encrypted_file(
+                vault_id, file_path, fek)
+            self._ok("Encrypted successfully")
+            self._val("Enc hash", enc_hash)
+            self._val("PT hash", pt_hash)
+            self._val("Size", f"{sz:,}")
+            self._val("Path", str(dest))
+        except Exception as e:
+            self._err(str(e))
+
+    def _vault_dev_decrypt(self):
+        vault_id = self._prompt_int("Vault ID", 0)
+        enc_hash = self._prompt("Enc hash (hex, no 0x)", "")
+        fek_hex = self._prompt("FEK (64-char hex)", "")
+        try:
+            fek = bytes.fromhex(fek_hex)
+        except ValueError:
+            self._err("Invalid hex")
+            return
+        if len(fek) != 32:
+            self._err("FEK must be 32 bytes")
+            return
+        dest = self._prompt("Export to", "./decrypted_output")
+        try:
+            resolved = retrieve_and_decrypt(vault_id, enc_hash, fek, dest)
+            self._ok(f"Decrypted to {resolved}")
+        except Exception as e:
             self._err(str(e))
 
     # ------------------------------------------------------------------
