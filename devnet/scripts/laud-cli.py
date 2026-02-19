@@ -10,7 +10,7 @@ Requirements:
     pip install substrate-interface
 """
 
-import sys, os, time, json, hashlib, secrets, argparse
+import sys, os, time, json, hashlib, secrets, argparse, pathlib
 from datetime import datetime
 
 SUBSTRATE_OK = False
@@ -26,6 +26,14 @@ from laud_registry import (
     find_domain, find_command,
     build_menu_aliases, build_sub_aliases,
     build_cmd_names, build_cmd_subs,
+    get_domains_for_mode, get_commands_for_mode,
+    get_group_display_order,
+    build_menu_aliases_for_mode,
+    build_cmd_names_for_mode, build_cmd_subs_for_mode,
+)
+from laud_files import (
+    hash_file_blake2b, store_file, export_file as export_vault_file,
+    add_to_index, get_vault_files, verify_file as verify_vault_file,
 )
 
 
@@ -43,7 +51,9 @@ class C:
 
 class LaudCLI:
 
-    def __init__(self, url="ws://127.0.0.1:9944"):
+    MODE_CONFIG_FILE = os.path.expanduser('~/.laud_config.json')
+
+    def __init__(self, url="ws://127.0.0.1:9944", mode=None):
         self.url = url
         self.substrate = None
         self.keypairs = {}
@@ -52,8 +62,42 @@ class LaudCLI:
         self._ctx_account = 'alice'
         self._nav_stack = []
         self._history_file = os.path.expanduser('~/.laud_history')
-        self._menu_aliases = build_menu_aliases()
+        self._mode = mode or self._load_mode()
+        self._menu_aliases = build_menu_aliases_for_mode(self._mode)
         self._sub_aliases = build_sub_aliases()
+
+    def _load_mode(self):
+        """Load mode from config file. Defaults to 'normal'."""
+        try:
+            with open(self.MODE_CONFIG_FILE, 'r') as f:
+                config = json.load(f)
+                return config.get('mode', 'normal')
+        except (FileNotFoundError, json.JSONDecodeError, KeyError):
+            return 'normal'
+
+    def _save_mode(self):
+        """Persist current mode to config file."""
+        config = {}
+        try:
+            with open(self.MODE_CONFIG_FILE, 'r') as f:
+                config = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            pass
+        config['mode'] = self._mode
+        config_dir = os.path.dirname(self.MODE_CONFIG_FILE)
+        if config_dir:
+            os.makedirs(config_dir, exist_ok=True)
+        with open(self.MODE_CONFIG_FILE, 'w') as f:
+            json.dump(config, f, indent=2)
+
+    def _rebuild_indexes(self):
+        """Rebuild all cached indexes after mode change."""
+        from laud_registry import _DOMAIN_INDEX
+        _DOMAIN_INDEX.clear()
+        self._menu_aliases = build_menu_aliases_for_mode(self._mode)
+        self._sub_aliases = build_sub_aliases()
+        self.__class__._CMD_NAMES = build_cmd_names_for_mode(self._mode)
+        self.__class__._CMD_SUBS = build_cmd_subs_for_mode(self._mode)
 
     # ------------------------------------------------------------------
     # Connection
@@ -571,8 +615,9 @@ class LaudCLI:
             self._check_epoch()
         self._nav_stack.append(domain.name)
 
+        visible_cmds = get_commands_for_mode(domain, self._mode)
         opts = []
-        for cmd in domain.commands:
+        for cmd in visible_cmds:
             if cmd.action == "separator":
                 opts.append(("---", cmd.label))
             else:
@@ -581,8 +626,11 @@ class LaudCLI:
         opts.append(("?", "Show options"))
         opts.append(("0", "Back"))
 
+        title = (domain.normal_title
+                 if self._mode == 'normal' and domain.normal_title
+                 else domain.title)
         if not _direct:
-            self._menu_display(domain.title, opts)
+            self._menu_display(title, opts)
 
         while True:
             if _direct:
@@ -595,7 +643,7 @@ class LaudCLI:
                 self._nav_stack.pop()
                 break
             if c == "?":
-                self._menu_display(domain.title, opts)
+                self._menu_display(title, opts)
                 continue
             if c == "i" or c.startswith("i "):
                 parts = c.split(None, 1)
@@ -2115,6 +2163,505 @@ class LaudCLI:
         self._val("Total event types", len(rows))
 
     # ------------------------------------------------------------------
+    # Custom handlers: Dashboard
+    # ------------------------------------------------------------------
+
+    def _dashboard_overview(self):
+        if not self._ensure():
+            return
+        self._header("NETWORK OVERVIEW")
+        h = self.substrate.rpc_request("system_health", [])['result']
+        self._val("Chain",
+                  self.substrate.rpc_request("system_chain", [])['result'])
+        header = self.substrate.get_block_header()['header']
+        self._val("Block", header['number'])
+        self._val("Peers", h.get('peers', 0))
+        self._val("Syncing", h.get('isSyncing', False))
+        try:
+            epoch = self.substrate.query("Presence", "CurrentEpoch")
+            self._val("Current Epoch", epoch)
+            vc = self.substrate.query("Validator", "ValidatorCount")
+            self._val("Validators", vc)
+            ts = self.substrate.query("Validator", "TotalStake")
+            self._val("Total Stake", ts)
+        except Exception:
+            pass
+
+    def _dashboard_my_status(self):
+        if not self._ensure():
+            return
+        name = self._ctx_account
+        kp = self.keypairs[name]
+        self._header(f"STATUS: {name}")
+        r = self.substrate.query(
+            'System', 'Account', [kp.ss58_address])
+        if r and r.value:
+            data = r.value.get('data', {})
+            self._val("Balance",
+                      f"{data.get('free', 0) / 1e12:.4f} UNIT")
+        aid = self._actor_id(name)
+        try:
+            epoch_r = self.substrate.query(
+                "Presence", "CurrentEpoch")
+            epoch = epoch_r.value if epoch_r else 1
+            pres = self.substrate.query(
+                "Presence", "Presences", [epoch, aid])
+            if pres and pres.value:
+                self._val("Presence (epoch " + str(epoch) + ")", pres)
+            else:
+                self._info(f"No presence record in epoch {epoch}")
+        except Exception:
+            pass
+        try:
+            vid = self._validator_id(name)
+            val_info = self.substrate.query(
+                "Validator", "Validators", [vid])
+            if val_info and val_info.value:
+                self._val("Validator", val_info)
+            else:
+                self._info("Not registered as validator")
+        except Exception:
+            pass
+
+    def _dashboard_activity(self):
+        if not self._ensure():
+            return
+        self._header("RECENT ACTIVITY")
+        events = self.substrate.query("System", "Events")
+        if events and events.value:
+            interesting = [
+                ev for ev in events.value
+                if ev.get('event', {}).get('module_id', '')
+                not in ('System', 'TransactionPayment', 'Balances', 0)]
+            if interesting:
+                for ev in interesting[-10:]:
+                    mid = ev.get('event', {}).get('module_id', '?')
+                    eid = ev.get('event', {}).get('event_id', '?')
+                    print(f"    {C.W}{mid}.{eid}{C.R}")
+                self._val("Shown", f"{min(10, len(interesting))} of "
+                          f"{len(interesting)}")
+            else:
+                self._info("No notable events at latest block")
+        else:
+            self._info("No events at latest block")
+
+    # ------------------------------------------------------------------
+    # Custom handlers: Vault Files
+    # ------------------------------------------------------------------
+
+    def _vault_upload_file(self):
+        if not self._ensure():
+            return
+        vault_id = self._prompt_int("Vault ID", 0)
+        vault_info = self._query("Vault", "Vaults", [vault_id])
+        if not vault_info or not vault_info.value:
+            self._err("Vault not found")
+            return
+        file_path = self._prompt("File path", "")
+        path = pathlib.Path(file_path).expanduser().resolve()
+        if not path.is_file():
+            self._err(f"File not found: {path}")
+            return
+        self._info(f"Hashing {path.name} ({path.stat().st_size} bytes)...")
+        file_hash, dest = store_file(vault_id, str(path))
+        self._val("Blake2-256", f"0x{file_hash}")
+        epoch = self._prompt_epoch()
+        signer = self._prompt_account("Signer")
+        self._info("Storing hash on-chain via Storage.store_data...")
+        receipt = self._submit("Storage", "store_data", {
+            "epoch": epoch,
+            "key": f"0x{file_hash}",
+            "data_hash": f"0x{file_hash}",
+            "data_type": "Metadata",
+            "size_bytes": path.stat().st_size,
+            "retention": "Persistent",
+        }, signer)
+        if receipt and receipt.is_success:
+            add_to_index(
+                vault_id=vault_id,
+                file_hash=file_hash,
+                original_name=path.name,
+                size_bytes=path.stat().st_size,
+                uploader=signer,
+                epoch=epoch,
+            )
+            self._ok(f"File uploaded: {path.name}")
+            self._val("On-chain key", f"0x{file_hash}")
+            self._val("Local copy", str(dest))
+        else:
+            self._err("On-chain storage failed.")
+
+    def _vault_list_files(self):
+        vault_id = self._prompt_int("Vault ID", 0)
+        files = get_vault_files(vault_id)
+        if not files:
+            self._info("No files in this vault")
+            return
+        rows = []
+        for f in files:
+            rows.append([
+                f['original_name'][:24],
+                f"{f['size_bytes']:,}",
+                f['file_hash'][:16] + '...',
+                f['uploaded_at'][:10],
+                'ok' if f.get('verified') else '?',
+            ])
+        self._table(
+            ["Name", "Size", "Hash", "Date", "OK"], rows)
+
+    def _vault_verify_file(self):
+        vault_id = self._prompt_int("Vault ID", 0)
+        files = get_vault_files(vault_id)
+        if not files:
+            self._info("No files in this vault")
+            return
+        for i, f in enumerate(files):
+            print(f"    {C.Y}{i+1}{C.R} {f['original_name']} "
+                  f"{C.DIM}({f['file_hash'][:16]}...){C.R}")
+        idx = self._prompt_int("File #", 1) - 1
+        if not (0 <= idx < len(files)):
+            return
+        f = files[idx]
+        ok, current_hash = verify_vault_file(vault_id, f['file_hash'])
+        if ok is None:
+            self._err("Local file not found (may have been deleted)")
+        elif ok:
+            self._ok("File integrity verified (hash matches)")
+        else:
+            self._err("HASH MISMATCH -- file has been modified!")
+            self._val("Expected", f['file_hash'][:32] + '...')
+            self._val("Got", current_hash[:32] + '...')
+
+    def _vault_export_file(self):
+        vault_id = self._prompt_int("Vault ID", 0)
+        files = get_vault_files(vault_id)
+        if not files:
+            self._info("No files in this vault")
+            return
+        for i, f in enumerate(files):
+            print(f"    {C.Y}{i+1}{C.R} {f['original_name']}")
+        idx = self._prompt_int("File #", 1) - 1
+        if not (0 <= idx < len(files)):
+            return
+        f = files[idx]
+        dest = self._prompt("Export to", f"./{f['original_name']}")
+        try:
+            resolved = export_vault_file(
+                vault_id, f['file_hash'], dest)
+            self._ok(f"Exported to {resolved}")
+        except FileNotFoundError as e:
+            self._err(str(e))
+
+    # ------------------------------------------------------------------
+    # Custom handlers: Dev Extensions
+    # ------------------------------------------------------------------
+
+    def _devx_raw_extrinsic(self):
+        if not self._ensure():
+            return
+        md = self.substrate.get_metadata()
+        pallets = [p for p in md.pallets if p.calls]
+        for i, p in enumerate(pallets):
+            print(f"    {C.Y}{i+1:>3}{C.R} {p.name} "
+                  f"{C.DIM}({len(p.calls)} calls){C.R}")
+        idx = self._prompt_int("Pallet #", 1) - 1
+        if not (0 <= idx < len(pallets)):
+            return
+        pallet = pallets[idx]
+        for i, call in enumerate(pallet.calls):
+            args = ""
+            if hasattr(call, 'args') and call.args:
+                args = ", ".join(
+                    f"{a.name}: {a.type}" for a in call.args)
+            print(f"    {C.Y}{i+1:>3}{C.R} {call.name}"
+                  f"({C.DIM}{args}{C.R})")
+        cidx = self._prompt_int("Call #", 1) - 1
+        if not (0 <= cidx < len(pallet.calls)):
+            return
+        call = pallet.calls[cidx]
+        params_str = self._prompt("Params JSON", "{}")
+        try:
+            params = json.loads(params_str)
+        except json.JSONDecodeError as e:
+            self._err(f"Invalid JSON: {e}")
+            return
+        sudo = self._prompt_bool("Sudo?", False)
+        signer = self._prompt_account("Signer")
+        self._submit(pallet.name, call.name, params, signer, sudo=sudo)
+
+    def _devx_batch(self):
+        if not self._ensure():
+            return
+        calls = []
+        self._info("Enter calls. Type 'done' when finished.")
+        while True:
+            mod = self._prompt("Module (or 'done')", "done")
+            if mod.lower() == 'done':
+                break
+            fn = self._prompt("Function", "")
+            params_str = self._prompt("Params JSON", "{}")
+            try:
+                params = json.loads(params_str)
+            except json.JSONDecodeError:
+                params = {}
+            try:
+                call = self.substrate.compose_call(mod, fn, params)
+                calls.append(call)
+                self._ok(f"Added {mod}.{fn} (#{len(calls)})")
+            except Exception as e:
+                self._err(f"Failed to compose: {e}")
+        if not calls:
+            self._info("No calls to batch")
+            return
+        self._info(f"Batching {len(calls)} calls...")
+        signer = self._prompt_account("Signer")
+        batch_call = self.substrate.compose_call(
+            'Utility', 'batch', {'calls': calls})
+        kp = self.keypairs[signer]
+        ext = self.substrate.create_signed_extrinsic(
+            call=batch_call, keypair=kp)
+        receipt = self.substrate.submit_extrinsic(
+            ext, wait_for_inclusion=True)
+        if receipt.is_success:
+            self._ok(f"Batch of {len(calls)} calls succeeded")
+        else:
+            self._err(f"Batch failed: {receipt.error_message}")
+        time.sleep(7)
+
+    def _devx_storage_key_calc(self):
+        if not self._ensure():
+            return
+        pallet = self._prompt("Pallet name", "Presence")
+        item = self._prompt("Storage item", "Presences")
+        try:
+            import xxhash
+            p0 = xxhash.xxh64(pallet.encode(), seed=0).hexdigest()
+            p1 = xxhash.xxh64(pallet.encode(), seed=1).hexdigest()
+            s0 = xxhash.xxh64(item.encode(), seed=0).hexdigest()
+            s1 = xxhash.xxh64(item.encode(), seed=1).hexdigest()
+            prefix = f"0x{p0}{p1}{s0}{s1}"
+            self._val("Pallet hash", f"0x{p0}{p1}")
+            self._val("Item hash", f"0x{s0}{s1}")
+            self._val("Storage prefix", prefix)
+            keys = self.substrate.rpc_request(
+                "state_getKeysPaged", [prefix, 5, prefix])
+            found = keys.get('result', [])
+            self._val("Entries found", len(found))
+            for k in found:
+                suffix = k[len(prefix):]
+                val = self.substrate.rpc_request(
+                    "state_getStorage", [k]).get('result')
+                print(f"    {C.DIM}key: {suffix[:40]}...{C.R}")
+                print(f"    {C.DIM}val: {str(val)[:60]}{C.R}")
+        except ImportError:
+            self._err("xxhash required: pip install xxhash")
+
+    def _devx_weight_estimate(self):
+        if not self._ensure():
+            return
+        mod = self._prompt("Module", "Presence")
+        fn = self._prompt("Function", "declare_presence")
+        params_str = self._prompt("Params JSON", "{}")
+        try:
+            params = json.loads(params_str) if params_str else {}
+        except json.JSONDecodeError:
+            params = {}
+        signer = self._prompt_account("Signer")
+        kp = self.keypairs[signer]
+        try:
+            call = self.substrate.compose_call(mod, fn, params)
+            ext = self.substrate.create_signed_extrinsic(
+                call=call, keypair=kp)
+            info = self.substrate.rpc_request(
+                "payment_queryInfo", [ext.value])
+            result = info.get('result', {})
+            weight = result.get('weight', {})
+            if isinstance(weight, dict):
+                self._val("Ref Time",
+                          weight.get('ref_time', '?'))
+                self._val("Proof Size",
+                          weight.get('proof_size', '?'))
+            else:
+                self._val("Weight", weight)
+            self._val("Partial Fee",
+                      result.get('partialFee', '?'))
+            self._val("Class", result.get('class', '?'))
+        except Exception as e:
+            self._err(f"Weight estimation failed: {e}")
+
+    def _devx_metadata_explorer(self):
+        if not self._ensure():
+            return
+        md = self.substrate.get_metadata()
+        action = self._prompt_enum("Explore:", [
+            "Type registry summary",
+            "Pallet constants with values",
+            "Extrinsic version info",
+        ])
+        if "Type registry" in action:
+            self._val("Pallets", len(md.pallets))
+            total_calls = sum(
+                len(p.calls) for p in md.pallets if p.calls)
+            total_storage = sum(
+                len(p.storage) for p in md.pallets if p.storage)
+            total_events = sum(
+                len(p.events) for p in md.pallets if p.events)
+            total_errors = sum(
+                len(p.errors) for p in md.pallets if p.errors)
+            self._val("Total calls", total_calls)
+            self._val("Total storage items", total_storage)
+            self._val("Total event types", total_events)
+            self._val("Total error types", total_errors)
+        elif "constants" in action:
+            for p in md.pallets:
+                if p.constants:
+                    print(f"\n  {C.B}{p.name}{C.R}")
+                    for c in p.constants:
+                        val = c.value if hasattr(c, 'value') else '?'
+                        print(f"    {C.CY}{c.name}{C.R} = "
+                              f"{C.W}{val}{C.R}")
+        elif "Extrinsic" in action:
+            rv = self.substrate.rpc_request(
+                "state_getRuntimeVersion", [])['result']
+            self._val("Spec Name", rv.get('specName'))
+            self._val("Spec Version", rv.get('specVersion'))
+            self._val("Tx Version",
+                      rv.get('transactionVersion'))
+
+    def _devx_benchmark(self):
+        if not self._ensure():
+            return
+        n = self._prompt_int("Number of transactions", 10)
+        self._info(f"Sending {n} balance transfers...")
+        kp_alice = self.keypairs['alice']
+        kp_bob = self.keypairs['bob']
+        start = time.time()
+        success = 0
+        for i in range(n):
+            try:
+                call = self.substrate.compose_call(
+                    'Balances', 'transfer_allow_death',
+                    {'dest': kp_bob.ss58_address, 'value': 1})
+                ext = self.substrate.create_signed_extrinsic(
+                    call=call, keypair=kp_alice)
+                receipt = self.substrate.submit_extrinsic(
+                    ext, wait_for_inclusion=True)
+                if receipt.is_success:
+                    success += 1
+                time.sleep(7)
+            except Exception as e:
+                self._err(f"Tx {i+1} failed: {e}")
+        elapsed = time.time() - start
+        tps = success / elapsed if elapsed > 0 else 0
+        self._val("Sent", n)
+        self._val("Succeeded", success)
+        self._val("Elapsed", f"{elapsed:.1f}s")
+        self._val("Throughput", f"{tps:.2f} tx/s")
+
+    def _devx_snapshot(self):
+        if not self._ensure():
+            return
+        action = self._prompt_enum(
+            "Action:", ["Save snapshot", "Load snapshot"])
+        snap_dir = os.path.expanduser('~/.laud/snapshots/')
+        os.makedirs(snap_dir, exist_ok=True)
+        if "Save" in action:
+            name = self._prompt("Snapshot name", "snap1")
+            prefix = self._prompt(
+                "Storage prefix (hex)", "")
+            count = self._prompt_int("Max keys", 100)
+            keys_result = self.substrate.rpc_request(
+                "state_getKeysPaged",
+                [prefix, count, prefix])
+            keys = keys_result.get('result', [])
+            snapshot = {}
+            for k in keys:
+                val = self.substrate.rpc_request(
+                    "state_getStorage", [k]).get('result')
+                snapshot[k] = val
+            path = os.path.join(snap_dir, f"{name}.json")
+            with open(path, 'w') as f:
+                json.dump(snapshot, f, indent=2)
+            self._ok(f"Saved {len(snapshot)} keys to {path}")
+        else:
+            snaps = [f for f in os.listdir(snap_dir)
+                     if f.endswith('.json')]
+            if not snaps:
+                self._info("No snapshots found")
+                return
+            for i, s in enumerate(snaps):
+                print(f"    {C.Y}{i+1}{C.R} {s}")
+            idx = self._prompt_int("Snapshot #", 1) - 1
+            if 0 <= idx < len(snaps):
+                path = os.path.join(snap_dir, snaps[idx])
+                with open(path, 'r') as f:
+                    snapshot = json.load(f)
+                self._info(
+                    f"Loaded {len(snapshot)} keys from {path}")
+                self._info("Comparing with current state:")
+                diffs = 0
+                for k, v in snapshot.items():
+                    current = self.substrate.rpc_request(
+                        "state_getStorage",
+                        [k]).get('result')
+                    if current != v:
+                        diffs += 1
+                        print(f"  {C.Y}DIFF{C.R} "
+                              f"{k[:40]}...")
+                self._val("Total keys", len(snapshot))
+                self._val("Changed", diffs)
+
+    def _devx_event_stream(self):
+        if not self._ensure():
+            return
+        pallet = self._prompt(
+            "Pallet filter (empty for all)", "")
+        interval = self._prompt_int(
+            "Poll interval (seconds)", 7)
+        self._info(
+            f"Streaming events every {interval}s. "
+            "Ctrl+C to stop.")
+        last_block = 0
+        try:
+            while True:
+                header = self.substrate.get_block_header(
+                )['header']
+                current = header['number']
+                if current > last_block:
+                    for blk in range(
+                            max(last_block + 1, 1),
+                            current + 1):
+                        bh = self.substrate.get_block_hash(blk)
+                        events = self.substrate.query(
+                            "System", "Events",
+                            block_hash=bh)
+                        if events and events.value:
+                            evts = events.value
+                            if pallet:
+                                evts = [
+                                    ev for ev in evts
+                                    if ev.get('event', {}).get(
+                                        'module_id',
+                                        '') == pallet]
+                            for ev in evts:
+                                mid = ev.get(
+                                    'event', {}).get(
+                                    'module_id', '?')
+                                eid = ev.get(
+                                    'event', {}).get(
+                                    'event_id', '?')
+                                ts = datetime.now().strftime(
+                                    '%H:%M:%S')
+                                print(
+                                    f"  {C.DIM}{ts}{C.R} "
+                                    f"block {blk}: "
+                                    f"{C.W}{mid}.{eid}{C.R}")
+                    last_block = current
+                time.sleep(interval)
+        except KeyboardInterrupt:
+            self._info("Stream stopped.")
+
+    # ------------------------------------------------------------------
     # Test flows
     # ------------------------------------------------------------------
 
@@ -2189,31 +2736,37 @@ class LaudCLI:
     # ------------------------------------------------------------------
 
     def _show_compact_menu(self):
+        visible = get_domains_for_mode(self._mode)
+        group_order = get_group_display_order(self._mode)
+
         groups = {}
-        for d in DOMAINS:
-            groups.setdefault(d.group, []).append(d)
+        for d in visible:
+            g = (d.normal_group if self._mode == 'normal' and d.normal_group
+                 else d.group)
+            groups.setdefault(g, []).append(d)
 
-        print(f"\n  {C.BB}COMMANDS{C.R}  {C.DIM}type command or number, "
-              f"Tab to complete{C.R}\n")
+        print()
+        if self._mode == 'dev':
+            print(f"  {C.Y}[DEV]{C.R}  "
+                  f"{C.DIM}mode normal to simplify{C.R}")
+        else:
+            print(f"  {C.G}[NORMAL]{C.R}  "
+                  f"{C.DIM}mode dev for full access{C.R}")
+        print()
 
-        # Render in columns
-        col_groups = [
-            [("core", "CORE"), ("positioning", "POSITIONING"),
-             ("security", "SECURITY")],
-            [("identity", "IDENTITY"), ("intelligence", "INTELLIGENCE"),
-             ("devtools", "DEV TOOLS")],
-            [("status", "STATUS")],
-        ]
-        for row in col_groups:
-            for gkey, gtitle in row:
-                domains = groups.get(gkey, [])
-                if domains:
-                    print(f"  {C.B}{gtitle}{C.R}")
-                    for d in domains:
-                        sc = (f" {C.DIM}{d.shortcut}{C.R}"
-                              if d.shortcut else "")
-                        print(f"  {C.Y}{d.number:>2}{C.R} "
-                              f"{d.name:<14}{sc}")
+        for gkey, gtitle in group_order:
+            domains = groups.get(gkey, [])
+            if not domains:
+                continue
+            print(f"  {C.B}{gtitle}{C.R}")
+            for d in domains:
+                title = (d.normal_title
+                         if self._mode == 'normal' and d.normal_title
+                         else d.name)
+                sc = (f" {C.DIM}{d.shortcut}{C.R}"
+                      if d.shortcut else "")
+                print(f"  {C.Y}{d.number:>2}{C.R} "
+                      f"{title:<14}{sc}")
             print()
 
         print(f"  {C.B}TESTS{C.R}")
@@ -2321,6 +2874,8 @@ class LaudCLI:
         self.connect(url)
 
     def _build_prompt(self):
+        mode_tag = (f"{C.Y}dev{C.R}:" if self._mode == 'dev'
+                    else "")
         path = "/".join(["laud"] + self._nav_stack)
         extras = []
         if self._ctx_account != 'alice':
@@ -2328,7 +2883,7 @@ class LaudCLI:
         if self._ctx_epoch is not None:
             extras.append(f"{C.DIM}epoch:{self._ctx_epoch}{C.R}")
         extra = " " + " ".join(extras) if extras else ""
-        return f"  {C.B}{path}{C.R}{extra} > "
+        return f"  {mode_tag}{C.B}{path}{C.R}{extra} > "
 
     def _dispatch(self, line):
         parts = line.strip().split()
@@ -2353,6 +2908,31 @@ class LaudCLI:
         if cmd == 'back':
             if self._nav_stack:
                 self._nav_stack.pop()
+            return
+
+        # Mode switching
+        if cmd == 'mode':
+            if len(parts) > 1:
+                new_mode = parts[1].lower()
+                if new_mode in ('dev', 'developer'):
+                    self._mode = 'dev'
+                    self._save_mode()
+                    self._rebuild_indexes()
+                    self._ok("Switched to DEVELOPER mode")
+                    self._show_compact_menu()
+                elif new_mode in ('normal', 'user', 'business'):
+                    self._mode = 'normal'
+                    self._save_mode()
+                    self._rebuild_indexes()
+                    self._ok("Switched to NORMAL mode")
+                    self._show_compact_menu()
+                else:
+                    self._err(f"Unknown mode: '{new_mode}'. "
+                              "Use 'mode dev' or 'mode normal'.")
+            else:
+                label = "DEVELOPER" if self._mode == 'dev' else "NORMAL"
+                self._info(f"Current mode: {C.W}{label}{C.R}")
+                self._info("Switch with: mode dev | mode normal")
             return
 
         # Test shortcuts
@@ -2420,8 +3000,11 @@ class LaudCLI:
     # ------------------------------------------------------------------
 
     def _print_welcome(self):
+        mode_str = "DEVELOPER" if self._mode == 'dev' else "NORMAL"
+        mode_color = C.Y if self._mode == 'dev' else C.G
         print(f"""
-  {C.BB}LAUD NETWORKS{C.R}  {C.DIM}PoP Protocol Testing Suite v1.1.0{C.R}
+  {C.BB}LAUD NETWORKS{C.R}  {C.DIM}PoP Protocol Testing Suite v1.2.0{C.R}
+  {mode_color}[{mode_str} MODE]{C.R}  {C.DIM}switch: mode dev | mode normal{C.R}
   {C.DIM}Type{C.R} help {C.DIM}for commands,{C.R} menu {C.DIM}for full menu,{C.R} ? {C.DIM}for guide{C.R}
   {C.G}New here?{C.R} {C.DIM}Type{C.R} ? {C.DIM}for a quick start, or{C.R} bootstrap {C.DIM}to set up the network{C.R}
 """)
@@ -2467,7 +3050,10 @@ if __name__ == '__main__':
     parser.add_argument(
         '--url', default='ws://127.0.0.1:9944',
         help='WebSocket endpoint (default: ws://127.0.0.1:9944)')
+    parser.add_argument(
+        '--mode', choices=['dev', 'normal'], default=None,
+        help='UI mode: dev (all domains) or normal (simplified)')
     args = parser.parse_args()
 
-    cli = LaudCLI(url=args.url)
+    cli = LaudCLI(url=args.url, mode=args.mode)
     cli.run()

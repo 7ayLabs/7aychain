@@ -32,6 +32,7 @@ class Command:
     instructions: str = ""
     custom_handler: str = ""
     fixed_params: dict = field(default_factory=dict)
+    mode: str = "both"    # "normal"|"dev"|"both"
 
 
 @dataclass
@@ -46,6 +47,9 @@ class Domain:
     check_epoch: bool = False
     help_summary: str = ""
     instructions: str = ""
+    mode: str = "both"           # "normal"|"dev"|"both"
+    normal_title: str = ""       # title override in normal mode
+    normal_group: str = ""       # group override in normal mode
 
 
 # ---------------------------------------------------------------------------
@@ -54,11 +58,39 @@ class Domain:
 
 DOMAINS = [
     # ------------------------------------------------------------------
+    # GETTING STARTED
+    # ------------------------------------------------------------------
+    Domain(
+        name="dashboard", title="DASHBOARD",
+        number="26", shortcut="dash", group="getting-started",
+        mode="normal",
+        normal_group="getting-started",
+        help_summary="Quick overview of network status and your identity",
+        instructions="""
+  The Dashboard gives you a bird's-eye view of the network:
+  current time period, your presence status, validator count,
+  and recent activity. Start here to see what is happening.
+""",
+        commands=[
+            Command("1", "Network Overview", "custom",
+                    custom_handler="_dashboard_overview",
+                    help_text="See chain status, block height, validators, active epoch"),
+            Command("2", "My Status", "custom",
+                    custom_handler="_dashboard_my_status",
+                    help_text="Check your presence, device, and validator status"),
+            Command("3", "Recent Activity", "custom",
+                    custom_handler="_dashboard_activity",
+                    help_text="Show recent events relevant to you"),
+        ],
+    ),
+
+    # ------------------------------------------------------------------
     # CORE
     # ------------------------------------------------------------------
     Domain(
         name="presence", title="PRESENCE PROTOCOL",
         number="2", shortcut="p", group="core", check_epoch=True,
+        mode="both", normal_title="PRESENCE", normal_group="core",
         help_summary="Declare, vote on, and finalize proof-of-presence claims",
         instructions="""
   The Presence Protocol lets participants prove they are active on the
@@ -160,7 +192,8 @@ DOMAINS = [
                         Param("epoch", "Time period", "epoch"),
                     ],
                     sudo=True, aliases=["slash", "penalize"],
-                    help_text="Penalize a fraudulent presence claim"),
+                    help_text="Penalize a fraudulent presence claim",
+                    mode="dev"),
             Command("7", "Set Vote Threshold [admin]", "submit",
                     pallet="Presence", function="set_quorum_config",
                     params=[
@@ -168,7 +201,8 @@ DOMAINS = [
                         Param("total", "Total voters", "int", 3),
                     ],
                     sudo=True, aliases=["quorum", "threshold"],
-                    help_text="Set how many votes are needed to confirm presence"),
+                    help_text="Set how many votes are needed to confirm presence",
+                    mode="dev"),
             Command("8", "Set Validator Status [admin]", "submit",
                     pallet="Presence", function="set_validator_status",
                     params=[
@@ -176,7 +210,8 @@ DOMAINS = [
                         Param("active", "Active?", "bool", True),
                     ],
                     sudo=True, aliases=["validator-status"],
-                    help_text="Enable or disable a validator"),
+                    help_text="Enable or disable a validator",
+                    mode="dev"),
             Command("9", "Set Time Period Active [admin]", "submit",
                     pallet="Presence", function="set_epoch_active",
                     params=[
@@ -184,7 +219,8 @@ DOMAINS = [
                         Param("active", "Active?", "bool", True),
                     ],
                     sudo=True, aliases=["epoch-active"],
-                    help_text="Activate or deactivate a time period"),
+                    help_text="Activate or deactivate a time period",
+                    mode="dev"),
             Command("---", "Lookups", "separator"),
             Command("a", "Current Time Period", "query",
                     pallet="Presence", function="CurrentEpoch",
@@ -215,6 +251,7 @@ DOMAINS = [
     Domain(
         name="epoch", title="TIME PERIODS (Epochs)",
         number="3", shortcut="e", group="core",
+        mode="both", normal_title="SESSIONS", normal_group="core",
         help_summary="Schedule, start, close, and finalize time periods",
         instructions="""
   Time Periods (Epochs) are windows during which presence proofs
@@ -265,7 +302,8 @@ DOMAINS = [
                         Param("auto_transition", "Auto-transition?", "bool", True),
                     ],
                     sudo=True, aliases=["update"],
-                    help_text="Change the default scheduling parameters"),
+                    help_text="Change the default scheduling parameters",
+                    mode="dev"),
             Command("7", "Force State Change [admin]", "submit",
                     pallet="Epoch", function="force_transition",
                     params=[
@@ -274,7 +312,8 @@ DOMAINS = [
                               options=["Scheduled", "Active", "Closed", "Finalized"]),
                     ],
                     sudo=True, aliases=["force"],
-                    help_text="Override the current state of a time period"),
+                    help_text="Override the current state of a time period",
+                    mode="dev"),
             Command("---", "Lookups", "separator"),
             Command("a", "Current Time Period", "query",
                     pallet="Epoch", function="CurrentEpoch",
@@ -295,6 +334,7 @@ DOMAINS = [
     Domain(
         name="validator", title="VALIDATORS",
         number="4", shortcut="val", group="core",
+        mode="both", normal_title="STAKING", normal_group="core",
         help_summary="Register, stake, activate, and manage network validators",
         instructions="""
   Validators are network participants who vote on presence claims.
@@ -339,12 +379,14 @@ DOMAINS = [
                               options=["Minor", "Moderate", "Severe", "Critical"]),
                     ],
                     sudo=True, aliases=["slash", "penalize"],
-                    help_text="Penalize a validator for misbehavior"),
+                    help_text="Penalize a validator for misbehavior",
+                    mode="dev"),
             Command("7", "Apply Pending Penalty [admin]", "submit",
                     pallet="Validator", function="apply_slash",
                     params=[Param("slash_id", "Penalty ID", "int", 0)],
                     sudo=True,
-                    help_text="Execute a pending penalty against a validator"),
+                    help_text="Execute a pending penalty against a validator",
+                    mode="dev"),
             Command("8", "Report Misbehavior", "submit",
                     pallet="Validator", function="report_evidence",
                     params=[
@@ -352,7 +394,8 @@ DOMAINS = [
                         Param("violation", "Severity level", "enum",
                               options=["Minor", "Moderate", "Severe", "Critical"]),
                     ],
-                    help_text="Report evidence of validator misbehavior"),
+                    help_text="Report evidence of validator misbehavior",
+                    mode="dev"),
             Command("---", "Lookups", "separator"),
             Command("a", "Validator Info", "query",
                     pallet="Validator", function="Validators",
@@ -363,7 +406,8 @@ DOMAINS = [
                     help_text="See how many validators and total staked amount"),
             Command("c", "Pending Penalties", "query_map",
                     pallet="Validator", function="PendingSlashes",
-                    help_text="List penalties waiting to be applied"),
+                    help_text="List penalties waiting to be applied",
+                    mode="dev"),
         ],
     ),
 
@@ -373,6 +417,7 @@ DOMAINS = [
     Domain(
         name="pbt", title="POSITION-BASED TRIANGULATION",
         number="5", shortcut="", group="positioning", check_epoch=True,
+        mode="both", normal_title="LOCATION PROOF", normal_group="core",
         help_summary="Claim and verify physical positions via witnesses",
         instructions="""
   Position-Based Triangulation lets participants prove their physical
@@ -390,7 +435,8 @@ DOMAINS = [
             Command("1", "Set Validator Position", "custom",
                     custom_handler="_pbt_set_position",
                     aliases=["position"],
-                    help_text="Set the physical position of a validator node"),
+                    help_text="Set the physical position of a validator node",
+                    mode="dev"),
             Command("2", "Claim Position", "submit",
                     pallet="Presence", function="claim_position",
                     params=[
@@ -421,7 +467,8 @@ DOMAINS = [
             Command("5", "Setup All Validators (auto)", "custom",
                     custom_handler="_auto_setup_validators",
                     aliases=["setup"],
-                    help_text="Register 6 validators in hexagonal formation"),
+                    help_text="Register 6 validators in hexagonal formation",
+                    mode="dev"),
             Command("6", "Full PBT Test Flow (auto)", "custom",
                     custom_handler="_auto_pbt_test",
                     aliases=["test"],
@@ -450,6 +497,7 @@ DOMAINS = [
     Domain(
         name="triangulation", title="SIGNAL TRIANGULATION",
         number="6", shortcut="tri", group="positioning",
+        mode="dev",
         help_summary="Signal-based location reporting and fraud detection",
         instructions="""
   Signal Triangulation uses signal reports from multiple reporters
@@ -511,6 +559,7 @@ DOMAINS = [
     Domain(
         name="dispute", title="DISPUTE RESOLUTION",
         number="7", shortcut="dis", group="security",
+        mode="both", normal_title="DISPUTES", normal_group="security",
         help_summary="Open disputes, submit evidence, resolve cases",
         instructions="""
   Dispute Resolution handles disagreements about validator behavior.
@@ -546,7 +595,8 @@ DOMAINS = [
                                        "InsufficientEvidence"]),
                     ],
                     sudo=True,
-                    help_text="Decide the outcome of a dispute case"),
+                    help_text="Decide the outcome of a dispute case",
+                    mode="dev"),
             Command("4", "Reject Dispute [admin]", "submit",
                     pallet="Dispute", function="reject_dispute",
                     params=[
@@ -557,7 +607,8 @@ DOMAINS = [
                                        "InvalidTarget"]),
                     ],
                     sudo=True,
-                    help_text="Dismiss a dispute as unfounded"),
+                    help_text="Dismiss a dispute as unfounded",
+                    mode="dev"),
             Command("---", "Lookups", "separator"),
             Command("a", "Dispute Info", "query",
                     pallet="Dispute", function="Disputes",
@@ -572,6 +623,7 @@ DOMAINS = [
     Domain(
         name="zk", title="PRIVACY PROOFS (Zero-Knowledge)",
         number="8", shortcut="", group="security",
+        mode="dev",
         help_summary="Verify claims without revealing private data",
         instructions="""
   Privacy Proofs use zero-knowledge cryptography to verify claims
@@ -616,6 +668,7 @@ DOMAINS = [
     Domain(
         name="vault", title="SECURE VAULT (Shared Keys)",
         number="9", shortcut="", group="security",
+        mode="both", normal_title="VAULT", normal_group="security",
         help_summary="Secure shared key management with split secrets",
         instructions="""
   The Secure Vault uses threshold cryptography (t-of-n) so that
@@ -681,6 +734,23 @@ DOMAINS = [
                     pallet="Vault", function="Vaults",
                     params=[Param("vault_id", "ID", "int", 0)],
                     help_text="View details about a specific vault"),
+            Command("---", "File Management", "separator"),
+            Command("9", "Upload File", "custom",
+                    custom_handler="_vault_upload_file",
+                    aliases=["upload", "up"],
+                    help_text="Upload a file, store its hash on-chain"),
+            Command("10", "Vault Files", "custom",
+                    custom_handler="_vault_list_files",
+                    aliases=["files", "ls"],
+                    help_text="List files stored in a vault"),
+            Command("11", "Verify File Integrity", "custom",
+                    custom_handler="_vault_verify_file",
+                    aliases=["verify"],
+                    help_text="Re-hash and verify a file against on-chain record"),
+            Command("12", "Export File", "custom",
+                    custom_handler="_vault_export_file",
+                    aliases=["export", "dl"],
+                    help_text="Copy a vault file to another location"),
         ],
     ),
 
@@ -690,6 +760,7 @@ DOMAINS = [
     Domain(
         name="device", title="DEVICES",
         number="10", shortcut="dev", group="identity",
+        mode="both", normal_title="MY DEVICES", normal_group="identity",
         help_summary="Register, activate, suspend, and monitor devices",
         instructions="""
   Devices represent physical hardware registered on the network.
@@ -726,10 +797,12 @@ DOMAINS = [
                     help_text="Temporarily disable a device"),
             Command("4", "Revoke / Mark Compromised", "custom",
                     custom_handler="_device_revoke",
-                    help_text="Permanently revoke a device or flag it as compromised"),
+                    help_text="Permanently revoke a device or flag it as compromised",
+                    mode="dev"),
             Command("5", "Submit Attestation", "custom",
                     custom_handler="_device_attestation",
-                    help_text="Submit a device attestation for trust verification"),
+                    help_text="Submit a device attestation for trust verification",
+                    mode="dev"),
             Command("6", "Record Heartbeat", "submit",
                     pallet="Device", function="record_heartbeat",
                     params=[
@@ -744,7 +817,8 @@ DOMAINS = [
                         Param("new_score", "Score (0-100)", "int", 50),
                     ],
                     sudo=True,
-                    help_text="Set the trust score for a device"),
+                    help_text="Set the trust score for a device",
+                    mode="dev"),
             Command("---", "Lookups", "separator"),
             Command("a", "Device Info", "query",
                     pallet="Device", function="Devices",
@@ -756,6 +830,7 @@ DOMAINS = [
     Domain(
         name="lifecycle", title="IDENTITY LIFECYCLE",
         number="11", shortcut="life", group="identity",
+        mode="dev",
         help_summary="Register identities, manage key rotation and destruction",
         instructions="""
   Identity Lifecycle manages the full life of network identities:
@@ -823,6 +898,7 @@ DOMAINS = [
     Domain(
         name="governance", title="PERMISSIONS & ACCESS",
         number="12", shortcut="gov", group="identity",
+        mode="both", normal_title="PERMISSIONS", normal_group="identity",
         help_summary="Grant, revoke, and delegate access permissions",
         instructions="""
   Permissions & Access controls what identities can do on the network.
@@ -869,6 +945,7 @@ DOMAINS = [
     Domain(
         name="semantic", title="TRUST RELATIONSHIPS",
         number="13", shortcut="sem", group="intelligence",
+        mode="both", normal_title="TRUST", normal_group="identity",
         help_summary="Create and manage trust relationships between identities",
         instructions="""
   Trust Relationships create verifiable connections between identities.
@@ -924,6 +1001,7 @@ DOMAINS = [
     Domain(
         name="boomerang", title="ROUND-TRIP VERIFICATION",
         number="14", shortcut="boom", group="intelligence",
+        mode="dev",
         help_summary="Round-trip path verification between identities",
         instructions="""
   Round-Trip Verification tests network paths by sending a signal
@@ -978,6 +1056,7 @@ DOMAINS = [
     Domain(
         name="autonomous", title="BEHAVIOR PATTERNS",
         number="15", shortcut="auto", group="intelligence",
+        mode="dev",
         help_summary="Track behavior patterns and anomaly detection",
         instructions="""
   Behavior Patterns tracks and classifies identity behaviors
@@ -1072,6 +1151,7 @@ DOMAINS = [
     Domain(
         name="octopus", title="MULTI-NODE CLUSTERS",
         number="16", shortcut="oct", group="intelligence",
+        mode="dev",
         help_summary="Multi-node orchestration with sub-node management",
         instructions="""
   Multi-Node Clusters let multiple sub-nodes work together as a
@@ -1141,6 +1221,7 @@ DOMAINS = [
     Domain(
         name="storage", title="DATA STORAGE",
         number="17", shortcut="store", group="intelligence",
+        mode="dev",
         help_summary="Time-period-bound encrypted data storage",
         instructions="""
   Data Storage provides encrypted, time-period-bound storage.
@@ -1213,6 +1294,7 @@ DOMAINS = [
     Domain(
         name="chain", title="CHAIN STATUS",
         number="18", shortcut="", group="status",
+        mode="both", normal_title="STATUS", normal_group="tools",
         help_summary="Node health, blocks, balances, and pallets",
         instructions="""
   Chain Status shows the health and state of the connected node.
@@ -1246,6 +1328,7 @@ DOMAINS = [
     Domain(
         name="blocks", title="BLOCK EXPLORER",
         number="19", shortcut="blk", group="devtools",
+        mode="dev",
         help_summary="Inspect blocks, transactions, and finalization",
         instructions="""
   Block Explorer lets you inspect individual blocks, decode
@@ -1280,6 +1363,7 @@ DOMAINS = [
     Domain(
         name="inspect", title="STORAGE INSPECTOR",
         number="20", shortcut="si", group="devtools",
+        mode="dev",
         help_summary="Query raw storage, enumerate keys, view proofs",
         instructions="""
   Storage Inspector provides low-level access to the chain's
@@ -1310,6 +1394,7 @@ DOMAINS = [
     Domain(
         name="runtime", title="RUNTIME EXPLORER",
         number="21", shortcut="rt", group="devtools",
+        mode="dev",
         help_summary="Explore pallets, calls, storage, events, errors",
         instructions="""
   Runtime Explorer lets you browse the runtime metadata: pallets,
@@ -1341,6 +1426,7 @@ DOMAINS = [
     Domain(
         name="network", title="NETWORK & PEERS",
         number="22", shortcut="net", group="devtools",
+        mode="dev",
         help_summary="View peers, sync status, and manage connections",
         instructions="""
   Network & Peers shows connection status, peer information, and
@@ -1377,6 +1463,7 @@ DOMAINS = [
     Domain(
         name="crypto", title="CRYPTO TOOLKIT",
         number="23", shortcut="cr", group="devtools",
+        mode="dev",
         help_summary="Keypairs, hashing, signing, SCALE encoding",
         instructions="""
   Crypto Toolkit provides cryptographic utilities: key generation,
@@ -1426,6 +1513,7 @@ DOMAINS = [
     Domain(
         name="accounts", title="ACCOUNTS",
         number="24", shortcut="acct", group="devtools",
+        mode="both", normal_title="MY ACCOUNT", normal_group="tools",
         help_summary="Account info, balances, nonces, fee estimation",
         instructions="""
   Accounts shows detailed information about test accounts including
@@ -1444,16 +1532,19 @@ DOMAINS = [
                     help_text="View free, reserved, and total balances"),
             Command("4", "Fee estimation", "custom",
                     custom_handler="_acct_fee",
-                    help_text="Estimate the fee for a transaction"),
+                    help_text="Estimate the fee for a transaction",
+                    mode="dev"),
             Command("5", "Dry run transaction", "custom",
                     custom_handler="_acct_dry_run",
-                    help_text="Test a transaction without submitting it"),
+                    help_text="Test a transaction without submitting it",
+                    mode="dev"),
         ],
     ),
 
     Domain(
         name="events", title="EVENTS",
         number="25", shortcut="ev", group="devtools",
+        mode="dev",
         help_summary="Decode and filter blockchain events",
         instructions="""
   Events are emitted by the chain when state changes happen.
@@ -1476,6 +1567,42 @@ DOMAINS = [
             Command("5", "List all event types", "custom",
                     custom_handler="_ev_types",
                     help_text="Show every event type the runtime can emit"),
+        ],
+    ),
+
+    # ------------------------------------------------------------------
+    # DEV EXTENSIONS
+    # ------------------------------------------------------------------
+    Domain(
+        name="devx", title="DEV EXTENSIONS",
+        number="27", shortcut="dx", group="devtools",
+        mode="dev",
+        help_summary="Raw extrinsic builder, batch mode, benchmarks",
+        commands=[
+            Command("1", "Raw Extrinsic Builder", "custom",
+                    custom_handler="_devx_raw_extrinsic",
+                    help_text="Compose and submit any extrinsic manually"),
+            Command("2", "Batch Transactions", "custom",
+                    custom_handler="_devx_batch",
+                    help_text="Send multiple transactions in a batch"),
+            Command("3", "Storage Key Calculator", "custom",
+                    custom_handler="_devx_storage_key_calc",
+                    help_text="Calculate storage keys with full hash breakdown"),
+            Command("4", "Weight Estimation", "custom",
+                    custom_handler="_devx_weight_estimate",
+                    help_text="Estimate weight for any call"),
+            Command("5", "Metadata Explorer", "custom",
+                    custom_handler="_devx_metadata_explorer",
+                    help_text="Deep dive into runtime type registry"),
+            Command("6", "Performance Benchmark", "custom",
+                    custom_handler="_devx_benchmark",
+                    help_text="Measure tx throughput and block time"),
+            Command("7", "Chain State Snapshot", "custom",
+                    custom_handler="_devx_snapshot",
+                    help_text="Save/restore chain state for specific keys"),
+            Command("8", "Event Stream (poll)", "custom",
+                    custom_handler="_devx_event_stream",
+                    help_text="Poll for new events every N seconds"),
         ],
     ),
 ]
@@ -1577,3 +1704,68 @@ GROUP_DISPLAY_ORDER = [
     ("status", "STATUS"),
     ("devtools", "DEV TOOLS"),
 ]
+
+NORMAL_GROUP_ORDER = [
+    ("getting-started", "GETTING STARTED"),
+    ("core", "CORE PROTOCOL"),
+    ("security", "SECURITY"),
+    ("identity", "IDENTITY"),
+    ("tools", "TOOLS"),
+]
+
+
+def get_domains_for_mode(mode):
+    """Return domains visible in the given mode."""
+    return [d for d in DOMAINS if d.mode in (mode, "both")]
+
+
+def get_commands_for_mode(domain, mode):
+    """Return commands visible in the given mode."""
+    return [c for c in domain.commands if c.mode in (mode, "both")]
+
+
+def get_group_display_order(mode):
+    """Return group display order for the given mode."""
+    if mode == "normal":
+        return NORMAL_GROUP_ORDER
+    return GROUP_DISPLAY_ORDER
+
+
+def build_menu_aliases_for_mode(mode):
+    """Auto-generate the menu alias map for domains visible in mode."""
+    aliases = {}
+    for d in get_domains_for_mode(mode):
+        aliases[d.number] = d.name
+        aliases[d.name] = d.name
+        if d.shortcut:
+            aliases[d.shortcut] = d.name
+    return aliases
+
+
+def build_cmd_names_for_mode(mode):
+    """Build autocomplete command name list for the given mode."""
+    names = ['help', 'use', 'status', 'menu', 'back', 'exit',
+             'bootstrap', 'connect', 'test', 'mode']
+    for d in get_domains_for_mode(mode):
+        if d.name not in names:
+            names.append(d.name)
+        if d.shortcut and d.shortcut not in names:
+            names.append(d.shortcut)
+    return names
+
+
+def build_cmd_subs_for_mode(mode):
+    """Build autocomplete sub-command map for the given mode."""
+    subs = {'test': ['pop', 'pbt', 'commit'],
+            'use': ['epoch', 'alice', 'bob', 'charlie',
+                    'dave', 'eve', 'ferdie', 'clear'],
+            'mode': ['dev', 'normal']}
+    for d in get_domains_for_mode(mode):
+        cmd_aliases = []
+        for cmd in get_commands_for_mode(d, mode):
+            cmd_aliases.extend(cmd.aliases)
+        if cmd_aliases:
+            subs[d.name] = cmd_aliases
+            if d.shortcut:
+                subs[d.shortcut] = cmd_aliases
+    return subs
