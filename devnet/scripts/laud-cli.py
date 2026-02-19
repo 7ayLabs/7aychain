@@ -158,9 +158,15 @@ class LaudCLI:
     # Chain interaction (submit / query)
     # ------------------------------------------------------------------
 
-    def _submit(self, module, fn, params, signer='alice', sudo=False):
+    def _submit(self, module, fn, params, signer='alice', sudo=False,
+                _skip_confirm=False):
         if not self._ensure():
             return None
+        if sudo and not _skip_confirm:
+            if not self._prompt_bool(
+                    "This is an admin operation. Continue?"):
+                self._info("Cancelled.")
+                return None
         for attempt in range(2):
             try:
                 call = self.substrate.compose_call(module, fn, params)
@@ -318,14 +324,41 @@ class LaudCLI:
     def _info(self, msg):
         print(f"  {C.CY}[..]{C.R} {msg}")
 
+    def _progress(self, step, total, msg):
+        bar_len = 20
+        filled = int(bar_len * step / total)
+        bar = f"{C.G}{'█' * filled}{C.DIM}{'░' * (bar_len - filled)}{C.R}"
+        print(f"  {bar} {C.DIM}[{step}/{total}]{C.R} {msg}")
+
+    _STATE_COLORS = {
+        'Finalized': C.G, 'Validated': C.G,
+        'Declared': C.Y, 'Active': C.Y, 'Scheduled': C.Y,
+        'Slashed': C.RED, 'Suspended': C.RED, 'Revoked': C.RED,
+        'Closed': C.DIM,
+    }
+
+    def _colorize_state(self, val):
+        """Color-code known presence/lifecycle states."""
+        s = str(val)
+        color = self._STATE_COLORS.get(s)
+        if color:
+            return f"{color}{s}{C.R}"
+        return f"{C.W}{s}{C.R}"
+
     def _val(self, key, val):
         v = val.value if hasattr(val, 'value') else val
         if isinstance(v, dict):
             print(f"  {C.CY}{key}{C.R}:")
             for k2, v2 in v.items():
-                print(f"    {C.DIM}{k2:>22}:{C.R} {C.W}{v2}{C.R}")
+                display = (self._colorize_state(v2)
+                           if k2 in ('state', 'status')
+                           else f"{C.W}{v2}{C.R}")
+                print(f"    {C.DIM}{k2:>22}:{C.R} {display}")
         else:
-            print(f"  {C.CY}{key}:{C.R} {C.W}{v}{C.R}")
+            display = (self._colorize_state(v)
+                       if key.lower() in ('state', 'status', 'final state')
+                       else f"{C.W}{v}{C.R}")
+            print(f"  {C.CY}{key}:{C.R} {display}")
 
     def _table(self, headers, rows):
         if not rows:
@@ -433,6 +466,18 @@ class LaudCLI:
         val = self._prompt(label, "0x" + "00" * 32)
         if not val.startswith("0x"):
             val = "0x" + val
+        # Validate hex format
+        hex_part = val[2:]
+        try:
+            bytes.fromhex(hex_part)
+        except ValueError:
+            self._err(f"Invalid hex: '{val}'. Using default.")
+            val = "0x" + "00" * 32
+        if len(hex_part) != 64:
+            self._info(f"Expected 32 bytes (64 hex chars), got {len(hex_part)}. "
+                       "Padding/truncating.")
+            hex_part = hex_part.ljust(64, '0')[:64]
+            val = "0x" + hex_part
         return val
 
     def _prompt_actor(self, label="Identity"):
@@ -745,12 +790,14 @@ class LaudCLI:
                 if not (result and result.value):
                     self._info(f"Activating fresh epoch {e}")
                     self._submit("Presence", "set_epoch_active",
-                                 {"epoch": e, "active": True}, sudo=True)
+                                 {"epoch": e, "active": True},
+                                 sudo=True, _skip_confirm=True)
                     return e
             except Exception:
                 self._info(f"Activating fresh epoch {e}")
                 self._submit("Presence", "set_epoch_active",
-                             {"epoch": e, "active": True}, sudo=True)
+                             {"epoch": e, "active": True},
+                             sudo=True, _skip_confirm=True)
                 return e
         return 2
 
@@ -811,20 +858,22 @@ class LaudCLI:
         total = 1 + len(positions) * 2
         step = 0
         step += 1
-        print(f"  {C.DIM}[{step}/{total}]{C.R} Activating epoch 1")
+        self._progress(step, total, "Activating time period 1")
         self._submit("Presence", "set_epoch_active",
-                     {"epoch": 1, "active": True}, sudo=True)
+                     {"epoch": 1, "active": True},
+                     sudo=True, _skip_confirm=True)
         for name, pos in positions.items():
             vid = self._validator_id(name)
             step += 1
-            print(f"  {C.DIM}[{step}/{total}]{C.R} "
-                  f"Register {C.W}{name}{C.R}")
+            self._progress(step, total,
+                           f"Register {C.W}{name}{C.R}")
             self._submit("Presence", "set_validator_status",
-                         {"validator": vid, "active": True}, sudo=True)
+                         {"validator": vid, "active": True},
+                         sudo=True, _skip_confirm=True)
             step += 1
-            print(f"  {C.DIM}[{step}/{total}]{C.R} "
-                  f"Position {C.W}{name}{C.R} "
-                  f"({pos['x']}, {pos['y']}, {pos['z']})")
+            self._progress(step, total,
+                           f"Position {C.W}{name}{C.R} "
+                           f"({pos['x']}, {pos['y']}, {pos['z']})")
             self._submit("Presence", "set_validator_position",
                          {"validator": vid, "position": pos}, name)
         self._ok("Bootstrap complete — 6 validators in hexagonal formation")
@@ -2368,8 +2417,9 @@ class LaudCLI:
 
     def _print_welcome(self):
         print(f"""
-  {C.BB}LAUD NETWORKS{C.R}  {C.DIM}PoP Protocol Testing Suite v1.0.0{C.R}
+  {C.BB}LAUD NETWORKS{C.R}  {C.DIM}PoP Protocol Testing Suite v1.1.0{C.R}
   {C.DIM}Type{C.R} help {C.DIM}for commands,{C.R} menu {C.DIM}for full menu,{C.R} ? {C.DIM}for guide{C.R}
+  {C.G}New here?{C.R} {C.DIM}Type{C.R} ? {C.DIM}for a quick start, or{C.R} bootstrap {C.DIM}to set up the network{C.R}
 """)
 
     def run(self):
