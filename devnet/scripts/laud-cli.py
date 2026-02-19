@@ -202,6 +202,15 @@ class LaudCLI:
     # Chain interaction (submit / query)
     # ------------------------------------------------------------------
 
+    # Aura slot duration in seconds (MinimumPeriod 3500ms * 2).
+    _SLOT_SECS = 7
+
+    def _slot_wait(self):
+        """Wait until the next Aura slot boundary."""
+        now = time.time()
+        next_slot = (int(now / self._SLOT_SECS) + 1) * self._SLOT_SECS
+        time.sleep(next_slot - now + 0.1)
+
     def _submit(self, module, fn, params, signer='alice', sudo=False,
                 _skip_confirm=False):
         if not self._ensure():
@@ -211,7 +220,7 @@ class LaudCLI:
                     "This is an admin operation. Continue?"):
                 self._info("Cancelled.")
                 return None
-        for attempt in range(2):
+        for attempt in range(3):
             try:
                 call = self.substrate.compose_call(module, fn, params)
                 if sudo:
@@ -254,10 +263,6 @@ class LaudCLI:
                     ev_str = (f" {C.DIM}({', '.join(pallet_events)}){C.R}"
                               if pallet_events else "")
                     self._ok(f"Block {blk_num}{ev_str}")
-                    # Delay after successful submission to prevent Aura
-                    # "Slot must increase" panic. Aura slot = 7s
-                    # (MinimumPeriod 3500ms * 2).
-                    time.sleep(7)
                 else:
                     self._err(f"{receipt.error_message}")
                     if (hasattr(receipt, 'error_message')
@@ -269,21 +274,30 @@ class LaudCLI:
                     hint = self._error_hint(receipt.error_message)
                     if hint:
                         print(f"       {C.Y}Hint: {hint}{C.R}")
+                # Always wait for next slot after any submission.
+                self._slot_wait()
                 return receipt
             except (ConnectionError, BrokenPipeError, OSError) as e:
-                if attempt == 0:
+                if attempt < 2:
                     self._info("Connection lost, reconnecting...")
+                    self._slot_wait()
                     if self._reconnect():
                         continue
                 self._err(str(e))
                 return None
             except Exception as e:
                 err_msg = str(e).lower()
-                if (attempt == 0
+                if 'priority' in err_msg or 'pool' in err_msg:
+                    if attempt < 2:
+                        self._info("Pool busy, waiting for next slot...")
+                        self._slot_wait()
+                        continue
+                if (attempt < 2
                         and ('connection' in err_msg or 'lost' in err_msg
                              or 'closed' in err_msg
                              or 'websocket' in err_msg)):
                     self._info("Connection lost, reconnecting...")
+                    self._slot_wait()
                     if self._reconnect():
                         continue
                 self._err(str(e))
@@ -2425,7 +2439,7 @@ class LaudCLI:
             self._ok(f"Batch of {len(calls)} calls succeeded")
         else:
             self._err(f"Batch failed: {receipt.error_message}")
-        time.sleep(7)
+        self._slot_wait()
 
     def _devx_storage_key_calc(self):
         if not self._ensure():
@@ -2547,7 +2561,7 @@ class LaudCLI:
                     ext, wait_for_inclusion=True)
                 if receipt.is_success:
                     success += 1
-                time.sleep(7)
+                self._slot_wait()
             except Exception as e:
                 self._err(f"Tx {i+1} failed: {e}")
         elapsed = time.time() - start
