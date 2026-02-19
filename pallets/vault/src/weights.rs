@@ -17,6 +17,9 @@ pub trait WeightInfo {
     fn reveal_share() -> Weight;
     fn lock_vault() -> Weight;
     fn dissolve_vault() -> Weight;
+    fn register_file() -> Weight;
+    fn request_unlock() -> Weight;
+    fn authorize_unlock() -> Weight;
 }
 
 pub struct SubstrateWeight<T>(PhantomData<T>);
@@ -69,6 +72,24 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
             .saturating_add(T::DbWeight::get().reads(1))
             .saturating_add(T::DbWeight::get().writes(2))
     }
+
+    fn register_file() -> Weight {
+        Weight::from_parts(35_000_000, 0)
+            .saturating_add(T::DbWeight::get().reads(3))
+            .saturating_add(T::DbWeight::get().writes(3))
+    }
+
+    fn request_unlock() -> Weight {
+        Weight::from_parts(35_000_000, 0)
+            .saturating_add(T::DbWeight::get().reads(3))
+            .saturating_add(T::DbWeight::get().writes(4))
+    }
+
+    fn authorize_unlock() -> Weight {
+        Weight::from_parts(35_000_000, 0)
+            .saturating_add(T::DbWeight::get().reads(3))
+            .saturating_add(T::DbWeight::get().writes(3))
+    }
 }
 
 impl WeightInfo for () {
@@ -118,5 +139,23 @@ impl WeightInfo for () {
         Weight::from_parts(25_000_000, 0)
             .saturating_add(RocksDbWeight::get().reads(1))
             .saturating_add(RocksDbWeight::get().writes(2))
+    }
+
+    fn register_file() -> Weight {
+        Weight::from_parts(35_000_000, 0)
+            .saturating_add(RocksDbWeight::get().reads(3))
+            .saturating_add(RocksDbWeight::get().writes(3))
+    }
+
+    fn request_unlock() -> Weight {
+        Weight::from_parts(35_000_000, 0)
+            .saturating_add(RocksDbWeight::get().reads(3))
+            .saturating_add(RocksDbWeight::get().writes(4))
+    }
+
+    fn authorize_unlock() -> Weight {
+        Weight::from_parts(35_000_000, 0)
+            .saturating_add(RocksDbWeight::get().reads(3))
+            .saturating_add(RocksDbWeight::get().writes(3))
     }
 }

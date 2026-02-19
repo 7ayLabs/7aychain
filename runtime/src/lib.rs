@@ -67,7 +67,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     spec_name: Cow::Borrowed("seveny"),
     impl_name: Cow::Borrowed("seveny-node"),
     authoring_version: 1,
-    spec_version: 100,
+    spec_version: 101,
     impl_version: 1,
     apis: RUNTIME_API_VERSIONS,
     transaction_version: 1,
@@ -401,6 +401,8 @@ parameter_types! {
     pub const MaxRingSize: u32 = 10;
     pub const RecoveryPeriodBlocks: BlockNumber = 100;
     pub const MaxVaultsPerActor: u32 = 5;
+    pub const MaxFilesPerVault: u32 = 64;
+    pub const UnlockPeriodBlocks: BlockNumber = 300;
 }
 
 impl pallet_vault::Config for Runtime {
@@ -410,6 +412,8 @@ impl pallet_vault::Config for Runtime {
     type MaxRingSize = MaxRingSize;
     type RecoveryPeriodBlocks = RecoveryPeriodBlocks;
     type MaxVaultsPerActor = MaxVaultsPerActor;
+    type MaxFilesPerVault = ConstU32<64>;
+    type UnlockPeriodBlocks = ConstU32<300>;
 }
 
 parameter_types! {
