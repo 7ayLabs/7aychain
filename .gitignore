@@ -62,6 +62,12 @@ Desktop.ini
 *.pfx
 keystore/
 secrets/
+btc_test_key.txt
+test_note.txt
+
+# Python bytecode
+__pycache__/
+*.pyc
 
 # Coverage reports
 /coverage/

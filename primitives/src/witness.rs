@@ -394,6 +394,7 @@ pub fn triangulate_from_witnesses<BlockNumber: Clone>(
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
 

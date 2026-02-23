@@ -389,6 +389,7 @@ fn rssi_to_weight(rssi: i8) -> u64 {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
 
