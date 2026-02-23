@@ -493,6 +493,7 @@ pub mod pallet {
         RecoveryExpired,
         VaultLocked,
         CannotDissolvActiveVault,
+        NotShareHolder,
         FileAlreadyRegistered,
         FileNotFound,
         UnlockAlreadyActive,
@@ -514,7 +515,9 @@ pub mod pallet {
             ring_size: u32,
             secret_hash: H256,
         ) -> DispatchResult {
-            ensure_signed(origin)?;
+            let who = ensure_signed(origin)?;
+            let caller_actor = Self::account_to_actor(who);
+            ensure!(caller_actor == owner, Error::<T>::NotVaultOwner);
 
             ensure!(
                 threshold >= T::MinThreshold::get(),
@@ -585,10 +588,12 @@ pub mod pallet {
             member: ActorId,
             role: MemberRole,
         ) -> DispatchResult {
-            ensure_signed(origin)?;
+            let who = ensure_signed(origin)?;
+            let caller_actor = Self::account_to_actor(who);
 
             let mut vault = Vaults::<T>::get(vault_id).ok_or(Error::<T>::VaultNotFound)?;
 
+            ensure!(vault.owner == caller_actor, Error::<T>::NotVaultOwner);
             ensure!(
                 vault.status == VaultStatus::Creating,
                 Error::<T>::VaultAlreadyActive
@@ -632,11 +637,13 @@ pub mod pallet {
         #[pallet::call_index(2)]
         #[pallet::weight(T::WeightInfo::activate_vault())]
         pub fn activate_vault(origin: OriginFor<T>, vault_id: VaultId) -> DispatchResult {
-            ensure_signed(origin)?;
+            let who = ensure_signed(origin)?;
+            let caller_actor = Self::account_to_actor(who);
 
             Vaults::<T>::try_mutate(vault_id, |vault| -> DispatchResult {
                 let v = vault.as_mut().ok_or(Error::<T>::VaultNotFound)?;
 
+                ensure!(v.owner == caller_actor, Error::<T>::NotVaultOwner);
                 ensure!(
                     v.status == VaultStatus::Creating,
                     Error::<T>::VaultAlreadyActive
@@ -766,9 +773,11 @@ pub mod pallet {
         #[pallet::call_index(5)]
         #[pallet::weight(T::WeightInfo::reveal_share())]
         pub fn reveal_share(origin: OriginFor<T>, share_id: ShareId) -> DispatchResult {
-            ensure_signed(origin)?;
+            let who = ensure_signed(origin)?;
+            let caller_actor = Self::account_to_actor(who);
 
             let share = Shares::<T>::get(share_id).ok_or(Error::<T>::ShareNotFound)?;
+            ensure!(share.holder == caller_actor, Error::<T>::NotShareHolder);
             let vault_id = share.vault;
 
             let vault = Vaults::<T>::get(vault_id).ok_or(Error::<T>::VaultNotFound)?;
@@ -819,11 +828,13 @@ pub mod pallet {
         #[pallet::call_index(6)]
         #[pallet::weight(T::WeightInfo::lock_vault())]
         pub fn lock_vault(origin: OriginFor<T>, vault_id: VaultId) -> DispatchResult {
-            ensure_signed(origin)?;
+            let who = ensure_signed(origin)?;
+            let caller_actor = Self::account_to_actor(who);
 
             Vaults::<T>::try_mutate(vault_id, |vault| -> DispatchResult {
                 let v = vault.as_mut().ok_or(Error::<T>::VaultNotFound)?;
 
+                ensure!(v.owner == caller_actor, Error::<T>::NotVaultOwner);
                 ensure!(v.status == VaultStatus::Active, Error::<T>::VaultNotActive);
 
                 v.status = VaultStatus::Locked;

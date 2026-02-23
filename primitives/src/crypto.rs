@@ -16,21 +16,28 @@ pub const DOMAIN_MERKLE: &[u8] = b"7ay:merkle:v1";
 pub const DOMAIN_NULLIFIER: &[u8] = b"7ay:nullifier:v1";
 
 /// Hash with domain separation.
+///
+/// Prefixes the domain length to prevent ambiguity when domain and data
+/// are concatenated (e.g., domain="ab" + data="cd" vs domain="a" + data="bcd").
 #[inline]
 pub fn hash_with_domain(domain: &[u8], data: &[u8]) -> H256 {
-    let mut input = Vec::with_capacity(domain.len() + data.len());
+    let domain_len = (domain.len() as u32).to_le_bytes();
+    let mut input = Vec::with_capacity(4 + domain.len() + data.len());
+    input.extend_from_slice(&domain_len);
     input.extend_from_slice(domain);
     input.extend_from_slice(data);
     H256(blake2_256(&input))
 }
 
 /// Hash two values together (for Merkle trees).
+/// Uses DOMAIN_MERKLE via hash_with_domain to separate internal nodes
+/// from leaf hashes with consistent length-prefixed domain separation.
 #[inline]
 pub fn hash_pair(left: &H256, right: &H256) -> H256 {
-    let mut input = [0u8; 64];
-    input[..32].copy_from_slice(left.as_bytes());
-    input[32..].copy_from_slice(right.as_bytes());
-    H256(blake2_256(&input))
+    let mut data = Vec::with_capacity(64);
+    data.extend_from_slice(left.as_bytes());
+    data.extend_from_slice(right.as_bytes());
+    hash_with_domain(DOMAIN_MERKLE, &data)
 }
 
 /// Pedersen-style commitment: C = H(domain || value || randomness)
@@ -140,13 +147,16 @@ impl MerkleProof {
 pub struct Nullifier(pub H256);
 
 impl Nullifier {
-    pub fn derive(secret: &[u8; 32], epoch_id: u64, nonce: u64) -> Self {
-        let mut input = Vec::with_capacity(DOMAIN_NULLIFIER.len() + 32 + 16);
-        input.extend_from_slice(DOMAIN_NULLIFIER);
-        input.extend_from_slice(secret);
-        input.extend_from_slice(&epoch_id.to_le_bytes());
-        input.extend_from_slice(&nonce.to_le_bytes());
-        Self(H256(blake2_256(&input)))
+    /// Derive a nullifier from a secret and epoch.
+    ///
+    /// INV1: One nullifier per (secret, epoch) pair — no nonce parameter,
+    /// ensuring the same actor cannot produce different nullifiers for the
+    /// same epoch, which would defeat double-presence prevention.
+    pub fn derive(secret: &[u8; 32], epoch_id: u64) -> Self {
+        let mut data = Vec::with_capacity(32 + 8);
+        data.extend_from_slice(secret);
+        data.extend_from_slice(&epoch_id.to_le_bytes());
+        Self(hash_with_domain(DOMAIN_NULLIFIER, &data))
     }
 }
 
@@ -388,7 +398,17 @@ pub fn key_fingerprint(fek: &[u8; 32]) -> H256 {
 pub struct ShamirScheme;
 
 impl ShamirScheme {
-    pub fn split(secret: &[u8; 32], threshold: u8, total: u8) -> Option<Vec<Share>> {
+    /// Split a secret into shares using (threshold, total) Shamir scheme.
+    ///
+    /// `entropy` provides randomness for polynomial coefficients. Different
+    /// entropy values produce different share sets for the same secret,
+    /// preventing predictable share generation.
+    pub fn split(
+        secret: &[u8; 32],
+        threshold: u8,
+        total: u8,
+        entropy: &[u8; 32],
+    ) -> Option<Vec<Share>> {
         if threshold < 2 || total < threshold || total == 0 {
             return None;
         }
@@ -399,7 +419,7 @@ impl ShamirScheme {
 
         for i in 1..threshold {
             let mut coeff = [0u8; 32];
-            let seed_input = [&secret[..], &[i][..]].concat();
+            let seed_input = [&entropy[..], &[i][..]].concat();
             let hash = blake2_256(&seed_input);
             coeff.copy_from_slice(&hash);
             coefficients.push(coeff);
@@ -497,61 +517,55 @@ pub struct VssCommitment {
 
 pub struct FeldmanVSS;
 
+/// VssCommitment stores per-share commitments for verification.
+///
+/// NOTE: Hash-based commitments do not support homomorphic verification
+/// (unlike EC-based Feldman VSS with g^a_i). Share verification here
+/// checks that a share matches its committed hash, NOT that the share
+/// is consistent with a specific polynomial. For polynomial consistency
+/// guarantees, an EC-based scheme (e.g., using Ristretto points) is
+/// required.
 impl FeldmanVSS {
     pub fn share_with_commitments(
         secret: &[u8; 32],
         threshold: u8,
         total: u8,
+        entropy: &[u8; 32],
     ) -> Option<(Vec<Share>, VssCommitment)> {
         if threshold < 2 || total < threshold {
             return None;
         }
 
-        let mut coefficients_hash = Vec::with_capacity(threshold as usize);
+        let shares = ShamirScheme::split(secret, threshold, total, entropy)?;
 
-        let secret_commitment = hash_with_domain(DOMAIN_VSS, secret);
-        coefficients_hash.push(secret_commitment);
-
-        for i in 1..threshold {
-            let seed_input = [&secret[..], &[i][..]].concat();
-            let coeff_commitment = hash_with_domain(DOMAIN_VSS, &seed_input);
-            coefficients_hash.push(coeff_commitment);
-        }
-
-        let shares = ShamirScheme::split(secret, threshold, total)?;
+        // Store per-share commitments: H(DOMAIN_SHARE || index || value)
+        let share_commitments: Vec<H256> =
+            shares.iter().map(ShamirScheme::create_commitment).collect();
 
         Some((
             shares,
             VssCommitment {
-                coefficients: coefficients_hash,
+                coefficients: share_commitments,
             },
         ))
     }
 
-    pub fn verify_share_against_commitments(
-        share: &Share,
-        commitments: &VssCommitment,
-        threshold: u8,
-    ) -> bool {
-        if commitments.coefficients.len() != threshold as usize {
-            return false;
-        }
+    /// Verify a share against its committed hash.
+    ///
+    /// Checks that H(DOMAIN_SHARE || index || value) matches the stored
+    /// commitment at the share's index position.
+    pub fn verify_share_against_commitments(share: &Share, commitments: &VssCommitment) -> bool {
         if share.index.0 == 0 {
             return false;
         }
 
-        let share_commitment = ShamirScheme::create_commitment(share);
-
-        let mut expected_input = Vec::with_capacity(commitments.coefficients.len() * 32 + 1);
-        expected_input.push(share.index.0);
-        for coeff in &commitments.coefficients {
-            expected_input.extend_from_slice(coeff.as_bytes());
+        let idx = (share.index.0 as usize).saturating_sub(1);
+        if idx >= commitments.coefficients.len() {
+            return false;
         }
 
-        let expected_hash = hash_with_domain(DOMAIN_VSS, &expected_input);
-        let share_hash = hash_with_domain(DOMAIN_VSS, share_commitment.as_bytes());
-
-        expected_hash.ct_eq(&share_hash)
+        let share_hash = ShamirScheme::create_commitment(share);
+        share_hash.ct_eq(&commitments.coefficients[idx])
     }
 
     pub fn verify_share_count(shares: &[Share], threshold: u8) -> bool {
@@ -635,7 +649,8 @@ mod tests {
     #[test]
     fn shamir_roundtrip_simple() {
         let secret = [42u8; 32];
-        let shares = ShamirScheme::split(&secret, 2, 3).expect("split failed");
+        let entropy = [0xAA; 32];
+        let shares = ShamirScheme::split(&secret, 2, 3, &entropy).expect("split failed");
         let reconstructed =
             ShamirScheme::reconstruct(&shares[0..2], 2).expect("reconstruct failed");
         assert_eq!(secret, reconstructed);
@@ -648,7 +663,8 @@ mod tests {
             0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00, 0x01, 0x02, 0x03, 0x04,
             0x05, 0x06, 0x07, 0x08,
         ];
-        let shares = ShamirScheme::split(&secret, 3, 5).expect("split failed");
+        let entropy = [0xBB; 32];
+        let shares = ShamirScheme::split(&secret, 3, 5, &entropy).expect("split failed");
 
         let combos: [(usize, usize, usize); 4] = [(0, 1, 2), (0, 2, 4), (1, 3, 4), (2, 3, 4)];
 
@@ -662,7 +678,8 @@ mod tests {
     #[test]
     fn shamir_threshold_boundary() {
         let secret = [0xAB; 32];
-        let shares = ShamirScheme::split(&secret, 4, 7).expect("split failed");
+        let entropy = [0xCC; 32];
+        let shares = ShamirScheme::split(&secret, 4, 7, &entropy).expect("split failed");
 
         let reconstructed =
             ShamirScheme::reconstruct(&shares[0..4], 4).expect("reconstruct failed");
@@ -671,6 +688,22 @@ mod tests {
         let reconstructed =
             ShamirScheme::reconstruct(&shares[0..6], 4).expect("reconstruct failed");
         assert_eq!(secret, reconstructed);
+    }
+
+    #[test]
+    fn shamir_different_entropy_different_shares() {
+        let secret = [42u8; 32];
+        let entropy1 = [0x01; 32];
+        let entropy2 = [0x02; 32];
+        let shares1 = ShamirScheme::split(&secret, 2, 3, &entropy1).expect("split failed");
+        let shares2 = ShamirScheme::split(&secret, 2, 3, &entropy2).expect("split failed");
+        assert_ne!(shares1[0].value, shares2[0].value);
+
+        // Both should reconstruct to the same secret
+        let r1 = ShamirScheme::reconstruct(&shares1[0..2], 2).expect("reconstruct failed");
+        let r2 = ShamirScheme::reconstruct(&shares2[0..2], 2).expect("reconstruct failed");
+        assert_eq!(r1, r2);
+        assert_eq!(r1, secret);
     }
 
     #[test]
@@ -716,13 +749,20 @@ mod tests {
     #[test]
     fn nullifier_uniqueness() {
         let secret = [42u8; 32];
-        let n1 = Nullifier::derive(&secret, 1, 0);
-        let n2 = Nullifier::derive(&secret, 1, 1);
-        let n3 = Nullifier::derive(&secret, 2, 0);
+        let n1 = Nullifier::derive(&secret, 1);
+        let n2 = Nullifier::derive(&secret, 2);
 
+        // Same secret + same epoch = same nullifier (INV1)
+        let n1_dup = Nullifier::derive(&secret, 1);
+        assert_eq!(n1, n1_dup);
+
+        // Different epochs = different nullifiers
         assert_ne!(n1, n2);
+
+        // Different secrets = different nullifiers
+        let other_secret = [99u8; 32];
+        let n3 = Nullifier::derive(&other_secret, 1);
         assert_ne!(n1, n3);
-        assert_ne!(n2, n3);
     }
 
     #[test]
@@ -748,7 +788,8 @@ mod tests {
     #[test]
     fn shamir_split_creates_shares() {
         let secret = [42u8; 32];
-        let shares = ShamirScheme::split(&secret, 2, 3).expect("split failed");
+        let entropy = [0xDD; 32];
+        let shares = ShamirScheme::split(&secret, 2, 3, &entropy).expect("split failed");
         assert_eq!(shares.len(), 3);
         assert_eq!(shares[0].index.0, 1);
         assert_eq!(shares[1].index.0, 2);
@@ -758,7 +799,8 @@ mod tests {
     #[test]
     fn shamir_shares_are_different() {
         let secret = [42u8; 32];
-        let shares = ShamirScheme::split(&secret, 2, 3).expect("split failed");
+        let entropy = [0xEE; 32];
+        let shares = ShamirScheme::split(&secret, 2, 3, &entropy).expect("split failed");
         assert_ne!(shares[0].value, shares[1].value);
         assert_ne!(shares[1].value, shares[2].value);
     }
@@ -766,7 +808,8 @@ mod tests {
     #[test]
     fn shamir_reconstruct_returns_result() {
         let secret = [42u8; 32];
-        let shares = ShamirScheme::split(&secret, 2, 3).expect("split failed");
+        let entropy = [0xFF; 32];
+        let shares = ShamirScheme::split(&secret, 2, 3, &entropy).expect("split failed");
         let result = ShamirScheme::reconstruct(&shares[0..2], 2);
         assert!(result.is_some());
     }
@@ -774,7 +817,8 @@ mod tests {
     #[test]
     fn shamir_reconstruct_deterministic() {
         let secret = [42u8; 32];
-        let shares = ShamirScheme::split(&secret, 2, 3).expect("split failed");
+        let entropy = [0x11; 32];
+        let shares = ShamirScheme::split(&secret, 2, 3, &entropy).expect("split failed");
         let result1 = ShamirScheme::reconstruct(&shares[0..2], 2);
         let result2 = ShamirScheme::reconstruct(&shares[0..2], 2);
         assert_eq!(result1, result2);
@@ -783,7 +827,8 @@ mod tests {
     #[test]
     fn shamir_insufficient_shares() {
         let secret = [1u8; 32];
-        let shares = ShamirScheme::split(&secret, 3, 5).expect("split failed");
+        let entropy = [0x22; 32];
+        let shares = ShamirScheme::split(&secret, 3, 5, &entropy).expect("split failed");
 
         let result = ShamirScheme::reconstruct(&shares[0..2], 3);
         assert!(result.is_none());
@@ -792,15 +837,17 @@ mod tests {
     #[test]
     fn shamir_invalid_parameters() {
         let secret = [1u8; 32];
-        assert!(ShamirScheme::split(&secret, 1, 3).is_none());
-        assert!(ShamirScheme::split(&secret, 5, 3).is_none());
-        assert!(ShamirScheme::split(&secret, 2, 0).is_none());
+        let entropy = [0x33; 32];
+        assert!(ShamirScheme::split(&secret, 1, 3, &entropy).is_none());
+        assert!(ShamirScheme::split(&secret, 5, 3, &entropy).is_none());
+        assert!(ShamirScheme::split(&secret, 2, 0, &entropy).is_none());
     }
 
     #[test]
     fn shamir_share_commitment() {
         let secret = [5u8; 32];
-        let shares = ShamirScheme::split(&secret, 2, 3).expect("split failed");
+        let entropy = [0x44; 32];
+        let shares = ShamirScheme::split(&secret, 2, 3, &entropy).expect("split failed");
 
         let commitment = ShamirScheme::create_commitment(&shares[0]);
         assert!(ShamirScheme::verify_share(&shares[0], &commitment));
@@ -810,25 +857,54 @@ mod tests {
     #[test]
     fn feldman_vss_creates_shares_and_commitments() {
         let secret = [99u8; 32];
-        let result = FeldmanVSS::share_with_commitments(&secret, 2, 3);
+        let entropy = [0x55; 32];
+        let result = FeldmanVSS::share_with_commitments(&secret, 2, 3, &entropy);
         assert!(result.is_some());
 
         let (shares, commitments) = result.expect("vss failed");
         assert_eq!(shares.len(), 3);
-        assert_eq!(commitments.coefficients.len(), 2);
+        // Now stores per-share commitments (one per share)
+        assert_eq!(commitments.coefficients.len(), 3);
+    }
+
+    #[test]
+    fn feldman_vss_verify_share() {
+        let secret = [99u8; 32];
+        let entropy = [0x66; 32];
+        let (shares, commitments) =
+            FeldmanVSS::share_with_commitments(&secret, 2, 3, &entropy).expect("vss failed");
+
+        // Each share should verify against its commitment
+        for share in &shares {
+            assert!(FeldmanVSS::verify_share_against_commitments(
+                share,
+                &commitments
+            ));
+        }
+
+        // Tampered share should not verify
+        let mut tampered = shares[0].clone();
+        tampered.value[0] ^= 0xFF;
+        assert!(!FeldmanVSS::verify_share_against_commitments(
+            &tampered,
+            &commitments
+        ));
     }
 
     #[test]
     fn feldman_vss_invalid_parameters() {
         let secret = [1u8; 32];
-        assert!(FeldmanVSS::share_with_commitments(&secret, 1, 3).is_none());
-        assert!(FeldmanVSS::share_with_commitments(&secret, 5, 3).is_none());
+        let entropy = [0x77; 32];
+        assert!(FeldmanVSS::share_with_commitments(&secret, 1, 3, &entropy).is_none());
+        assert!(FeldmanVSS::share_with_commitments(&secret, 5, 3, &entropy).is_none());
     }
 
     #[test]
     fn feldman_verify_share_count() {
         let secret = [1u8; 32];
-        let (shares, _) = FeldmanVSS::share_with_commitments(&secret, 3, 5).expect("vss failed");
+        let entropy = [0x88; 32];
+        let (shares, _) =
+            FeldmanVSS::share_with_commitments(&secret, 3, 5, &entropy).expect("vss failed");
 
         assert!(FeldmanVSS::verify_share_count(&shares, 3));
         assert!(FeldmanVSS::verify_share_count(&shares, 5));
@@ -852,9 +928,10 @@ mod tests {
     fn different_secrets_different_shares() {
         let secret1 = [1u8; 32];
         let secret2 = [2u8; 32];
+        let entropy = [0x99; 32];
 
-        let shares1 = ShamirScheme::split(&secret1, 2, 3).expect("split failed");
-        let shares2 = ShamirScheme::split(&secret2, 2, 3).expect("split failed");
+        let shares1 = ShamirScheme::split(&secret1, 2, 3, &entropy).expect("split failed");
+        let shares2 = ShamirScheme::split(&secret2, 2, 3, &entropy).expect("split failed");
 
         assert_ne!(shares1[0].value, shares2[0].value);
     }
@@ -862,7 +939,8 @@ mod tests {
     #[test]
     fn share_indices_are_sequential() {
         let secret = [1u8; 32];
-        let shares = ShamirScheme::split(&secret, 2, 5).expect("split failed");
+        let entropy = [0xAA; 32];
+        let shares = ShamirScheme::split(&secret, 2, 5, &entropy).expect("split failed");
 
         for (i, share) in shares.iter().enumerate() {
             assert_eq!(share.index.0, (i + 1) as u8);
@@ -872,7 +950,8 @@ mod tests {
     #[test]
     fn shamir_duplicate_indices_fails() {
         let secret = [42u8; 32];
-        let shares = ShamirScheme::split(&secret, 2, 3).expect("split failed");
+        let entropy = [0xBB; 32];
+        let shares = ShamirScheme::split(&secret, 2, 3, &entropy).expect("split failed");
 
         let duplicate_shares = vec![
             Share::new(shares[0].index.0, shares[0].value),
