@@ -1031,16 +1031,17 @@ pub mod pallet {
             let mut hi = n;
             while lo <= hi {
                 let mid = lo + (hi - lo) / 2;
-                if let Some(sq) = mid.checked_mul(mid) {
-                    if sq == n {
-                        return mid;
-                    } else if sq < n {
-                        lo = mid + 1;
-                    } else {
+                let sq = match mid.checked_mul(mid) {
+                    Some(v) => v,
+                    None => {
                         hi = mid - 1;
+                        continue;
                     }
-                } else {
-                    hi = mid - 1;
+                };
+                match sq.cmp(&n) {
+                    core::cmp::Ordering::Equal => return mid,
+                    core::cmp::Ordering::Less => lo = mid + 1,
+                    core::cmp::Ordering::Greater => hi = mid - 1,
                 }
             }
             hi

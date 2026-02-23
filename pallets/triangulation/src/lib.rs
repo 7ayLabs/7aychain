@@ -1,4 +1,5 @@
 #![cfg_attr(not(feature = "std"), no_std)]
+#![allow(clippy::expect_used)]
 extern crate alloc;
 
 pub use pallet::*;
@@ -43,6 +44,7 @@ impl ReporterId {
     Clone,
     Copy,
     Debug,
+    Default,
     PartialEq,
     Eq,
     Encode,
@@ -53,6 +55,7 @@ impl ReporterId {
 )]
 pub enum SignalType {
     /// Network latency-based distance estimation
+    #[default]
     NetworkLatency,
     /// P2P connection topology
     PeerTopology,
@@ -75,12 +78,6 @@ pub enum SignalType {
     Zigbee,
     /// Unknown/default
     Unknown,
-}
-
-impl Default for SignalType {
-    fn default() -> Self {
-        Self::NetworkLatency
-    }
 }
 
 impl SignalType {
@@ -108,6 +105,7 @@ impl SignalType {
     Clone,
     Copy,
     Debug,
+    Default,
     PartialEq,
     Eq,
     Encode,
@@ -118,6 +116,7 @@ impl SignalType {
 )]
 pub enum DeviceState {
     /// Node is actively participating
+    #[default]
     Active,
     /// Node has reduced activity
     LowPower,
@@ -135,12 +134,6 @@ pub enum DeviceState {
     Verified,
     /// Position disputed
     Disputed,
-}
-
-impl Default for DeviceState {
-    fn default() -> Self {
-        Self::Active
-    }
 }
 
 impl DeviceState {
@@ -277,6 +270,7 @@ pub struct GhostEvent<BlockNumber> {
     Clone,
     Copy,
     Debug,
+    Default,
     PartialEq,
     Eq,
     Encode,
@@ -287,17 +281,12 @@ pub struct GhostEvent<BlockNumber> {
 )]
 pub enum FraudCaseStatus {
     /// Case is pending review
+    #[default]
     Pending,
     /// Reporter was found guilty and slashed
     Slashed,
     /// Case was dismissed (false accusation)
     Dismissed,
-}
-
-impl Default for FraudCaseStatus {
-    fn default() -> Self {
-        Self::Pending
-    }
 }
 
 /// A conflicting signal reading used as evidence in fraud proofs
@@ -899,57 +888,66 @@ pub mod pallet {
                 let old_state = device.state;
 
                 if blocks_since >= lost_timeout {
-                    if !matches!(device.state, DeviceState::Lost) {
-                        device.state = DeviceState::Lost;
-                        device.consecutive_misses = device.consecutive_misses.saturating_add(1);
-
-                        let ghost = GhostEvent {
-                            mac_hash,
-                            last_position: device.estimated_position.clone(),
-                            last_seen: device.last_seen,
-                            disappeared_at: current_block,
-                            previous_state: old_state,
-                        };
-
-                        GhostEvents::<T>::insert(mac_hash, ghost);
-                        GhostCount::<T>::mutate(|c| *c = c.saturating_add(1));
-
-                        Self::deposit_event(Event::GhostDetected {
-                            mac_hash,
-                            last_position: device.estimated_position.clone(),
-                            last_seen: device.last_seen,
-                        });
-
-                        Self::deposit_event(Event::DeviceStateChanged {
-                            mac_hash,
-                            old_state,
-                            new_state: DeviceState::Lost,
-                        });
-
-                        TrackedDevices::<T>::insert(mac_hash, device);
-                    }
+                    Self::handle_lost_device(mac_hash, &mut device, old_state, current_block);
                 } else if blocks_since >= inactive_timeout
                     && matches!(device.state, DeviceState::Active)
                 {
-                    device.consecutive_misses = device.consecutive_misses.saturating_add(1);
-
-                    device.state = if device.consecutive_misses >= 3 {
-                        DeviceState::Unverifiable
-                    } else {
-                        DeviceState::Sleeping
-                    };
-
-                    device.confidence = device.confidence.saturating_sub(10);
-
-                    Self::deposit_event(Event::DeviceStateChanged {
-                        mac_hash,
-                        old_state,
-                        new_state: device.state,
-                    });
-
-                    TrackedDevices::<T>::insert(mac_hash, device);
+                    Self::handle_inactive_device(mac_hash, &mut device, old_state);
                 }
             }
+        }
+
+        fn handle_lost_device(
+            mac_hash: H256,
+            device: &mut TrackedDevice<BlockNumberFor<T>>,
+            old_state: DeviceState,
+            current_block: BlockNumberFor<T>,
+        ) {
+            if matches!(device.state, DeviceState::Lost) {
+                return;
+            }
+            device.state = DeviceState::Lost;
+            device.consecutive_misses = device.consecutive_misses.saturating_add(1);
+            let ghost = GhostEvent {
+                mac_hash,
+                last_position: device.estimated_position.clone(),
+                last_seen: device.last_seen,
+                disappeared_at: current_block,
+                previous_state: old_state,
+            };
+            GhostEvents::<T>::insert(mac_hash, ghost);
+            GhostCount::<T>::mutate(|c| *c = c.saturating_add(1));
+            Self::deposit_event(Event::GhostDetected {
+                mac_hash,
+                last_position: device.estimated_position.clone(),
+                last_seen: device.last_seen,
+            });
+            Self::deposit_event(Event::DeviceStateChanged {
+                mac_hash,
+                old_state,
+                new_state: DeviceState::Lost,
+            });
+            TrackedDevices::<T>::insert(mac_hash, device.clone());
+        }
+
+        fn handle_inactive_device(
+            mac_hash: H256,
+            device: &mut TrackedDevice<BlockNumberFor<T>>,
+            old_state: DeviceState,
+        ) {
+            device.consecutive_misses = device.consecutive_misses.saturating_add(1);
+            device.state = if device.consecutive_misses >= 3 {
+                DeviceState::Unverifiable
+            } else {
+                DeviceState::Sleeping
+            };
+            device.confidence = device.confidence.saturating_sub(10);
+            Self::deposit_event(Event::DeviceStateChanged {
+                mac_hash,
+                old_state,
+                new_state: device.state,
+            });
+            TrackedDevices::<T>::insert(mac_hash, device.clone());
         }
 
         /// Clean up old signal history entries beyond the retention period.

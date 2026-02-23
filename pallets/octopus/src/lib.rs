@@ -1,4 +1,5 @@
 #![cfg_attr(not(feature = "std"), no_std)]
+#![allow(clippy::expect_used)]
 extern crate alloc;
 
 pub use pallet::*;
@@ -69,6 +70,7 @@ impl ClusterId {
     Clone,
     Copy,
     Debug,
+    Default,
     PartialEq,
     Eq,
     Encode,
@@ -78,6 +80,7 @@ impl ClusterId {
     MaxEncodedLen,
 )]
 pub enum SubnodeStatus {
+    #[default]
     Inactive,
     Activating,
     Active,
@@ -85,16 +88,11 @@ pub enum SubnodeStatus {
     Failed,
 }
 
-impl Default for SubnodeStatus {
-    fn default() -> Self {
-        Self::Inactive
-    }
-}
-
 #[derive(
     Clone,
     Copy,
     Debug,
+    Default,
     PartialEq,
     Eq,
     Encode,
@@ -104,21 +102,17 @@ impl Default for SubnodeStatus {
     MaxEncodedLen,
 )]
 pub enum ScalingDecision {
+    #[default]
     Maintain,
     ScaleUp(u32),
     ScaleDown,
-}
-
-impl Default for ScalingDecision {
-    fn default() -> Self {
-        Self::Maintain
-    }
 }
 
 #[derive(
     Clone,
     Copy,
     Debug,
+    Default,
     PartialEq,
     Eq,
     Encode,
@@ -128,17 +122,12 @@ impl Default for ScalingDecision {
     MaxEncodedLen,
 )]
 pub enum ClusterStatus {
+    #[default]
     Initializing,
     Running,
     Scaling,
     Degraded,
     Shutdown,
-}
-
-impl Default for ClusterStatus {
-    fn default() -> Self {
-        Self::Initializing
-    }
 }
 
 #[derive(
@@ -245,6 +234,7 @@ pub enum DiagnosticAction {
     Clone,
     Copy,
     Debug,
+    Default,
     PartialEq,
     Eq,
     Encode,
@@ -255,6 +245,7 @@ pub enum DiagnosticAction {
 )]
 pub enum DiagnosticSeverity {
     /// Everything is healthy
+    #[default]
     Healthy,
     /// Minor issues detected
     Warning,
@@ -262,12 +253,6 @@ pub enum DiagnosticSeverity {
     Critical,
     /// Node has failed
     Failed,
-}
-
-impl Default for DiagnosticSeverity {
-    fn default() -> Self {
-        Self::Healthy
-    }
 }
 
 /// Health checks performed by diagnostics
@@ -1224,6 +1209,64 @@ pub mod pallet {
             }
         }
 
+        fn mark_subnode_failed(subnode_id: SubnodeId) {
+            let Some(mut subnode) = Subnodes::<T>::get(subnode_id) else {
+                return;
+            };
+            if subnode.status != SubnodeStatus::Active {
+                return;
+            }
+            let cluster_id = subnode.cluster;
+            let misses = subnode.consecutive_misses;
+            subnode.status = SubnodeStatus::Failed;
+            subnode.health_score = 0;
+            Subnodes::<T>::insert(subnode_id, subnode);
+            Self::decrement_cluster_active(cluster_id);
+            ActiveSubnodeCount::<T>::mutate(|c| *c = c.saturating_sub(1));
+            Self::deposit_event(Event::SubnodeFailed {
+                subnode_id,
+                cluster_id,
+                consecutive_misses: misses,
+            });
+        }
+
+        fn decrement_cluster_active(cluster_id: ClusterId) {
+            if let Some(mut c) = Clusters::<T>::get(cluster_id) {
+                c.active_subnodes = c.active_subnodes.saturating_sub(1);
+                if c.active_subnodes < T::MinSubnodes::get() {
+                    c.status = ClusterStatus::Degraded;
+                }
+                Clusters::<T>::insert(cluster_id, c);
+            }
+        }
+
+        fn set_cluster_status(cluster_id: ClusterId, new_status: ClusterStatus) {
+            if let Some(mut cluster) = Clusters::<T>::get(cluster_id) {
+                cluster.status = new_status;
+                Clusters::<T>::insert(cluster_id, cluster);
+            }
+        }
+
+        fn reset_failed_subnode(subnode_id: SubnodeId, block_number: BlockNumberFor<T>) {
+            if let Some(mut s) = Subnodes::<T>::get(subnode_id) {
+                if s.status == SubnodeStatus::Failed {
+                    s.status = SubnodeStatus::Inactive;
+                    s.consecutive_misses = 0;
+                    s.health_score = 50;
+                    s.last_heartbeat = block_number;
+                    Subnodes::<T>::insert(subnode_id, s);
+                }
+            }
+        }
+
+        fn refresh_fused_heartbeat(subnode_id: SubnodeId, block_u64: u64) {
+            if let Some(mut health) = FusedHealth::<T>::get(subnode_id) {
+                let weights = GlobalFusionWeights::<T>::get();
+                health.update_heartbeat(50, block_u64, &weights);
+                FusedHealth::<T>::insert(subnode_id, health);
+            }
+        }
+
         fn auto_heal_clusters(block_number: BlockNumberFor<T>) {
             let block_u64: u64 = block_number.try_into().unwrap_or(0);
 
@@ -1243,11 +1286,7 @@ pub mod pallet {
 
                 let min_subnodes = T::MinSubnodes::get();
                 if cluster.active_subnodes >= min_subnodes {
-                    Clusters::<T>::mutate(cluster_id, |c| {
-                        if let Some(ref mut cluster) = c {
-                            cluster.status = ClusterStatus::Running;
-                        }
-                    });
+                    Self::set_cluster_status(cluster_id, ClusterStatus::Running);
                     continue;
                 }
 
@@ -1263,23 +1302,8 @@ pub mod pallet {
                 });
 
                 for (subnode_id, _) in ClusterSubnodes::<T>::iter_prefix(cluster_id) {
-                    Subnodes::<T>::mutate(subnode_id, |subnode| {
-                        if let Some(ref mut s) = subnode {
-                            if s.status == SubnodeStatus::Failed {
-                                s.status = SubnodeStatus::Inactive;
-                                s.consecutive_misses = 0;
-                                s.health_score = 50;
-                                s.last_heartbeat = block_number;
-                            }
-                        }
-                    });
-
-                    FusedHealth::<T>::mutate(subnode_id, |maybe_health| {
-                        if let Some(ref mut health) = maybe_health {
-                            let weights = GlobalFusionWeights::<T>::get();
-                            health.update_heartbeat(50, block_u64, &weights);
-                        }
-                    });
+                    Self::reset_failed_subnode(subnode_id, block_number);
+                    Self::refresh_fused_heartbeat(subnode_id, block_u64);
                 }
             }
         }
@@ -1293,44 +1317,16 @@ pub mod pallet {
                     break;
                 }
                 processed = processed.saturating_add(1);
-                if let Some(trigger) = fusion::should_trigger_healing(&health, current_block) {
-                    let previous_score = health.fused_score;
-
-                    Self::deposit_event(Event::FusionHealingTriggered {
-                        subnode_id,
-                        trigger,
-                        previous_score,
-                    });
-
-                    if health.is_critical() {
-                        Subnodes::<T>::mutate(subnode_id, |subnode| {
-                            if let Some(ref mut s) = subnode {
-                                if s.status == SubnodeStatus::Active {
-                                    s.status = SubnodeStatus::Failed;
-                                    s.health_score = 0;
-
-                                    Clusters::<T>::mutate(s.cluster, |cluster| {
-                                        if let Some(ref mut c) = cluster {
-                                            c.active_subnodes = c.active_subnodes.saturating_sub(1);
-                                            if c.active_subnodes < T::MinSubnodes::get() {
-                                                c.status = ClusterStatus::Degraded;
-                                            }
-                                        }
-                                    });
-
-                                    ActiveSubnodeCount::<T>::mutate(|count| {
-                                        *count = count.saturating_sub(1)
-                                    });
-
-                                    Self::deposit_event(Event::SubnodeFailed {
-                                        subnode_id,
-                                        cluster_id: s.cluster,
-                                        consecutive_misses: s.consecutive_misses,
-                                    });
-                                }
-                            }
-                        });
-                    }
+                let Some(trigger) = fusion::should_trigger_healing(&health, current_block) else {
+                    continue;
+                };
+                Self::deposit_event(Event::FusionHealingTriggered {
+                    subnode_id,
+                    trigger,
+                    previous_score: health.fused_score,
+                });
+                if health.is_critical() {
+                    Self::mark_subnode_failed(subnode_id);
                 }
             }
         }
@@ -1431,6 +1427,82 @@ pub mod pallet {
             }
         }
 
+        fn apply_single_fix(
+            subnode_id: SubnodeId,
+            action: &DiagnosticAction,
+            block_number: BlockNumberFor<T>,
+            block_u64: u64,
+        ) {
+            match action {
+                DiagnosticAction::RestartHeartbeat => {
+                    Self::restart_subnode_heartbeat(subnode_id, block_number);
+                }
+                DiagnosticAction::ResetFusedHealth => {
+                    Self::refresh_fused_heartbeat(subnode_id, block_u64);
+                }
+                DiagnosticAction::ReregisterCluster => {
+                    Self::reregister_failed_subnode(subnode_id);
+                }
+                DiagnosticAction::RecalibratePosition => {
+                    Self::reset_position_variance(subnode_id);
+                }
+                DiagnosticAction::RotateAuthProfile => {}
+                DiagnosticAction::ClearDeviceCache => {
+                    Self::clear_device_observations(subnode_id);
+                }
+                DiagnosticAction::EscalateOperator => {
+                    Self::escalate_to_operator(subnode_id);
+                }
+            }
+        }
+
+        fn restart_subnode_heartbeat(subnode_id: SubnodeId, block_number: BlockNumberFor<T>) {
+            if let Some(mut s) = Subnodes::<T>::get(subnode_id) {
+                s.last_heartbeat = block_number;
+                s.consecutive_misses = 0;
+                Subnodes::<T>::insert(subnode_id, s);
+            }
+        }
+
+        fn reregister_failed_subnode(subnode_id: SubnodeId) {
+            if let Some(mut s) = Subnodes::<T>::get(subnode_id) {
+                if s.status == SubnodeStatus::Failed {
+                    s.status = SubnodeStatus::Inactive;
+                    s.health_score = 50;
+                    Subnodes::<T>::insert(subnode_id, s);
+                }
+            }
+        }
+
+        fn reset_position_variance(subnode_id: SubnodeId) {
+            if let Some(mut h) = FusedHealth::<T>::get(subnode_id) {
+                h.position_metrics.position_variance = 0;
+                FusedHealth::<T>::insert(subnode_id, h);
+            }
+        }
+
+        fn clear_device_observations(subnode_id: SubnodeId) {
+            if let Some(mut h) = FusedHealth::<T>::get(subnode_id) {
+                h.device_metrics.total_observations = 0;
+                FusedHealth::<T>::insert(subnode_id, h);
+            }
+        }
+
+        fn escalate_to_operator(subnode_id: SubnodeId) {
+            let Some(subnode) = Subnodes::<T>::get(subnode_id) else {
+                return;
+            };
+            let severity = if subnode.status == SubnodeStatus::Failed {
+                DiagnosticSeverity::Failed
+            } else {
+                DiagnosticSeverity::Critical
+            };
+            Self::deposit_event(Event::OperatorEscalationRequired {
+                subnode_id,
+                reason: severity,
+            });
+        }
+
         /// Apply auto-fix actions to a subnode.
         pub fn apply_auto_fix(
             subnode_id: SubnodeId,
@@ -1438,81 +1510,14 @@ pub mod pallet {
         ) -> DispatchResult {
             let block_number = frame_system::Pallet::<T>::block_number();
             let block_u64: u64 = block_number.try_into().unwrap_or(0);
-            let mut applied_count: u32 = 0;
 
             for action in actions {
-                match action {
-                    DiagnosticAction::RestartHeartbeat => {
-                        Subnodes::<T>::mutate(subnode_id, |s| {
-                            if let Some(subnode) = s {
-                                subnode.last_heartbeat = block_number;
-                                subnode.consecutive_misses = 0;
-                            }
-                        });
-                        applied_count += 1;
-                    }
-                    DiagnosticAction::ResetFusedHealth => {
-                        FusedHealth::<T>::mutate(subnode_id, |h| {
-                            if let Some(health) = h {
-                                let weights = GlobalFusionWeights::<T>::get();
-                                // Reset heartbeat and recalculate fused score
-                                health.update_heartbeat(50, block_u64, &weights);
-                            }
-                        });
-                        applied_count += 1;
-                    }
-                    DiagnosticAction::ReregisterCluster => {
-                        Subnodes::<T>::mutate(subnode_id, |s| {
-                            if let Some(subnode) = s {
-                                if subnode.status == SubnodeStatus::Failed {
-                                    subnode.status = SubnodeStatus::Inactive;
-                                    subnode.health_score = 50;
-                                }
-                            }
-                        });
-                        applied_count += 1;
-                    }
-                    DiagnosticAction::RecalibratePosition => {
-                        FusedHealth::<T>::mutate(subnode_id, |h| {
-                            if let Some(health) = h {
-                                health.position_metrics.position_variance = 0;
-                            }
-                        });
-                        applied_count += 1;
-                    }
-                    DiagnosticAction::RotateAuthProfile => {
-                        // Auth profile rotation is external - just record intent
-                        applied_count += 1;
-                    }
-                    DiagnosticAction::ClearDeviceCache => {
-                        // Device cache is external - just reset metrics
-                        FusedHealth::<T>::mutate(subnode_id, |h| {
-                            if let Some(health) = h {
-                                health.device_metrics.total_observations = 0;
-                            }
-                        });
-                        applied_count += 1;
-                    }
-                    DiagnosticAction::EscalateOperator => {
-                        if let Some(subnode) = Subnodes::<T>::get(subnode_id) {
-                            let severity = if subnode.status == SubnodeStatus::Failed {
-                                DiagnosticSeverity::Failed
-                            } else {
-                                DiagnosticSeverity::Critical
-                            };
-                            Self::deposit_event(Event::OperatorEscalationRequired {
-                                subnode_id,
-                                reason: severity,
-                            });
-                        }
-                        applied_count += 1;
-                    }
-                }
+                Self::apply_single_fix(subnode_id, action, block_number, block_u64);
             }
 
             Self::deposit_event(Event::AutoFixApplied {
                 subnode_id,
-                actions_applied: applied_count,
+                actions_applied: actions.len() as u32,
             });
 
             Ok(())

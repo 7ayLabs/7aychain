@@ -1,4 +1,5 @@
 #![cfg_attr(not(feature = "std"), no_std)]
+#![allow(clippy::expect_used)]
 extern crate alloc;
 
 pub use pallet::*;
@@ -64,6 +65,7 @@ impl ShareId {
     Clone,
     Copy,
     Debug,
+    Default,
     PartialEq,
     Eq,
     Encode,
@@ -73,6 +75,7 @@ impl ShareId {
     MaxEncodedLen,
 )]
 pub enum VaultStatus {
+    #[default]
     Creating,
     Active,
     Locked,
@@ -80,16 +83,11 @@ pub enum VaultStatus {
     Dissolved,
 }
 
-impl Default for VaultStatus {
-    fn default() -> Self {
-        Self::Creating
-    }
-}
-
 #[derive(
     Clone,
     Copy,
     Debug,
+    Default,
     PartialEq,
     Eq,
     Encode,
@@ -101,19 +99,15 @@ impl Default for VaultStatus {
 pub enum MemberRole {
     Owner,
     Guardian,
+    #[default]
     Participant,
-}
-
-impl Default for MemberRole {
-    fn default() -> Self {
-        Self::Participant
-    }
 }
 
 #[derive(
     Clone,
     Copy,
     Debug,
+    Default,
     PartialEq,
     Eq,
     Encode,
@@ -123,16 +117,11 @@ impl Default for MemberRole {
     MaxEncodedLen,
 )]
 pub enum ShareStatus {
+    #[default]
     Pending,
     Distributed,
     Revealed,
     Invalidated,
-}
-
-impl Default for ShareStatus {
-    fn default() -> Self {
-        Self::Pending
-    }
 }
 
 #[derive(
@@ -222,6 +211,73 @@ pub struct RecoveryRequest<T: Config> {
     pub expires_at: BlockNumberFor<T>,
 }
 
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+    Default,
+    Hash,
+)]
+pub struct UnlockRequestId(pub u64);
+
+impl UnlockRequestId {
+    pub fn new(id: u64) -> Self {
+        Self(id)
+    }
+}
+
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
+#[scale_info(skip_type_params(T))]
+pub struct VaultFile<T: Config> {
+    pub vault: VaultId,
+    pub enc_hash: H256,
+    pub plaintext_hash: H256,
+    pub key_fingerprint: H256,
+    pub size_bytes: u64,
+    pub registered_by: ActorId,
+    pub registered_at: BlockNumberFor<T>,
+}
+
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    TypeInfo,
+    MaxEncodedLen,
+)]
+#[scale_info(skip_type_params(T))]
+pub struct UnlockRequest<T: Config> {
+    pub id: UnlockRequestId,
+    pub vault: VaultId,
+    pub file_enc_hash: H256,
+    pub requester: ActorId,
+    pub approvals: u32,
+    pub initiated_at: BlockNumberFor<T>,
+    pub expires_at: BlockNumberFor<T>,
+    pub completed: bool,
+}
+
 #[frame_support::pallet]
 pub mod pallet {
     use super::*;
@@ -248,6 +304,12 @@ pub mod pallet {
 
         #[pallet::constant]
         type MaxVaultsPerActor: Get<u32>;
+
+        #[pallet::constant]
+        type MaxFilesPerVault: Get<u32>;
+
+        #[pallet::constant]
+        type UnlockPeriodBlocks: Get<BlockNumberFor<Self>>;
     }
 
     #[pallet::storage]
@@ -300,6 +362,34 @@ pub mod pallet {
     #[pallet::getter(fn active_vault_count)]
     pub type ActiveVaultCount<T> = StorageValue<_, u32, ValueQuery>;
 
+    #[pallet::storage]
+    #[pallet::getter(fn vault_files)]
+    pub type VaultFiles<T: Config> =
+        StorageDoubleMap<_, Blake2_128Concat, VaultId, Blake2_128Concat, H256, VaultFile<T>>;
+
+    #[pallet::storage]
+    #[pallet::getter(fn vault_file_count)]
+    pub type VaultFileCount<T: Config> = StorageMap<_, Blake2_128Concat, VaultId, u32, ValueQuery>;
+
+    #[pallet::storage]
+    #[pallet::getter(fn unlock_request_count)]
+    pub type UnlockRequestCount<T> = StorageValue<_, u64, ValueQuery>;
+
+    #[pallet::storage]
+    #[pallet::getter(fn unlock_requests)]
+    pub type UnlockRequests<T: Config> =
+        StorageMap<_, Blake2_128Concat, UnlockRequestId, UnlockRequest<T>>;
+
+    #[pallet::storage]
+    #[pallet::getter(fn unlock_approvals)]
+    pub type UnlockApprovals<T: Config> =
+        StorageDoubleMap<_, Blake2_128Concat, UnlockRequestId, Blake2_128Concat, ActorId, ()>;
+
+    #[pallet::storage]
+    #[pallet::getter(fn active_unlocks)]
+    pub type ActiveUnlocks<T: Config> =
+        StorageDoubleMap<_, Blake2_128Concat, VaultId, Blake2_128Concat, H256, UnlockRequestId>;
+
     #[pallet::genesis_config]
     #[derive(frame_support::DefaultNoBound)]
     pub struct GenesisConfig<T: Config> {
@@ -313,6 +403,7 @@ pub mod pallet {
             VaultCount::<T>::put(0u64);
             ShareCount::<T>::put(0u64);
             ActiveVaultCount::<T>::put(0u32);
+            UnlockRequestCount::<T>::put(0u64);
         }
     }
 
@@ -355,6 +446,29 @@ pub mod pallet {
         VaultDissolved {
             vault_id: VaultId,
         },
+        FileRegistered {
+            vault_id: VaultId,
+            enc_hash: H256,
+            key_fingerprint: H256,
+            registered_by: ActorId,
+        },
+        UnlockRequested {
+            vault_id: VaultId,
+            request_id: UnlockRequestId,
+            file_enc_hash: H256,
+            requester: ActorId,
+        },
+        UnlockAuthorized {
+            vault_id: VaultId,
+            request_id: UnlockRequestId,
+            actor: ActorId,
+            approvals_so_far: u32,
+        },
+        FileUnlockCompleted {
+            vault_id: VaultId,
+            request_id: UnlockRequestId,
+            file_enc_hash: H256,
+        },
     }
 
     #[pallet::error]
@@ -380,6 +494,14 @@ pub mod pallet {
         VaultLocked,
         CannotDissolvActiveVault,
         NotShareHolder,
+        FileAlreadyRegistered,
+        FileNotFound,
+        UnlockAlreadyActive,
+        AlreadyApproved,
+        UnlockExpired,
+        MaxFilesReached,
+        UnlockNotFound,
+        UnlockAlreadyCompleted,
     }
 
     #[pallet::call]
@@ -749,6 +871,208 @@ pub mod pallet {
                 Ok(())
             })
         }
+
+        /// Register an encrypted file reference in a vault.
+        ///
+        /// Guards: vault must be Active, caller must be a member,
+        /// file must not already exist, and file count must be
+        /// under `MaxFilesPerVault`.
+        #[pallet::call_index(8)]
+        #[pallet::weight(T::WeightInfo::register_file())]
+        pub fn register_file(
+            origin: OriginFor<T>,
+            vault_id: VaultId,
+            enc_hash: H256,
+            plaintext_hash: H256,
+            key_fingerprint: H256,
+            size_bytes: u64,
+        ) -> DispatchResult {
+            let who = ensure_signed(origin)?;
+
+            let vault = Vaults::<T>::get(vault_id).ok_or(Error::<T>::VaultNotFound)?;
+            ensure!(
+                vault.status == VaultStatus::Active,
+                Error::<T>::VaultNotActive
+            );
+
+            let actor = Self::account_to_actor(who);
+            ensure!(
+                VaultMembers::<T>::contains_key(vault_id, actor),
+                Error::<T>::NotVaultMember
+            );
+
+            ensure!(
+                !VaultFiles::<T>::contains_key(vault_id, enc_hash),
+                Error::<T>::FileAlreadyRegistered
+            );
+
+            let file_count = VaultFileCount::<T>::get(vault_id);
+            ensure!(
+                file_count < T::MaxFilesPerVault::get(),
+                Error::<T>::MaxFilesReached
+            );
+
+            let block_number = frame_system::Pallet::<T>::block_number();
+
+            let file = VaultFile {
+                vault: vault_id,
+                enc_hash,
+                plaintext_hash,
+                key_fingerprint,
+                size_bytes,
+                registered_by: actor,
+                registered_at: block_number,
+            };
+
+            VaultFiles::<T>::insert(vault_id, enc_hash, file);
+            VaultFileCount::<T>::insert(vault_id, file_count.saturating_add(1));
+
+            Vaults::<T>::mutate(vault_id, |v| {
+                if let Some(ref mut vault) = v {
+                    vault.last_activity = block_number;
+                }
+            });
+
+            Self::deposit_event(Event::FileRegistered {
+                vault_id,
+                enc_hash,
+                key_fingerprint,
+                registered_by: actor,
+            });
+
+            Ok(())
+        }
+
+        /// Request a threshold-gated unlock of a registered file.
+        ///
+        /// Guards: vault Active, caller is member, file exists,
+        /// no active unlock already in progress for this file.
+        /// The requester auto-approves (approvals starts at 1).
+        /// If threshold is 1, the unlock completes immediately.
+        #[pallet::call_index(9)]
+        #[pallet::weight(T::WeightInfo::request_unlock())]
+        pub fn request_unlock(
+            origin: OriginFor<T>,
+            vault_id: VaultId,
+            file_enc_hash: H256,
+        ) -> DispatchResult {
+            let who = ensure_signed(origin)?;
+
+            let vault = Vaults::<T>::get(vault_id).ok_or(Error::<T>::VaultNotFound)?;
+            ensure!(
+                vault.status == VaultStatus::Active,
+                Error::<T>::VaultNotActive
+            );
+
+            let actor = Self::account_to_actor(who);
+            ensure!(
+                VaultMembers::<T>::contains_key(vault_id, actor),
+                Error::<T>::NotVaultMember
+            );
+
+            ensure!(
+                VaultFiles::<T>::contains_key(vault_id, file_enc_hash),
+                Error::<T>::FileNotFound
+            );
+
+            ensure!(
+                !ActiveUnlocks::<T>::contains_key(vault_id, file_enc_hash),
+                Error::<T>::UnlockAlreadyActive
+            );
+
+            let block_number = frame_system::Pallet::<T>::block_number();
+            let expires_at = block_number.saturating_add(T::UnlockPeriodBlocks::get());
+            let request_id = Self::next_unlock_request_id();
+
+            let request = UnlockRequest {
+                id: request_id,
+                vault: vault_id,
+                file_enc_hash,
+                requester: actor,
+                approvals: 1,
+                initiated_at: block_number,
+                expires_at,
+                completed: false,
+            };
+
+            UnlockRequests::<T>::insert(request_id, request);
+            UnlockApprovals::<T>::insert(request_id, actor, ());
+            ActiveUnlocks::<T>::insert(vault_id, file_enc_hash, request_id);
+
+            Self::deposit_event(Event::UnlockRequested {
+                vault_id,
+                request_id,
+                file_enc_hash,
+                requester: actor,
+            });
+
+            // Auto-complete if threshold is already met
+            if 1u32 >= vault.threshold {
+                Self::complete_unlock(vault_id, request_id, file_enc_hash)?;
+            }
+
+            Ok(())
+        }
+
+        /// Authorize (approve) an existing unlock request.
+        ///
+        /// Guards: request exists, not completed, not expired,
+        /// caller is vault member, caller has not already
+        /// approved. If approvals reach threshold, auto-complete.
+        #[pallet::call_index(10)]
+        #[pallet::weight(T::WeightInfo::authorize_unlock())]
+        pub fn authorize_unlock(
+            origin: OriginFor<T>,
+            request_id: UnlockRequestId,
+        ) -> DispatchResult {
+            let who = ensure_signed(origin)?;
+
+            let request = UnlockRequests::<T>::get(request_id).ok_or(Error::<T>::UnlockNotFound)?;
+
+            ensure!(!request.completed, Error::<T>::UnlockAlreadyCompleted);
+
+            let block_number = frame_system::Pallet::<T>::block_number();
+            ensure!(
+                block_number <= request.expires_at,
+                Error::<T>::UnlockExpired
+            );
+
+            let vault_id = request.vault;
+            let vault = Vaults::<T>::get(vault_id).ok_or(Error::<T>::VaultNotFound)?;
+
+            let actor = Self::account_to_actor(who);
+            ensure!(
+                VaultMembers::<T>::contains_key(vault_id, actor),
+                Error::<T>::NotVaultMember
+            );
+
+            ensure!(
+                !UnlockApprovals::<T>::contains_key(request_id, actor),
+                Error::<T>::AlreadyApproved
+            );
+
+            UnlockApprovals::<T>::insert(request_id, actor, ());
+
+            let new_approvals =
+                UnlockRequests::<T>::try_mutate(request_id, |req| -> Result<u32, DispatchError> {
+                    let r = req.as_mut().ok_or(Error::<T>::UnlockNotFound)?;
+                    r.approvals = r.approvals.saturating_add(1);
+                    Ok(r.approvals)
+                })?;
+
+            Self::deposit_event(Event::UnlockAuthorized {
+                vault_id,
+                request_id,
+                actor,
+                approvals_so_far: new_approvals,
+            });
+
+            if new_approvals >= vault.threshold {
+                Self::complete_unlock(vault_id, request_id, request.file_enc_hash)?;
+            }
+
+            Ok(())
+        }
     }
 
     impl<T: Config> Pallet<T> {
@@ -762,6 +1086,31 @@ pub mod pallet {
             let id = ShareCount::<T>::get();
             ShareCount::<T>::put(id.saturating_add(1));
             ShareId::new(id)
+        }
+
+        fn next_unlock_request_id() -> UnlockRequestId {
+            let id = UnlockRequestCount::<T>::get();
+            UnlockRequestCount::<T>::put(id.saturating_add(1));
+            UnlockRequestId::new(id)
+        }
+
+        fn complete_unlock(
+            vault_id: VaultId,
+            request_id: UnlockRequestId,
+            file_enc_hash: H256,
+        ) -> DispatchResult {
+            UnlockRequests::<T>::mutate(request_id, |req| {
+                if let Some(ref mut r) = req {
+                    r.completed = true;
+                }
+            });
+            ActiveUnlocks::<T>::remove(vault_id, file_enc_hash);
+            Self::deposit_event(Event::FileUnlockCompleted {
+                vault_id,
+                request_id,
+                file_enc_hash,
+            });
+            Ok(())
         }
 
         fn account_to_actor(account: T::AccountId) -> ActorId {

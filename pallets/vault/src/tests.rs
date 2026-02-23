@@ -1,7 +1,8 @@
-#![allow(clippy::disallowed_macros)]
+#![allow(clippy::disallowed_macros, clippy::expect_used, clippy::unwrap_used)]
 
 use crate::{
-    self as pallet_vault, Error, Event, MemberRole, ShareId, ShareStatus, VaultId, VaultStatus,
+    self as pallet_vault, Error, Event, MemberRole, ShareId, ShareStatus, UnlockRequestId, VaultId,
+    VaultStatus,
 };
 use frame_support::{assert_noop, assert_ok, derive_impl, parameter_types, traits::ConstU32};
 use frame_system as system;
@@ -53,6 +54,8 @@ parameter_types! {
     pub const MaxRingSize: u32 = 10;
     pub const RecoveryPeriodBlocks: u64 = 100;
     pub const MaxVaultsPerActor: u32 = 5;
+    pub const MaxFilesPerVault: u32 = 3;
+    pub const UnlockPeriodBlocks: u64 = 50;
 }
 
 impl pallet_vault::Config for Test {
@@ -62,6 +65,8 @@ impl pallet_vault::Config for Test {
     type MaxRingSize = MaxRingSize;
     type RecoveryPeriodBlocks = RecoveryPeriodBlocks;
     type MaxVaultsPerActor = MaxVaultsPerActor;
+    type MaxFilesPerVault = MaxFilesPerVault;
+    type UnlockPeriodBlocks = UnlockPeriodBlocks;
 }
 
 fn new_test_ext() -> sp_io::TestExternalities {
@@ -599,5 +604,518 @@ fn different_threshold_configurations() {
         let vault3 = Vault::vaults(VaultId::new(2)).expect("vault should exist");
         assert_eq!(vault3.threshold, 5);
         assert_eq!(vault3.ring_size, 10);
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Helper: create an active vault (3 members, threshold 2) and return vault_id
+// ---------------------------------------------------------------------------
+fn create_active_vault(owner: u64) -> VaultId {
+    let vault_id = create_vault_with_members(owner, 3);
+    assert_ok!(Vault::activate_vault(
+        RuntimeOrigin::signed(owner),
+        vault_id
+    ));
+    vault_id
+}
+
+// ===========================================================================
+// File registration tests
+// ===========================================================================
+
+#[test]
+fn register_file_success() {
+    new_test_ext().execute_with(|| {
+        let vault_id = create_active_vault(1);
+        let enc_hash = H256([10u8; 32]);
+        let pt_hash = H256([11u8; 32]);
+        let fp = H256([12u8; 32]);
+
+        assert_ok!(Vault::register_file(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            enc_hash,
+            pt_hash,
+            fp,
+            4096,
+        ));
+
+        let file = Vault::vault_files(vault_id, enc_hash).expect("file should exist");
+        assert_eq!(file.vault, vault_id);
+        assert_eq!(file.enc_hash, enc_hash);
+        assert_eq!(file.plaintext_hash, pt_hash);
+        assert_eq!(file.key_fingerprint, fp);
+        assert_eq!(file.size_bytes, 4096);
+        assert_eq!(file.registered_by, account_to_actor(1));
+        assert_eq!(Vault::vault_file_count(vault_id), 1);
+    });
+}
+
+#[test]
+fn register_file_vault_not_active() {
+    new_test_ext().execute_with(|| {
+        let owner_actor = account_to_actor(1);
+        assert_ok!(Vault::create_vault(
+            RuntimeOrigin::signed(1),
+            owner_actor,
+            2,
+            3,
+            H256([1u8; 32]),
+        ));
+        let vault_id = VaultId::new(0);
+
+        assert_noop!(
+            Vault::register_file(
+                RuntimeOrigin::signed(1),
+                vault_id,
+                H256([10u8; 32]),
+                H256([11u8; 32]),
+                H256([12u8; 32]),
+                100,
+            ),
+            Error::<Test>::VaultNotActive
+        );
+    });
+}
+
+#[test]
+fn register_file_not_member() {
+    new_test_ext().execute_with(|| {
+        let vault_id = create_active_vault(1);
+
+        // Account 99 is not a vault member
+        assert_noop!(
+            Vault::register_file(
+                RuntimeOrigin::signed(99),
+                vault_id,
+                H256([10u8; 32]),
+                H256([11u8; 32]),
+                H256([12u8; 32]),
+                100,
+            ),
+            Error::<Test>::NotVaultMember
+        );
+    });
+}
+
+#[test]
+fn register_file_duplicate_rejected() {
+    new_test_ext().execute_with(|| {
+        let vault_id = create_active_vault(1);
+        let enc_hash = H256([10u8; 32]);
+
+        assert_ok!(Vault::register_file(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            enc_hash,
+            H256([11u8; 32]),
+            H256([12u8; 32]),
+            100,
+        ));
+
+        assert_noop!(
+            Vault::register_file(
+                RuntimeOrigin::signed(1),
+                vault_id,
+                enc_hash,
+                H256([13u8; 32]),
+                H256([14u8; 32]),
+                200,
+            ),
+            Error::<Test>::FileAlreadyRegistered
+        );
+    });
+}
+
+#[test]
+fn register_file_max_files_reached() {
+    new_test_ext().execute_with(|| {
+        let vault_id = create_active_vault(1);
+
+        // MaxFilesPerVault = 3 in mock config
+        for i in 0u8..3 {
+            assert_ok!(Vault::register_file(
+                RuntimeOrigin::signed(1),
+                vault_id,
+                H256([i.saturating_add(10); 32]),
+                H256([i.saturating_add(20); 32]),
+                H256([i.saturating_add(30); 32]),
+                100u64.saturating_add(i as u64),
+            ));
+        }
+
+        assert_noop!(
+            Vault::register_file(
+                RuntimeOrigin::signed(1),
+                vault_id,
+                H256([99u8; 32]),
+                H256([98u8; 32]),
+                H256([97u8; 32]),
+                999,
+            ),
+            Error::<Test>::MaxFilesReached
+        );
+    });
+}
+
+// ===========================================================================
+// Unlock request tests
+// ===========================================================================
+
+#[test]
+fn request_unlock_success() {
+    new_test_ext().execute_with(|| {
+        let vault_id = create_active_vault(1);
+        let enc_hash = H256([10u8; 32]);
+
+        assert_ok!(Vault::register_file(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            enc_hash,
+            H256([11u8; 32]),
+            H256([12u8; 32]),
+            100,
+        ));
+
+        assert_ok!(Vault::request_unlock(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            enc_hash,
+        ));
+
+        let req_id = UnlockRequestId::new(0);
+        let request = Vault::unlock_requests(req_id).expect("request should exist");
+        assert_eq!(request.vault, vault_id);
+        assert_eq!(request.file_enc_hash, enc_hash);
+        assert_eq!(request.requester, account_to_actor(1));
+        assert_eq!(request.approvals, 1);
+        assert!(!request.completed);
+
+        // Active unlock mapping should exist
+        assert_eq!(Vault::active_unlocks(vault_id, enc_hash), Some(req_id));
+    });
+}
+
+#[test]
+fn request_unlock_file_not_found() {
+    new_test_ext().execute_with(|| {
+        let vault_id = create_active_vault(1);
+
+        assert_noop!(
+            Vault::request_unlock(RuntimeOrigin::signed(1), vault_id, H256([99u8; 32]),),
+            Error::<Test>::FileNotFound
+        );
+    });
+}
+
+#[test]
+fn request_unlock_already_active() {
+    new_test_ext().execute_with(|| {
+        let vault_id = create_active_vault(1);
+        let enc_hash = H256([10u8; 32]);
+
+        assert_ok!(Vault::register_file(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            enc_hash,
+            H256([11u8; 32]),
+            H256([12u8; 32]),
+            100,
+        ));
+
+        assert_ok!(Vault::request_unlock(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            enc_hash,
+        ));
+
+        assert_noop!(
+            Vault::request_unlock(RuntimeOrigin::signed(2), vault_id, enc_hash,),
+            Error::<Test>::UnlockAlreadyActive
+        );
+    });
+}
+
+// ===========================================================================
+// Authorize unlock tests
+// ===========================================================================
+
+#[test]
+fn authorize_unlock_success() {
+    new_test_ext().execute_with(|| {
+        let vault_id = create_active_vault(1);
+        let enc_hash = H256([10u8; 32]);
+
+        assert_ok!(Vault::register_file(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            enc_hash,
+            H256([11u8; 32]),
+            H256([12u8; 32]),
+            100,
+        ));
+
+        assert_ok!(Vault::request_unlock(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            enc_hash,
+        ));
+
+        let req_id = UnlockRequestId::new(0);
+
+        // Account 2 is a member (Participant added in helper)
+        assert_ok!(Vault::authorize_unlock(RuntimeOrigin::signed(2), req_id,));
+
+        let request = Vault::unlock_requests(req_id).expect("request should exist");
+        // threshold=2, 2 approvals => completed
+        assert!(request.completed);
+        assert_eq!(request.approvals, 2);
+
+        // Active unlock should be cleared
+        assert_eq!(Vault::active_unlocks(vault_id, enc_hash), None);
+    });
+}
+
+#[test]
+fn authorize_unlock_completes_at_threshold() {
+    new_test_ext().execute_with(|| {
+        let vault_id = create_active_vault(1);
+        let enc_hash = H256([10u8; 32]);
+
+        assert_ok!(Vault::register_file(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            enc_hash,
+            H256([11u8; 32]),
+            H256([12u8; 32]),
+            100,
+        ));
+
+        assert_ok!(Vault::request_unlock(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            enc_hash,
+        ));
+
+        let req_id = UnlockRequestId::new(0);
+
+        // Before threshold
+        let request = Vault::unlock_requests(req_id).expect("request should exist");
+        assert_eq!(request.approvals, 1);
+        assert!(!request.completed);
+
+        // Second approval hits threshold (2)
+        assert_ok!(Vault::authorize_unlock(RuntimeOrigin::signed(2), req_id,));
+
+        let request = Vault::unlock_requests(req_id).expect("request should exist");
+        assert_eq!(request.approvals, 2);
+        assert!(request.completed);
+    });
+}
+
+#[test]
+fn authorize_unlock_expired() {
+    new_test_ext().execute_with(|| {
+        let vault_id = create_active_vault(1);
+        let enc_hash = H256([10u8; 32]);
+
+        assert_ok!(Vault::register_file(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            enc_hash,
+            H256([11u8; 32]),
+            H256([12u8; 32]),
+            100,
+        ));
+
+        assert_ok!(Vault::request_unlock(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            enc_hash,
+        ));
+
+        let req_id = UnlockRequestId::new(0);
+
+        // Advance blocks past unlock period (50 blocks)
+        System::set_block_number(100);
+
+        assert_noop!(
+            Vault::authorize_unlock(RuntimeOrigin::signed(2), req_id,),
+            Error::<Test>::UnlockExpired
+        );
+    });
+}
+
+#[test]
+fn authorize_unlock_duplicate_rejected() {
+    new_test_ext().execute_with(|| {
+        let vault_id = create_active_vault(1);
+        let enc_hash = H256([10u8; 32]);
+
+        assert_ok!(Vault::register_file(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            enc_hash,
+            H256([11u8; 32]),
+            H256([12u8; 32]),
+            100,
+        ));
+
+        assert_ok!(Vault::request_unlock(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            enc_hash,
+        ));
+
+        let req_id = UnlockRequestId::new(0);
+
+        // Requester already approved implicitly
+        assert_noop!(
+            Vault::authorize_unlock(RuntimeOrigin::signed(1), req_id,),
+            Error::<Test>::AlreadyApproved
+        );
+    });
+}
+
+#[test]
+fn authorize_unlock_not_member() {
+    new_test_ext().execute_with(|| {
+        let vault_id = create_active_vault(1);
+        let enc_hash = H256([10u8; 32]);
+
+        assert_ok!(Vault::register_file(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            enc_hash,
+            H256([11u8; 32]),
+            H256([12u8; 32]),
+            100,
+        ));
+
+        assert_ok!(Vault::request_unlock(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            enc_hash,
+        ));
+
+        let req_id = UnlockRequestId::new(0);
+
+        // Account 99 is not a vault member
+        assert_noop!(
+            Vault::authorize_unlock(RuntimeOrigin::signed(99), req_id,),
+            Error::<Test>::NotVaultMember
+        );
+    });
+}
+
+// ===========================================================================
+// End-to-end and event tests
+// ===========================================================================
+
+#[test]
+fn full_file_lifecycle() {
+    new_test_ext().execute_with(|| {
+        // 1. Create active vault (owner=1, members=1,2,3)
+        let vault_id = create_active_vault(1);
+
+        // 2. Register a file
+        let enc_hash = H256([10u8; 32]);
+        assert_ok!(Vault::register_file(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            enc_hash,
+            H256([11u8; 32]),
+            H256([12u8; 32]),
+            2048,
+        ));
+        assert_eq!(Vault::vault_file_count(vault_id), 1);
+
+        // 3. Request unlock (auto-approves for requester)
+        assert_ok!(Vault::request_unlock(
+            RuntimeOrigin::signed(2),
+            vault_id,
+            enc_hash,
+        ));
+        let req_id = UnlockRequestId::new(0);
+        let req = Vault::unlock_requests(req_id).expect("request");
+        assert_eq!(req.approvals, 1);
+        assert!(!req.completed);
+
+        // 4. Second member authorizes => threshold met
+        assert_ok!(Vault::authorize_unlock(RuntimeOrigin::signed(3), req_id,));
+        let req = Vault::unlock_requests(req_id).expect("request");
+        assert!(req.completed);
+        assert_eq!(req.approvals, 2);
+
+        // 5. Active unlock cleared
+        assert!(Vault::active_unlocks(vault_id, enc_hash).is_none());
+
+        // 6. A new unlock can be requested after completion
+        assert_ok!(Vault::request_unlock(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            enc_hash,
+        ));
+        let new_req_id = UnlockRequestId::new(1);
+        assert!(Vault::unlock_requests(new_req_id).is_some());
+    });
+}
+
+#[test]
+fn events_emitted_for_file_operations() {
+    new_test_ext().execute_with(|| {
+        let vault_id = create_active_vault(1);
+        let enc_hash = H256([10u8; 32]);
+        let fp = H256([12u8; 32]);
+        let actor1 = account_to_actor(1);
+        let actor2 = account_to_actor(2);
+
+        // Register file
+        assert_ok!(Vault::register_file(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            enc_hash,
+            H256([11u8; 32]),
+            fp,
+            100,
+        ));
+
+        System::assert_has_event(RuntimeEvent::Vault(Event::FileRegistered {
+            vault_id,
+            enc_hash,
+            key_fingerprint: fp,
+            registered_by: actor1,
+        }));
+
+        // Request unlock
+        assert_ok!(Vault::request_unlock(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            enc_hash,
+        ));
+        let req_id = UnlockRequestId::new(0);
+
+        System::assert_has_event(RuntimeEvent::Vault(Event::UnlockRequested {
+            vault_id,
+            request_id: req_id,
+            file_enc_hash: enc_hash,
+            requester: actor1,
+        }));
+
+        // Authorize
+        assert_ok!(Vault::authorize_unlock(RuntimeOrigin::signed(2), req_id,));
+
+        System::assert_has_event(RuntimeEvent::Vault(Event::UnlockAuthorized {
+            vault_id,
+            request_id: req_id,
+            actor: actor2,
+            approvals_so_far: 2,
+        }));
+
+        System::assert_has_event(RuntimeEvent::Vault(Event::FileUnlockCompleted {
+            vault_id,
+            request_id: req_id,
+            file_enc_hash: enc_hash,
+        }));
     });
 }

@@ -1,4 +1,5 @@
 #![cfg_attr(not(feature = "std"), no_std)]
+#![allow(clippy::expect_used)]
 extern crate alloc;
 
 pub use pallet::*;
@@ -22,6 +23,7 @@ use sp_core::{blake2_256, H256};
     Clone,
     Copy,
     Debug,
+    Default,
     PartialEq,
     Eq,
     Encode,
@@ -31,21 +33,17 @@ use sp_core::{blake2_256, H256};
     MaxEncodedLen,
 )]
 pub enum ProofType {
+    #[default]
     Share,
     Presence,
     Access,
-}
-
-impl Default for ProofType {
-    fn default() -> Self {
-        Self::Share
-    }
 }
 
 #[derive(
     Clone,
     Copy,
     Debug,
+    Default,
     PartialEq,
     Eq,
     Encode,
@@ -55,15 +53,10 @@ impl Default for ProofType {
     MaxEncodedLen,
 )]
 pub enum VerificationStatus {
+    #[default]
     Pending,
     Verified,
     Rejected,
-}
-
-impl Default for VerificationStatus {
-    fn default() -> Self {
-        Self::Pending
-    }
 }
 
 #[derive(
@@ -188,6 +181,7 @@ pub const DOMAIN_ACCESS_PROOF: &[u8] = b"7ay:access:v1";
     Clone,
     Copy,
     Debug,
+    Default,
     PartialEq,
     Eq,
     Encode,
@@ -198,17 +192,12 @@ pub const DOMAIN_ACCESS_PROOF: &[u8] = b"7ay:access:v1";
 )]
 pub enum SnarkProofType {
     /// Groth16 - smallest proofs, trusted setup required
+    #[default]
     Groth16,
     /// PlonK - universal setup, larger proofs
     PlonK,
     /// Halo2 - no trusted setup, recursive friendly
     Halo2,
-}
-
-impl Default for SnarkProofType {
-    fn default() -> Self {
-        Self::Groth16
-    }
 }
 
 /// Circuit data stored in the registry
