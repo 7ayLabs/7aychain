@@ -10,8 +10,10 @@ Requirements:
     pip install substrate-interface
 """
 
-import sys, os, time, json, hashlib, secrets, argparse, pathlib
+import sys, os, time, json, hashlib, secrets, argparse, pathlib, re
 from datetime import datetime
+
+_ANSI_RE = re.compile(r'\033\[[0-9;]*m')
 
 SUBSTRATE_OK = False
 try:
@@ -460,27 +462,82 @@ class LaudCLI:
             print(line)
         print()
 
-    def _header(self, title):
-        print(f"\n  {C.BB}{title}{C.R}")
-        print(f"  {C.DIM}{'─' * min(52, len(title) + 4)}{C.R}")
+    def _box(self, lines, color=None, width=53):
+        c = color or C.BB
+        top = f"  {c}\u256d\u2500{'\u2500' * width}\u2500\u256e{C.R}"
+        bot = f"  {c}\u2570\u2500{'\u2500' * width}\u2500\u256f{C.R}"
+        print(top)
+        for ln in lines:
+            vis = len(_ANSI_RE.sub('', ln))
+            pad = max(0, width - vis)
+            print(f"  {c}\u2502{C.R} {ln}{' ' * pad} {c}\u2502{C.R}")
+        print(bot)
 
-    def _menu_display(self, title, options):
-        print(f"\n  {C.BB}{title}{C.R}")
-        print(f"  {C.DIM}{'─' * min(52, len(title) + 4)}{C.R}")
+    def _separator_line(self, label="", width=53):
+        total = width + 4
+        if label:
+            dash_len = max(0, total - len(label) - 4)
+            print(f"  {C.DIM}\u2500\u2500 {C.B}{label}{C.DIM} "
+                  f"{'\u2500' * dash_len}{C.R}")
+        else:
+            print(f"  {C.DIM}{'\u2500' * total}{C.R}")
+
+    def _header(self, title):
+        print()
+        self._separator_line(title)
+
+    def _menu_display(self, title, options, domain=None):
+        # Box header with summary
+        if domain and domain.help_summary:
+            print()
+            self._box([
+                f"{C.BB}{title}{C.R}",
+                f"{C.DIM}{domain.help_summary[:51]}{C.R}",
+            ], color=C.BB)
+        else:
+            print()
+            self._separator_line(title)
+
+        # Build command lookup for help_text
+        cmd_info = {}
+        if domain:
+            for cmd in domain.commands:
+                cmd_info[cmd.key] = cmd
+
         for key, label in options:
-            if key == "─" or key == "---":
+            if key == "\u2500" or key == "---":
                 if label:
-                    print(f"  {C.DIM}── {label} ──{C.R}")
+                    print()
+                    self._separator_line(label.upper())
                 else:
                     print()
-            elif key == "?":
-                print(f"  {C.DIM} ?{C.R}  {label}")
-            elif key == "i":
-                print(f"  {C.DIM} i{C.R}  {label}")
-            elif key == "0":
-                print(f"  {C.DIM} 0  {label}{C.R}")
+                continue
+            if key in ("?", "i", "0"):
+                continue  # shown in footer
+
+            # Lookup help_text
+            ci = cmd_info.get(key)
+            ht = ""
+            if ci and ci.help_text:
+                ht = ci.help_text[:30]
+
+            if ht:
+                lbl = label[:22]
+                dot_n = max(2, 26 - len(lbl))
+                dots = '\u00b7' * dot_n
+                print(f"   {C.Y}{key:>2}{C.R}  "
+                      f"{lbl:<22}"
+                      f"{C.DIM}{dots}{C.R} "
+                      f"{C.DIM}{ht}{C.R}")
             else:
-                print(f"  {C.Y}{key:>2}{C.R}  {label}")
+                print(f"   {C.Y}{key:>2}{C.R}  {label}")
+
+        # Footer
+        print()
+        self._separator_line()
+        print(f"    {C.DIM}i{C.R}  instructions"
+              f"    {C.DIM}?{C.R}  refresh"
+              f"    {C.DIM}0{C.R}  back")
         print()
 
     # ------------------------------------------------------------------
@@ -571,7 +628,7 @@ class LaudCLI:
         return self._actor_id(name)
 
     def _pause(self):
-        pass
+        print(f"  {C.DIM}{'\u2500' * 40}{C.R}")
 
     # ------------------------------------------------------------------
     # Error hints
@@ -649,7 +706,7 @@ class LaudCLI:
                  if self._mode == 'normal' and domain.normal_title
                  else domain.title)
         if not _direct:
-            self._menu_display(title, opts)
+            self._menu_display(title, opts, domain=domain)
 
         while True:
             if _direct:
@@ -662,7 +719,7 @@ class LaudCLI:
                 self._nav_stack.pop()
                 break
             if c == "?":
-                self._menu_display(title, opts)
+                self._menu_display(title, opts, domain=domain)
                 continue
             if c == "i" or c.startswith("i "):
                 parts = c.split(None, 1)
@@ -755,31 +812,40 @@ class LaudCLI:
     # ------------------------------------------------------------------
 
     def _show_domain_instructions(self, domain):
-        self._header(f"About: {domain.title}")
+        print()
+        self._box([
+            f"{C.BB}About: {domain.title}{C.R}",
+        ], color=C.CY)
         if domain.instructions:
             print(domain.instructions)
         elif domain.help_summary:
             print(f"  {domain.help_summary}")
-        print(f"\n  {C.W}Available Commands:{C.R}\n")
+        print()
+        self._separator_line("COMMANDS")
         for cmd in domain.commands:
             if cmd.action == "separator":
                 continue
-            ht = cmd.help_text or cmd.label
-            print(f"  {C.Y}{cmd.key:>3}{C.R}  {C.W}{cmd.label}{C.R}")
+            print(f"   {C.Y}{cmd.key:>2}{C.R}  "
+                  f"{C.W}{cmd.label}{C.R}")
             if cmd.help_text:
                 print(f"       {C.DIM}{cmd.help_text}{C.R}")
         print()
 
     def _show_command_instructions(self, cmd):
-        self._header(cmd.label)
+        print()
+        self._box([
+            f"{C.BB}{cmd.label}{C.R}",
+        ], color=C.CY)
         if cmd.instructions:
             print(cmd.instructions)
         elif cmd.help_text:
             print(f"  {cmd.help_text}")
         else:
-            print(f"  {C.DIM}No detailed instructions for this command.{C.R}")
+            print(f"  {C.DIM}No detailed instructions "
+                  f"for this command.{C.R}")
         if cmd.aliases:
-            print(f"\n  {C.DIM}Shortcuts: {', '.join(cmd.aliases)}{C.R}")
+            print(f"\n  {C.DIM}Shortcuts: "
+                  f"{', '.join(cmd.aliases)}{C.R}")
         print()
 
     # ------------------------------------------------------------------
@@ -834,6 +900,66 @@ class LaudCLI:
         parts.append(f"account: {C.W}{acct}{C.R}{admin_tag}")
         print(f"  {'  '.join(parts)}")
 
+        # Epoch dashboard
+        status = self._fetch_epoch_status()
+        if status:
+            eid = status.get('epoch_id', 0)
+            state = status.get('epoch_state', 'None')
+            pres = status.get('presence_state')
+            is_part = status.get('is_participant', False)
+            cur_blk = status.get('current_block', 0)
+            end_blk = status.get('end_block', 0)
+            pc = status.get('participant_count', 0)
+
+            if self._mode == 'normal':
+                state_labels = {
+                    'None': 'No Session', 'Scheduled': 'Upcoming',
+                    'Active': 'In Progress', 'Closed': 'Wrapping Up',
+                    'Finalized': 'Complete',
+                }
+                sl = state_labels.get(state, state)
+                print(f"  Session: {C.W}E{eid}{C.R}  "
+                      f"State: {C.W}{sl}{C.R}  "
+                      f"Participants: {C.W}{pc}{C.R}")
+            else:
+                print(f"  Epoch: {C.W}{eid}{C.R}  "
+                      f"State: {C.W}{state}{C.R}  "
+                      f"Participants: {C.W}{pc}{C.R}")
+
+            # Progress bar for active epoch
+            if state == 'Active' and end_blk > 0:
+                start = status.get('start_block', 0)
+                if end_blk > start:
+                    pct = min(100, max(0, int(
+                        (cur_blk - start) /
+                        (end_blk - start) * 100)))
+                    remaining = max(0, end_blk - cur_blk)
+                    bar_len = 20
+                    filled = int(bar_len * pct / 100)
+                    bar = ('█' * filled +
+                           '░' * (bar_len - filled))
+                    print(f"  {C.G}{bar}{C.R} {pct}%  "
+                          f"{C.DIM}~{remaining} blocks left{C.R}")
+
+            # Participation status
+            if pres == 'Finalized':
+                print(f"  You: {C.W}Verified{C.R}")
+            elif pres == 'Slashed':
+                print(f"  You: {C.RED}Slashed{C.R}")
+            elif pres == 'Validated':
+                print(f"  You: {C.BB}Validated{C.R}")
+            elif pres == 'Declared':
+                vc = status.get('vote_count', 0)
+                qt = status.get('quorum_threshold', 2)
+                print(f"  You: {C.CY}Declared "
+                      f"({vc}/{qt} votes){C.R}")
+            elif is_part:
+                print(f"  You: {C.G}Registered{C.R}")
+            elif state not in ('None', 'Finalized'):
+                print(f"  You: {C.DIM}Not participating{C.R}")
+
+            print(f"  {C.DIM}Tip: type 'flow' for next steps{C.R}")
+
     def bootstrap(self):
         self._auto_setup_validators()
 
@@ -852,6 +978,314 @@ class LaudCLI:
             self.bootstrap()
             return True
         return False
+
+    # ------------------------------------------------------------------
+    # Epoch status and flow
+    # ------------------------------------------------------------------
+
+    def _fetch_epoch_status(self):
+        """Fetch and cache epoch state + user participation.
+        Caches for 5 seconds to avoid RPC spam on every prompt.
+        """
+        now = time.time()
+        if (hasattr(self, '_epoch_cache')
+                and self._epoch_cache
+                and now - self._epoch_cache.get('_ts', 0) < 5):
+            return self._epoch_cache
+
+        if not self.connected or not self.substrate:
+            return None
+
+        try:
+            result = {}
+
+            # Current epoch from Epoch pallet
+            epoch_r = self.substrate.query("Epoch", "CurrentEpoch")
+            epoch_id = epoch_r.value if epoch_r else 0
+            result['epoch_id'] = epoch_id
+
+            # Epoch metadata (state, blocks, participants)
+            info = self.substrate.query("Epoch", "EpochInfo", [epoch_id])
+            if info and info.value:
+                result['epoch_state'] = info.value.get('state', 'Unknown')
+                result['start_block'] = info.value.get('start_block', 0)
+                result['end_block'] = info.value.get('end_block', 0)
+                result['participant_count'] = info.value.get(
+                    'participant_count', 0)
+            else:
+                result['epoch_state'] = 'None'
+
+            # Check participation for current account
+            acct = self._ctx_account
+            if acct in self.keypairs:
+                kp = self.keypairs[acct]
+                try:
+                    is_part = self.substrate.query(
+                        "Epoch", "EpochParticipants",
+                        [epoch_id, kp.ss58_address])
+                    result['is_participant'] = bool(
+                        is_part and is_part.value)
+                except Exception:
+                    result['is_participant'] = False
+
+                # Check presence state
+                aid = self._actor_id(acct)
+                pres_epoch = self._ctx_epoch or epoch_id
+                try:
+                    pres = self.substrate.query(
+                        "Presence", "Presences",
+                        [pres_epoch, aid])
+                    if pres and pres.value:
+                        result['presence_state'] = pres.value.get(
+                            'state', None)
+                        result['vote_count'] = pres.value.get(
+                            'vote_count', 0)
+                    else:
+                        result['presence_state'] = None
+                except Exception:
+                    result['presence_state'] = None
+
+            # Quorum config
+            try:
+                qc = self.substrate.query(
+                    "Presence", "QuorumConfigStorage")
+                if qc and qc.value:
+                    result['quorum_threshold'] = qc.value.get(
+                        'threshold', 2)
+                else:
+                    result['quorum_threshold'] = 2
+            except Exception:
+                result['quorum_threshold'] = 2
+
+            # Current block
+            try:
+                header = self.substrate.get_block_header()['header']
+                result['current_block'] = int(header['number'])
+            except Exception:
+                result['current_block'] = 0
+
+            result['_ts'] = now
+            self._epoch_cache = result
+            return result
+
+        except Exception:
+            return None
+
+    def _epoch_status_tag(self):
+        """Build colorized epoch status tag for the prompt."""
+        status = self._fetch_epoch_status()
+        if not status:
+            return ""
+
+        eid = status.get('epoch_id', 0)
+        state = status.get('epoch_state', 'None')
+
+        if state == 'None' and eid == 0:
+            return f" {C.DIM}[no epoch]{C.R}"
+
+        state_map = {
+            'Scheduled': (C.Y, 'SCHED'),
+            'Active': (C.G, 'ACTIVE'),
+            'Closed': (C.DIM, 'CLOSED'),
+            'Finalized': (C.DIM, 'FINAL'),
+        }
+        color, label = state_map.get(state, (C.DIM, state[:6]))
+
+        # Participation tag
+        pres = status.get('presence_state')
+        is_part = status.get('is_participant', False)
+
+        if pres == 'Finalized':
+            ptag = f"{C.W}DONE"
+        elif pres == 'Slashed':
+            ptag = f"{C.RED}SLASHED"
+        elif pres == 'Validated':
+            ptag = f"{C.BB}VALID"
+        elif pres == 'Declared':
+            vc = status.get('vote_count', 0)
+            qt = status.get('quorum_threshold', 2)
+            ptag = f"{C.CY}DECL {vc}/{qt}"
+        elif is_part:
+            ptag = f"{C.G}REG"
+        else:
+            ptag = f"{C.DIM}--"
+
+        return f" [{color}E{eid}:{label}{C.R}|{ptag}{C.R}]"
+
+    def _show_epoch_flow(self):
+        """Show contextual actions based on epoch state and participation."""
+        status = self._fetch_epoch_status()
+        if not status:
+            self._err("Cannot fetch epoch status. Are you connected?")
+            return
+
+        eid = status.get('epoch_id', 0)
+        state = status.get('epoch_state', 'None')
+        pres = status.get('presence_state')
+        is_part = status.get('is_participant', False)
+        vc = status.get('vote_count', 0)
+        qt = status.get('quorum_threshold', 2)
+        cur_blk = status.get('current_block', 0)
+        end_blk = status.get('end_block', 0)
+
+        # Header
+        if self._mode == 'normal':
+            state_labels = {
+                'None': 'No Session', 'Scheduled': 'Upcoming',
+                'Active': 'In Progress', 'Closed': 'Wrapping Up',
+                'Finalized': 'Complete',
+            }
+            sl = state_labels.get(state, state)
+            self._header(f"SESSION {eid}  [{sl}]")
+        else:
+            self._header(f"EPOCH {eid}  [{state}]")
+
+        # Progress
+        if state == 'Active' and end_blk > 0:
+            start = status.get('start_block', 0)
+            if end_blk > start:
+                pct = min(100, max(0, int(
+                    (cur_blk - start) / (end_blk - start) * 100)))
+                remaining = max(0, end_blk - cur_blk)
+                bar_len = 20
+                filled = int(bar_len * pct / 100)
+                bar = f"{'█' * filled}{'░' * (bar_len - filled)}"
+                print(f"  {C.G}{bar}{C.R} {pct}%  "
+                      f"{C.DIM}~{remaining} blocks left{C.R}")
+                print()
+
+        # Participation summary
+        pc = status.get('participant_count', 0)
+        if self._mode == 'normal':
+            print(f"  Participants: {C.W}{pc}{C.R}    "
+                  f"Your status: ", end="")
+        else:
+            print(f"  Participants: {C.W}{pc}{C.R}  |  "
+                  f"Presence: ", end="")
+
+        if pres == 'Finalized':
+            print(f"{C.W}Verified and locked{C.R}")
+        elif pres == 'Slashed':
+            print(f"{C.RED}Rejected{C.R}")
+        elif pres == 'Validated':
+            print(f"{C.BB}Confirmed, ready to finalize{C.R}")
+        elif pres == 'Declared':
+            needed = max(0, qt - vc)
+            print(f"{C.CY}Checked in, need {needed} more "
+                  f"vote(s) ({vc}/{qt}){C.R}")
+        elif is_part:
+            print(f"{C.G}Registered, not yet checked in{C.R}")
+        else:
+            print(f"{C.DIM}Not participating{C.R}")
+        print()
+
+        # Actions
+        if self._mode == 'normal':
+            print(f"  {C.BB}WHAT TO DO NEXT:{C.R}")
+        else:
+            print(f"  {C.BB}AVAILABLE ACTIONS:{C.R}")
+
+        actions = []
+
+        if state == 'None' or (state == 'None' and eid == 0):
+            actions.append((True,
+                "Schedule a new time period",
+                "epoch > 1 (Schedule)"))
+            actions.append((True,
+                "Create a vault (no epoch needed)",
+                "vault > 1 (Create)"))
+
+        elif state == 'Scheduled':
+            actions.append((not is_part,
+                "Register for this epoch",
+                "epoch > 5 (Register)"))
+            actions.append((True,
+                "Start the epoch (admin)",
+                "epoch > 2 (Start)"))
+
+        elif state == 'Active':
+            if not is_part:
+                actions.append((True,
+                    "Register as participant (required first)",
+                    "epoch > 5"))
+            elif pres is None:
+                actions.append((True,
+                    "Declare your presence",
+                    "presence > 1"))
+                actions.append((True,
+                    "Declare with commitment (private)",
+                    "presence > 2"))
+            elif pres == 'Declared':
+                needed = max(0, qt - vc)
+                actions.append((False,
+                    f"Waiting for {needed} more vote(s) "
+                    f"({vc}/{qt})",
+                    None))
+                actions.append((True,
+                    "Vote on another's presence (validator)",
+                    "presence > 4"))
+                actions.append((True,
+                    "Submit witness attestation",
+                    "pbt > 3"))
+            elif pres == 'Validated':
+                actions.append((True,
+                    "Finalize your presence (quorum met!)",
+                    "presence > 5"))
+                actions.append((True,
+                    "Secure a document in vault",
+                    "vault > 9"))
+            elif pres == 'Finalized':
+                actions.append((False,
+                    "Presence complete! You are verified.",
+                    None))
+                actions.append((True,
+                    "Secure a document in vault",
+                    "vault > 9"))
+                actions.append((True,
+                    "Vote on others' presence (validator)",
+                    "presence > 4"))
+            elif pres == 'Slashed':
+                actions.append((True,
+                    "Open a dispute if you disagree",
+                    "dispute > 1"))
+
+        elif state == 'Closed':
+            actions.append((True,
+                "Finalize remaining presences",
+                "presence > 5"))
+            actions.append((True,
+                "Open dispute if needed",
+                "dispute > 1"))
+            actions.append((True,
+                "Close the epoch (admin)",
+                "epoch > 3"))
+
+        elif state == 'Finalized':
+            actions.append((False,
+                "Epoch is finalized. Records are locked.",
+                None))
+            actions.append((True,
+                "Unlock secured documents",
+                "vault > 10"))
+            actions.append((True,
+                "View your presence record",
+                "presence > b"))
+
+        # Always-available
+        actions.append((True,
+            "View full status",
+            "status"))
+
+        for actionable, label, shortcut in actions:
+            if actionable and shortcut:
+                print(f"    {C.G}>{C.R} {label}")
+                print(f"      {C.DIM}run: {shortcut}{C.R}")
+            elif not actionable and shortcut:
+                print(f"    {C.CY}>{C.R} {label}")
+                print(f"      {C.DIM}run: {shortcut}{C.R}")
+            else:
+                print(f"    {C.DIM}  {label}{C.R}")
+        print()
 
     def _next_test_epoch(self):
         for e in range(2, 1000):
@@ -2357,14 +2791,14 @@ class LaudCLI:
             "retention": "Persistent",
         }, signer)
 
-        # Commit shares on-chain
-        self._info("Committing share hashes on-chain...")
-        for idx, value in shares:
-            commitment = ShamirScheme.create_commitment(idx, value)
-            self._submit("Vault", "commit_share", {
-                "vault_id": vault_id,
-                "commitment": f"0x{commitment.hex()}",
-            }, signer)
+        # Commit only the signer's own share (one commit per member)
+        self._info("Committing signer's share hash on-chain...")
+        own_idx, own_value = shares[0]
+        commitment = ShamirScheme.create_commitment(own_idx, own_value)
+        self._submit("Vault", "commit_share", {
+            "vault_id": vault_id,
+            "commitment": f"0x{commitment.hex()}",
+        }, signer)
 
         # Update local index
         add_to_index(
@@ -3008,7 +3442,8 @@ class LaudCLI:
 
         groups = {}
         for d in visible:
-            g = (d.normal_group if self._mode == 'normal' and d.normal_group
+            g = (d.normal_group
+                 if self._mode == 'normal' and d.normal_group
                  else d.group)
             groups.setdefault(g, []).append(d)
 
@@ -3019,30 +3454,45 @@ class LaudCLI:
         else:
             print(f"  {C.G}[NORMAL]{C.R}  "
                   f"{C.DIM}mode dev for full access{C.R}")
-        print()
 
         for gkey, gtitle in group_order:
             domains = groups.get(gkey, [])
             if not domains:
                 continue
-            print(f"  {C.B}{gtitle}{C.R}")
+            print()
+            self._separator_line(gtitle)
             for d in domains:
                 title = (d.normal_title
-                         if self._mode == 'normal' and d.normal_title
-                         else d.name)
-                sc = (f" {C.DIM}{d.shortcut}{C.R}"
-                      if d.shortcut else "")
-                print(f"  {C.Y}{d.number:>2}{C.R} "
-                      f"{title:<14}{sc}")
-            print()
+                         if self._mode == 'normal'
+                         and d.normal_title
+                         else d.name.capitalize())
+                desc = (d.help_summary[:32]
+                        if d.help_summary else "")
+                tname = title[:16]
+                dot_n = max(2, 34 - len(tname))
+                dots = '\u00b7' * dot_n
+                print(f"   {C.Y}{d.number:>2}{C.R}  "
+                      f"{tname:<16}"
+                      f"{C.DIM}{dots}{C.R} "
+                      f"{desc}")
 
-        print(f"  {C.B}TESTS{C.R}")
-        print(f"  {C.Y}t1{C.R} test pop")
-        print(f"  {C.Y}t2{C.R} test pbt")
-        print(f"  {C.Y}t3{C.R} test commit")
         print()
-        print(f"  {C.DIM}Other: status  use epoch/account  "
-              f"bootstrap (b)  connect (1)  help  ?  exit{C.R}")
+        self._separator_line("TESTS")
+        for key, name, desc in [
+            ("t1", "test pop", "Full PoP lifecycle"),
+            ("t2", "test pbt", "PBT triangulation"),
+            ("t3", "test commit", "Commit-reveal"),
+        ]:
+            dot_n = max(2, 24 - len(name))
+            dots = '\u00b7' * dot_n
+            print(f"   {C.Y}{key:>2}{C.R}  "
+                  f"{name:<16}"
+                  f"{C.DIM}{dots}{C.R} "
+                  f"{desc}")
+        print()
+        self._separator_line()
+        print(f"  {C.DIM}status  bootstrap (b)  "
+              f"flow (f)  connect (1)  help  ?  exit{C.R}")
         print()
 
     # ------------------------------------------------------------------
@@ -3069,6 +3519,7 @@ class LaudCLI:
 
   {C.W}Quick Actions{C.R}
     b / bootstrap     Bootstrap devnet (epoch + validators)
+    f / flow          Show what to do next (epoch-aware)
     t1 / test pop     Full PoP lifecycle test
     t2 / test pbt     PBT triangulation test
     t3 / test commit  Commit-reveal test
@@ -3149,8 +3600,9 @@ class LaudCLI:
             extras.append(f"{C.Y}{self._ctx_account}{C.R}")
         if self._ctx_epoch is not None:
             extras.append(f"{C.DIM}epoch:{self._ctx_epoch}{C.R}")
+        epoch_tag = self._epoch_status_tag()
         extra = " " + " ".join(extras) if extras else ""
-        return f"  {mode_tag}{C.B}{path}{C.R}{extra} > "
+        return f"  {mode_tag}{C.B}{path}{C.R}{extra}{epoch_tag} > "
 
     def _dispatch(self, line):
         parts = line.strip().split()
@@ -3171,6 +3623,9 @@ class LaudCLI:
             return
         if cmd in ('menu', 'm'):
             self._show_compact_menu()
+            return
+        if cmd in ('flow', 'f'):
+            self._show_epoch_flow()
             return
         if cmd == 'back':
             if self._nav_stack:
@@ -3269,12 +3724,19 @@ class LaudCLI:
     def _print_welcome(self):
         mode_str = "DEVELOPER" if self._mode == 'dev' else "NORMAL"
         mode_color = C.Y if self._mode == 'dev' else C.G
-        print(f"""
-  {C.BB}LAUD NETWORKS{C.R}  {C.DIM}PoP Protocol Testing Suite v1.2.0{C.R}
-  {mode_color}[{mode_str} MODE]{C.R}  {C.DIM}switch: mode dev | mode normal{C.R}
-  {C.DIM}Type{C.R} help {C.DIM}for commands,{C.R} menu {C.DIM}for full menu,{C.R} ? {C.DIM}for guide{C.R}
-  {C.G}New here?{C.R} {C.DIM}Type{C.R} ? {C.DIM}for a quick start, or{C.R} bootstrap {C.DIM}to set up the network{C.R}
-""")
+        print()
+        self._box([
+            f"{C.BB}LAUD NETWORKS{C.R}",
+            f"{C.DIM}Proof of Presence Protocol"
+            f"              v1.2.0{C.R}",
+            "",
+            f"{mode_color}[{mode_str} MODE]{C.R}"
+            f"   {C.DIM}switch: mode dev | mode normal{C.R}",
+        ], color=C.BB)
+        print(f"  {C.DIM}Type{C.R} menu {C.DIM}for commands,"
+              f"{C.R} flow {C.DIM}for next steps,"
+              f"{C.R} ? {C.DIM}for guide{C.R}")
+        print()
 
     def run(self):
         self._print_welcome()
