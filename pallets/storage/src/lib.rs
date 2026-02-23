@@ -1,4 +1,5 @@
 #![cfg_attr(not(feature = "std"), no_std)]
+#![allow(clippy::expect_used)]
 
 pub use pallet::*;
 pub mod weights;
@@ -45,6 +46,7 @@ impl DataKey {
     Clone,
     Copy,
     Debug,
+    Default,
     PartialEq,
     Eq,
     Encode,
@@ -58,19 +60,16 @@ pub enum DataType {
     Commitment,
     Proof,
     Metadata,
+    #[default]
     Temporary,
-}
-
-impl Default for DataType {
-    fn default() -> Self {
-        Self::Temporary
-    }
+    VaultFile,
 }
 
 #[derive(
     Clone,
     Copy,
     Debug,
+    Default,
     PartialEq,
     Eq,
     Encode,
@@ -80,21 +79,17 @@ impl Default for DataType {
     MaxEncodedLen,
 )]
 pub enum StorageStatus {
+    #[default]
     Active,
     Expired,
     Deleted,
-}
-
-impl Default for StorageStatus {
-    fn default() -> Self {
-        Self::Active
-    }
 }
 
 #[derive(
     Clone,
     Copy,
     Debug,
+    Default,
     PartialEq,
     Eq,
     Encode,
@@ -104,16 +99,11 @@ impl Default for StorageStatus {
     MaxEncodedLen,
 )]
 pub enum RetentionPolicy {
+    #[default]
     EpochBound,
     TimeBound,
     Persistent,
     OneTime,
-}
-
-impl Default for RetentionPolicy {
-    fn default() -> Self {
-        Self::EpochBound
-    }
 }
 
 #[derive(

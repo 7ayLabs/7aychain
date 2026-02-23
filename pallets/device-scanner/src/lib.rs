@@ -1,4 +1,5 @@
 #![cfg_attr(not(feature = "std"), no_std)]
+#![allow(clippy::expect_used)]
 
 extern crate alloc;
 
@@ -26,6 +27,7 @@ pub const MAX_DEVICES_PER_INHERENT: u32 = 100;
     Clone,
     Copy,
     Debug,
+    Default,
     PartialEq,
     Eq,
     Encode,
@@ -35,21 +37,17 @@ pub const MAX_DEVICES_PER_INHERENT: u32 = 100;
     MaxEncodedLen,
 )]
 pub enum ScanSignalType {
+    #[default]
     Wifi,
     Bluetooth,
     Ble,
-}
-
-impl Default for ScanSignalType {
-    fn default() -> Self {
-        Self::Wifi
-    }
 }
 
 #[derive(
     Clone,
     Copy,
     Debug,
+    Default,
     PartialEq,
     Eq,
     Encode,
@@ -59,6 +57,7 @@ impl Default for ScanSignalType {
     MaxEncodedLen,
 )]
 pub enum DetectedDeviceType {
+    #[default]
     Unknown,
     IPhone,
     Android,
@@ -73,12 +72,6 @@ pub enum DetectedDeviceType {
     NetworkDevice,
     Printer,
     GameConsole,
-}
-
-impl Default for DetectedDeviceType {
-    fn default() -> Self {
-        Self::Unknown
-    }
 }
 
 #[derive(

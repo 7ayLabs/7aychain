@@ -1,4 +1,5 @@
 #![cfg_attr(not(feature = "std"), no_std)]
+#![allow(clippy::expect_used)]
 extern crate alloc;
 
 pub use pallet::*;
@@ -63,6 +64,7 @@ impl BehaviorId {
     Clone,
     Copy,
     Debug,
+    Default,
     PartialEq,
     Eq,
     Encode,
@@ -72,6 +74,7 @@ impl BehaviorId {
     MaxEncodedLen,
 )]
 pub enum BehaviorType {
+    #[default]
     PresencePattern,
     InteractionPattern,
     TemporalPattern,
@@ -80,16 +83,11 @@ pub enum BehaviorType {
     Custom,
 }
 
-impl Default for BehaviorType {
-    fn default() -> Self {
-        Self::PresencePattern
-    }
-}
-
 #[derive(
     Clone,
     Copy,
     Debug,
+    Default,
     PartialEq,
     Eq,
     Encode,
@@ -99,6 +97,7 @@ impl Default for BehaviorType {
     MaxEncodedLen,
 )]
 pub enum PatternClassification {
+    #[default]
     Normal,
     PotentiallyAutomated,
     Automated,
@@ -106,16 +105,11 @@ pub enum PatternClassification {
     Malicious,
 }
 
-impl Default for PatternClassification {
-    fn default() -> Self {
-        Self::Normal
-    }
-}
-
 #[derive(
     Clone,
     Copy,
     Debug,
+    Default,
     PartialEq,
     Eq,
     Encode,
@@ -125,18 +119,13 @@ impl Default for PatternClassification {
     MaxEncodedLen,
 )]
 pub enum AutonomousStatus {
+    #[default]
     Unknown,
     Human,
     Suspected,
     Confirmed,
     UnderReview,
     Flagged,
-}
-
-impl Default for AutonomousStatus {
-    fn default() -> Self {
-        Self::Unknown
-    }
 }
 
 #[derive(

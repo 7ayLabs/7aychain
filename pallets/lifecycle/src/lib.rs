@@ -1,4 +1,5 @@
 #![cfg_attr(not(feature = "std"), no_std)]
+#![allow(clippy::expect_used)]
 
 pub use pallet::*;
 pub mod weights;
@@ -18,6 +19,7 @@ use sp_runtime::Saturating;
     Clone,
     Copy,
     Debug,
+    Default,
     PartialEq,
     Eq,
     Encode,
@@ -27,6 +29,7 @@ use sp_runtime::Saturating;
     MaxEncodedLen,
 )]
 pub enum ActorStatus {
+    #[default]
     Pending,
     Active,
     Suspended,
@@ -34,16 +37,11 @@ pub enum ActorStatus {
     Destroyed,
 }
 
-impl Default for ActorStatus {
-    fn default() -> Self {
-        Self::Pending
-    }
-}
-
 #[derive(
     Clone,
     Copy,
     Debug,
+    Default,
     PartialEq,
     Eq,
     Encode,
@@ -53,22 +51,18 @@ impl Default for ActorStatus {
     MaxEncodedLen,
 )]
 pub enum KeyStatus {
+    #[default]
     Active,
     Rotating,
     Destroying,
     Destroyed,
 }
 
-impl Default for KeyStatus {
-    fn default() -> Self {
-        Self::Active
-    }
-}
-
 #[derive(
     Clone,
     Copy,
     Debug,
+    Default,
     PartialEq,
     Eq,
     Encode,
@@ -78,17 +72,12 @@ impl Default for KeyStatus {
     MaxEncodedLen,
 )]
 pub enum DestructionReason {
+    #[default]
     OwnerRequest,
     SecurityBreach,
     Expiration,
     ProtocolViolation,
     Administrative,
-}
-
-impl Default for DestructionReason {
-    fn default() -> Self {
-        Self::OwnerRequest
-    }
 }
 
 #[derive(
@@ -709,12 +698,13 @@ pub mod pallet {
                     break;
                 }
 
-                if current_block >= request.timeout_at && !request.finalized {
-                    if request.attestations >= T::MinDestructionAttestations::get() {
-                        let _ = Self::finalize_destruction(actor);
-                    }
-                    processed = processed.saturating_add(1);
+                if current_block < request.timeout_at || request.finalized {
+                    continue;
                 }
+                if request.attestations >= T::MinDestructionAttestations::get() {
+                    let _ = Self::finalize_destruction(actor);
+                }
+                processed = processed.saturating_add(1);
             }
 
             Weight::from_parts(processed as u64 * 15_000, 0)
