@@ -1,3 +1,5 @@
+#![allow(clippy::disallowed_macros)]
+
 use crate::*;
 use frame_support::{assert_noop, assert_ok, derive_impl, parameter_types, traits::ConstU32};
 use sp_core::H256;

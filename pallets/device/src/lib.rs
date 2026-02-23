@@ -1,4 +1,5 @@
 #![cfg_attr(not(feature = "std"), no_std)]
+#![allow(clippy::expect_used)]
 extern crate alloc;
 
 pub use pallet::*;
@@ -42,6 +43,7 @@ impl DeviceId {
     Clone,
     Copy,
     Debug,
+    Default,
     PartialEq,
     Eq,
     Encode,
@@ -51,6 +53,7 @@ impl DeviceId {
     MaxEncodedLen,
 )]
 pub enum DeviceType {
+    #[default]
     Mobile,
     Desktop,
     Server,
@@ -59,16 +62,11 @@ pub enum DeviceType {
     Virtual,
 }
 
-impl Default for DeviceType {
-    fn default() -> Self {
-        Self::Mobile
-    }
-}
-
 #[derive(
     Clone,
     Copy,
     Debug,
+    Default,
     PartialEq,
     Eq,
     Encode,
@@ -78,18 +76,13 @@ impl Default for DeviceType {
     MaxEncodedLen,
 )]
 pub enum DeviceStatus {
+    #[default]
     Pending,
     Active,
     Suspended,
     Revoked,
     Compromised,
     Offline,
-}
-
-impl Default for DeviceStatus {
-    fn default() -> Self {
-        Self::Pending
-    }
 }
 
 #[derive(
@@ -115,6 +108,7 @@ pub struct HeartbeatInfo<BlockNumber> {
     Clone,
     Copy,
     Debug,
+    Default,
     PartialEq,
     Eq,
     Encode,
@@ -124,17 +118,12 @@ pub struct HeartbeatInfo<BlockNumber> {
     MaxEncodedLen,
 )]
 pub enum AttestationType {
+    #[default]
     SelfSigned,
     TrustedParty,
     HardwareBacked,
     Tpm,
     SecureEnclave,
-}
-
-impl Default for AttestationType {
-    fn default() -> Self {
-        Self::SelfSigned
-    }
 }
 
 #[derive(
@@ -748,38 +737,40 @@ pub mod pallet {
                 }
                 processed += 1;
 
-                if let Some(device) = Devices::<T>::get(device_id) {
-                    if device.status != DeviceStatus::Active {
-                        continue;
-                    }
-
-                    let blocks_since = current_block.saturating_sub(heartbeat.last_heartbeat);
-                    if blocks_since >= timeout {
-                        heartbeat.consecutive_misses =
-                            heartbeat.consecutive_misses.saturating_add(1);
-                        heartbeat.health_score = heartbeat.health_score.saturating_sub(decay);
-
-                        if heartbeat.consecutive_misses >= max_misses {
-                            Devices::<T>::mutate(device_id, |d| {
-                                if let Some(dev) = d {
-                                    dev.status = DeviceStatus::Offline;
-                                }
-                            });
-
-                            ActiveDeviceCount::<T>::mutate(|c| *c = c.saturating_sub(1));
-                            OfflineDeviceCount::<T>::mutate(|c| *c = c.saturating_add(1));
-
-                            Self::deposit_event(Event::DeviceWentOffline {
-                                device_id,
-                                consecutive_misses: heartbeat.consecutive_misses,
-                            });
-                        }
-
-                        Heartbeats::<T>::insert(device_id, heartbeat);
-                    }
+                let Some(device) = Devices::<T>::get(device_id) else {
+                    continue;
+                };
+                if device.status != DeviceStatus::Active {
+                    continue;
                 }
+
+                let blocks_since = current_block.saturating_sub(heartbeat.last_heartbeat);
+                if blocks_since < timeout {
+                    continue;
+                }
+                heartbeat.consecutive_misses = heartbeat.consecutive_misses.saturating_add(1);
+                heartbeat.health_score = heartbeat.health_score.saturating_sub(decay);
+
+                if heartbeat.consecutive_misses >= max_misses {
+                    Self::set_device_offline(device_id, heartbeat.consecutive_misses);
+                }
+
+                Heartbeats::<T>::insert(device_id, heartbeat);
             }
             processed
+        }
+
+        fn set_device_offline(device_id: DeviceId, consecutive_misses: u32) {
+            if let Some(mut dev) = Devices::<T>::get(device_id) {
+                dev.status = DeviceStatus::Offline;
+                Devices::<T>::insert(device_id, dev);
+            }
+            ActiveDeviceCount::<T>::mutate(|c| *c = c.saturating_sub(1));
+            OfflineDeviceCount::<T>::mutate(|c| *c = c.saturating_add(1));
+            Self::deposit_event(Event::DeviceWentOffline {
+                device_id,
+                consecutive_misses,
+            });
         }
     }
 }

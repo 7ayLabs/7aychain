@@ -1,8 +1,8 @@
 #![allow(clippy::disallowed_macros, clippy::expect_used, clippy::unwrap_used)]
 
 use crate::{
-    self as pallet_vault, Error, Event, MemberRole, ShareId, ShareStatus, UnlockRequestId,
-    VaultId, VaultStatus,
+    self as pallet_vault, Error, Event, MemberRole, ShareId, ShareStatus, UnlockRequestId, VaultId,
+    VaultStatus,
 };
 use frame_support::{assert_noop, assert_ok, derive_impl, parameter_types, traits::ConstU32};
 use frame_system as system;
