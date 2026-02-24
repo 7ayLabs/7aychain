@@ -225,10 +225,17 @@ pub struct CircuitData<BlockNumber> {
     pub vk_hash: H256,
     /// When the circuit was registered
     pub registered_at: BlockNumber,
+    /// Circuit version (monotonically increasing per circuit_id)
+    pub version: u32,
+    /// Whether this circuit is active (can be used for verification)
+    pub active: bool,
 }
 
 /// Maximum size of verification key data
 pub type MaxVkSize = ConstU32<4096>;
+
+/// Minimum size of verification key data (prevents empty/trivial VKs)
+pub const MIN_VK_SIZE: u32 = 32;
 
 /// Maximum number of public inputs
 pub type MaxPublicInputs = ConstU32<16>;
@@ -376,6 +383,10 @@ pub mod pallet {
             from: migration::ProofSystemMode,
             to: migration::ProofSystemMode,
         },
+        /// A circuit was deregistered (set to inactive)
+        CircuitDeregistered {
+            circuit_id: H256,
+        },
     }
 
     #[pallet::error]
@@ -396,6 +407,10 @@ pub mod pallet {
         SnarkVerificationFailed,
         /// Invalid proof system mode transition (must be forward-only)
         InvalidModeTransition,
+        /// Verification key too small or invalid format
+        InvalidVerificationKey,
+        /// Circuit is not active (deregistered)
+        CircuitNotActive,
     }
 
     #[pallet::call]
@@ -598,6 +613,7 @@ pub mod pallet {
 
         /// Register a SNARK circuit with its verification key (root only).
         /// This establishes the upgrade path from hash-based proofs to true ZK.
+        /// VK must be at least MIN_VK_SIZE bytes (prevents trivial/empty VKs).
         #[pallet::call_index(6)]
         #[pallet::weight(T::WeightInfo::register_circuit())]
         pub fn register_circuit(
@@ -613,6 +629,11 @@ pub mod pallet {
                 Error::<T>::CircuitAlreadyRegistered
             );
 
+            ensure!(
+                vk.len() >= MIN_VK_SIZE as usize,
+                Error::<T>::InvalidVerificationKey
+            );
+
             let vk_hash = H256(blake2_256(&vk));
             let block_number = frame_system::Pallet::<T>::block_number();
 
@@ -620,6 +641,8 @@ pub mod pallet {
                 proof_type,
                 vk_hash,
                 registered_at: block_number,
+                version: 1,
+                active: true,
             };
 
             CircuitRegistry::<T>::insert(circuit_id, circuit_data);
@@ -656,8 +679,9 @@ pub mod pallet {
 
             Self::check_verification_limit()?;
 
-            let _circuit =
+            let circuit =
                 CircuitRegistry::<T>::get(circuit_id).ok_or(Error::<T>::CircuitNotFound)?;
+            ensure!(circuit.active, Error::<T>::CircuitNotActive);
 
             let vk = VerificationKeys::<T>::get(circuit_id).ok_or(Error::<T>::CircuitNotFound)?;
 
@@ -672,6 +696,26 @@ pub mod pallet {
                 circuit_id,
                 verifier: actor,
             });
+
+            Ok(())
+        }
+
+        /// Deregister a SNARK circuit (root only).
+        /// Sets the circuit to inactive. Does not delete storage to preserve
+        /// audit trail. Inactive circuits cannot be used for verification.
+        #[pallet::call_index(9)]
+        #[pallet::weight(T::WeightInfo::deregister_circuit())]
+        pub fn deregister_circuit(origin: OriginFor<T>, circuit_id: H256) -> DispatchResult {
+            ensure_root(origin)?;
+
+            CircuitRegistry::<T>::try_mutate(circuit_id, |maybe_circuit| {
+                let circuit = maybe_circuit.as_mut().ok_or(Error::<T>::CircuitNotFound)?;
+                ensure!(circuit.active, Error::<T>::CircuitNotActive);
+                circuit.active = false;
+                Ok::<(), DispatchError>(())
+            })?;
+
+            Self::deposit_event(Event::CircuitDeregistered { circuit_id });
 
             Ok(())
         }

@@ -978,3 +978,225 @@ fn circuit_registry_all_proof_types() {
         );
     });
 }
+
+// ===================================================================
+// Circuit validation and deregistration
+// ===================================================================
+
+#[test]
+fn register_circuit_rejects_small_vk() {
+    new_test_ext().execute_with(|| {
+        let circuit_id = H256([10u8; 32]);
+        // VK smaller than MIN_VK_SIZE (32 bytes)
+        let small_vk = BoundedVec::try_from(vec![1u8; 16]).expect("fits");
+
+        assert_noop!(
+            Zk::register_circuit(
+                RuntimeOrigin::root(),
+                circuit_id,
+                SnarkProofType::Groth16,
+                small_vk
+            ),
+            Error::<Test>::InvalidVerificationKey
+        );
+    });
+}
+
+#[test]
+fn register_circuit_sets_version_and_active() {
+    new_test_ext().execute_with(|| {
+        let circuit_id = H256([10u8; 32]);
+        let vk = BoundedVec::try_from(vec![1u8; 64]).expect("fits");
+
+        assert_ok!(Zk::register_circuit(
+            RuntimeOrigin::root(),
+            circuit_id,
+            SnarkProofType::Groth16,
+            vk
+        ));
+
+        let circuit = Zk::circuit_registry(circuit_id).expect("registered");
+        assert_eq!(circuit.version, 1);
+        assert!(circuit.active);
+    });
+}
+
+#[test]
+fn deregister_circuit_success() {
+    new_test_ext().execute_with(|| {
+        let circuit_id = H256([10u8; 32]);
+        let vk = BoundedVec::try_from(vec![1u8; 64]).expect("fits");
+
+        assert_ok!(Zk::register_circuit(
+            RuntimeOrigin::root(),
+            circuit_id,
+            SnarkProofType::Groth16,
+            vk
+        ));
+
+        assert_ok!(Zk::deregister_circuit(RuntimeOrigin::root(), circuit_id));
+
+        let circuit = Zk::circuit_registry(circuit_id).expect("still exists");
+        assert!(!circuit.active);
+    });
+}
+
+#[test]
+fn deregister_circuit_requires_root() {
+    new_test_ext().execute_with(|| {
+        let circuit_id = H256([10u8; 32]);
+        let vk = BoundedVec::try_from(vec![1u8; 64]).expect("fits");
+
+        assert_ok!(Zk::register_circuit(
+            RuntimeOrigin::root(),
+            circuit_id,
+            SnarkProofType::Groth16,
+            vk
+        ));
+
+        assert_noop!(
+            Zk::deregister_circuit(RuntimeOrigin::signed(1), circuit_id),
+            frame_support::error::BadOrigin
+        );
+    });
+}
+
+#[test]
+fn deregister_nonexistent_circuit_fails() {
+    new_test_ext().execute_with(|| {
+        assert_noop!(
+            Zk::deregister_circuit(RuntimeOrigin::root(), H256([99u8; 32])),
+            Error::<Test>::CircuitNotFound
+        );
+    });
+}
+
+#[test]
+fn deregister_already_inactive_circuit_fails() {
+    new_test_ext().execute_with(|| {
+        let circuit_id = H256([10u8; 32]);
+        let vk = BoundedVec::try_from(vec![1u8; 64]).expect("fits");
+
+        assert_ok!(Zk::register_circuit(
+            RuntimeOrigin::root(),
+            circuit_id,
+            SnarkProofType::Groth16,
+            vk
+        ));
+        assert_ok!(Zk::deregister_circuit(RuntimeOrigin::root(), circuit_id));
+
+        assert_noop!(
+            Zk::deregister_circuit(RuntimeOrigin::root(), circuit_id),
+            Error::<Test>::CircuitNotActive
+        );
+    });
+}
+
+#[test]
+fn verify_snark_on_deregistered_circuit_fails() {
+    new_test_ext().execute_with(|| {
+        let verifier_account = 1u64;
+        let verifier = account_to_actor(verifier_account);
+        assert_ok!(Zk::add_trusted_verifier(RuntimeOrigin::root(), verifier));
+
+        let circuit_id = H256([10u8; 32]);
+        let vk = BoundedVec::try_from(vec![1u8; 256]).expect("fits");
+        assert_ok!(Zk::register_circuit(
+            RuntimeOrigin::root(),
+            circuit_id,
+            SnarkProofType::Groth16,
+            vk
+        ));
+
+        // Deregister the circuit
+        assert_ok!(Zk::deregister_circuit(RuntimeOrigin::root(), circuit_id));
+
+        // Try to verify against deregistered circuit
+        let proof = BoundedVec::try_from(vec![1u8; 256]).expect("fits");
+        let inputs = BoundedVec::try_from(vec![[1u8; 32]]).expect("fits");
+
+        assert_noop!(
+            Zk::verify_snark(
+                RuntimeOrigin::signed(verifier_account),
+                circuit_id,
+                proof,
+                inputs
+            ),
+            Error::<Test>::CircuitNotActive
+        );
+    });
+}
+
+// ===================================================================
+// Proof system mode transition tests
+// ===================================================================
+
+#[test]
+fn transition_mode_legacy_to_transitional() {
+    new_test_ext().execute_with(|| {
+        assert_eq!(
+            Zk::proof_system_mode(),
+            crate::migration::ProofSystemMode::Legacy
+        );
+
+        assert_ok!(Zk::transition_proof_system_mode(
+            RuntimeOrigin::root(),
+            crate::migration::ProofSystemMode::Transitional
+        ));
+
+        assert_eq!(
+            Zk::proof_system_mode(),
+            crate::migration::ProofSystemMode::Transitional
+        );
+    });
+}
+
+#[test]
+fn transition_mode_requires_root() {
+    new_test_ext().execute_with(|| {
+        assert_noop!(
+            Zk::transition_proof_system_mode(
+                RuntimeOrigin::signed(1),
+                crate::migration::ProofSystemMode::Transitional
+            ),
+            frame_support::error::BadOrigin
+        );
+    });
+}
+
+#[test]
+fn transition_mode_cannot_go_backward() {
+    new_test_ext().execute_with(|| {
+        assert_ok!(Zk::transition_proof_system_mode(
+            RuntimeOrigin::root(),
+            crate::migration::ProofSystemMode::Transitional
+        ));
+
+        assert_noop!(
+            Zk::transition_proof_system_mode(
+                RuntimeOrigin::root(),
+                crate::migration::ProofSystemMode::Legacy
+            ),
+            Error::<Test>::InvalidModeTransition
+        );
+    });
+}
+
+#[test]
+fn transition_mode_full_path() {
+    new_test_ext().execute_with(|| {
+        assert_ok!(Zk::transition_proof_system_mode(
+            RuntimeOrigin::root(),
+            crate::migration::ProofSystemMode::Transitional
+        ));
+        assert_ok!(Zk::transition_proof_system_mode(
+            RuntimeOrigin::root(),
+            crate::migration::ProofSystemMode::SnarkOnly
+        ));
+
+        assert_eq!(
+            Zk::proof_system_mode(),
+            crate::migration::ProofSystemMode::SnarkOnly
+        );
+    });
+}
