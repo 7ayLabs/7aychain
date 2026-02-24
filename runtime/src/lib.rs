@@ -84,18 +84,17 @@ pub fn native_version() -> sp_version::NativeVersion {
 
 const NORMAL_DISPATCH_RATIO: Perbill = Perbill::from_percent(75);
 
-/// Restrictive call filter for the runtime.
+/// Base call filter for the runtime.
 ///
-/// Blocks direct dispatch of consensus-internal pallets (Aura, Grandpa)
-/// which should only be managed via inherents and session rotation.
-/// All protocol pallets and Sudo (for testnet governance) remain callable.
+/// Aura and Grandpa expose no user-dispatchable calls in this runtime, so
+/// consensus internals are already not directly callable via extrinsics.
 ///
-/// SECURITY: Before mainnet, further restrict to an explicit extrinsic
+/// SECURITY: Before mainnet, replace this permissive filter with an explicit
 /// allowlist and evaluate Sudo removal.
 pub struct SafeCallFilter;
 impl Contains<RuntimeCall> for SafeCallFilter {
-    fn contains(call: &RuntimeCall) -> bool {
-        !matches!(call, RuntimeCall::Aura(..) | RuntimeCall::Grandpa(..))
+    fn contains(_call: &RuntimeCall) -> bool {
+        true
     }
 }
 
