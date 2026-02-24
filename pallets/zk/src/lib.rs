@@ -326,6 +326,12 @@ pub mod pallet {
     pub type VerificationKeys<T: Config> =
         StorageMap<_, Blake2_128Concat, H256, BoundedVec<u8, MaxVkSize>>;
 
+    /// Hashes of successfully verified SNARK proofs (replay protection)
+    #[pallet::storage]
+    #[pallet::getter(fn verified_proof_hashes)]
+    pub type VerifiedProofHashes<T: Config> =
+        StorageMap<_, Blake2_128Concat, H256, BlockNumberFor<T>>;
+
     /// Current proof system operating mode.
     /// Controls whether stub proofs, SNARK proofs, or both are accepted.
     /// Transitions are monotonic: Legacy -> Transitional -> SnarkOnly.
@@ -435,6 +441,8 @@ pub mod pallet {
         ProofSystemModeRejectsSnarkProofs,
         /// Circuit registry is full (MaxCircuits reached)
         CircuitRegistryFull,
+        /// This proof has already been verified (replay protection)
+        ProofAlreadyVerified,
     }
 
     #[pallet::call]
@@ -734,6 +742,13 @@ pub mod pallet {
 
             Self::check_verification_limit()?;
 
+            // Replay protection: reject already-verified proofs
+            let proof_hash = H256(blake2_256(&proof));
+            ensure!(
+                !VerifiedProofHashes::<T>::contains_key(proof_hash),
+                Error::<T>::ProofAlreadyVerified
+            );
+
             let circuit =
                 CircuitRegistry::<T>::get(circuit_id).ok_or(Error::<T>::CircuitNotFound)?;
             ensure!(circuit.active, Error::<T>::CircuitNotActive);
@@ -744,6 +759,8 @@ pub mod pallet {
 
             ensure!(verified, Error::<T>::SnarkVerificationFailed);
 
+            let block_number = frame_system::Pallet::<T>::block_number();
+            VerifiedProofHashes::<T>::insert(proof_hash, block_number);
             VerificationsThisBlock::<T>::mutate(|c| *c = c.saturating_add(1));
             VerificationCount::<T>::mutate(|c| *c = c.saturating_add(1));
 
