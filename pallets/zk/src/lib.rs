@@ -7,8 +7,14 @@ pub mod migration;
 pub mod verifier;
 pub mod weights;
 
+#[cfg(feature = "groth16")]
+pub mod groth16;
+
 #[cfg(test)]
 mod tests;
+
+#[cfg(all(test, feature = "groth16"))]
+mod groth16_tests;
 
 use alloc::vec::Vec;
 use frame_support::pallet_prelude::*;
@@ -24,6 +30,9 @@ use sp_core::{blake2_256, H256};
 pub use verifier::{
     AcceptAllVerifier, ConfigurableVerifier, NullVerifier, StubVerifier, ZkVerifier,
 };
+
+#[cfg(feature = "groth16")]
+pub use groth16::Groth16Verifier;
 
 #[derive(
     Clone,
@@ -675,9 +684,9 @@ pub mod pallet {
         }
 
         /// Verify a SNARK proof against a registered circuit.
-        /// Currently uses stub verifiers pending actual pairing library integration.
-        /// SECURITY: Restricted to trusted verifiers only — stub verifiers are
-        /// NOT cryptographically secure and only check byte length.
+        /// Delegates to `T::Verifier::verify_snark` which performs real
+        /// cryptographic verification (Groth16 BN254 pairing check in production).
+        /// SECURITY: Restricted to trusted verifiers for operational safety.
         #[pallet::call_index(7)]
         #[pallet::weight(T::WeightInfo::verify_snark())]
         pub fn verify_snark(

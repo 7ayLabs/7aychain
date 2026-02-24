@@ -30,7 +30,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.8.19"
+version = "0.8.20"
 authors = ["7ayLabs <dev@7aylabs.com>"]
 edition = "2021"
 license = "BUSL-1.1"
@@ -102,6 +102,18 @@ frame-benchmarking = { version = "45.0.0", default-features = false }
 # =============================================================================
 blake2 = { version = "0.10", default-features = false }
 sha2 = { version = "0.10", default-features = false }
+
+# ZK Proofs (arkworks, all no_std compatible)
+ark-groth16 = { version = "0.5.0", default-features = false }
+ark-bn254 = { version = "0.5.0", default-features = false, features = ["curve"] }
+ark-serialize = { version = "0.5.0", default-features = false, features = ["derive"] }
+ark-ff = { version = "0.5.0", default-features = false }
+ark-ec = { version = "0.5.0", default-features = false }
+ark-std = { version = "0.5.0", default-features = false }
+ark-snark = { version = "0.5.0", default-features = false }
+ark-relations = { version = "0.5.0", default-features = false }
+ark-r1cs-std = { version = "0.5.0", default-features = false }
+ark-crypto-primitives = { version = "0.5.0", default-features = false, features = ["snark"] }
 
 # =============================================================================
 # Development & Testing
