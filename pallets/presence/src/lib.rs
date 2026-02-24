@@ -18,6 +18,7 @@ pub mod pallet {
         traits::{Get, StorageVersion},
     };
     use frame_system::pallet_prelude::*;
+    use seveny_primitives::traits::ConstantTimeEq;
     use seveny_primitives::{
         crypto::DOMAIN_PRESENCE,
         types::{
@@ -716,7 +717,7 @@ pub mod pallet {
 
             let expected_commitment =
                 Self::compute_commitment(&actor, &epoch, &secret, &randomness);
-            if declaration.commitment != expected_commitment {
+            if !declaration.commitment.ct_eq(&expected_commitment) {
                 Self::deposit_event(Event::RevealFailed {
                     actor,
                     epoch,
