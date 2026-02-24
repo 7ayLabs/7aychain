@@ -959,12 +959,9 @@ pub mod pallet {
             ActorId::from_raw(*validator.as_bytes())
         }
         fn account_to_actor(account: &T::AccountId) -> ActorId {
-            let hash = T::Hashing::hash_of(account);
-            let hash_bytes: [u8; 32] = hash
-                .as_ref()
-                .try_into()
-                .expect("runtime hash must be 32 bytes");
-            ActorId::from(sp_core::H256(hash_bytes))
+            let encoded = account.encode();
+            let hash = sp_core::blake2_256(&encoded);
+            ActorId::from_raw(hash)
         }
 
         fn account_to_validator(account: &T::AccountId) -> ValidatorId {
