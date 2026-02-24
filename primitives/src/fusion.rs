@@ -7,6 +7,10 @@ use sp_core::H256;
 use sp_runtime::Perbill;
 
 #[cfg(feature = "std")]
+use crate::crypto::hash_with_domain;
+#[cfg(feature = "std")]
+use crate::traits::ConstantTimeEq;
+#[cfg(feature = "std")]
 use sp_core::blake2_256;
 
 pub const DOMAIN_DEVICE_COMMITMENT: &[u8] = b"7ay:device:commit:v1";
@@ -30,17 +34,15 @@ impl Default for FusionWeights {
 }
 
 impl FusionWeights {
-    pub fn new(heartbeat: u8, device: u8, position: u8) -> Self {
-        assert_eq!(
-            heartbeat.saturating_add(device).saturating_add(position),
-            100,
-            "Fusion weights must sum to 100"
-        );
-        Self {
+    pub fn new(heartbeat: u8, device: u8, position: u8) -> Result<Self, ()> {
+        if heartbeat.saturating_add(device).saturating_add(position) != 100 {
+            return Err(());
+        }
+        Ok(Self {
             heartbeat_weight: heartbeat,
             device_weight: device,
             position_weight: position,
-        }
+        })
     }
 
     pub fn is_valid(&self) -> bool {
@@ -108,13 +110,12 @@ impl DeviceCommitment {
     #[cfg(feature = "std")]
     pub fn compute_commitment(merkle_root: &H256, nonce: &[u8; 32], block_number: u64) -> H256 {
         let data = [
-            DOMAIN_DEVICE_COMMITMENT,
             merkle_root.as_bytes(),
-            nonce,
+            nonce.as_slice(),
             &block_number.to_le_bytes(),
         ]
         .concat();
-        H256(blake2_256(&data))
+        hash_with_domain(DOMAIN_DEVICE_COMMITMENT, &data)
     }
 }
 
@@ -136,7 +137,7 @@ impl DeviceReveal {
             self.commitment_block,
         );
 
-        if recomputed != commitment.commitment {
+        if !recomputed.ct_eq(&commitment.commitment) {
             return false;
         }
 
@@ -404,14 +405,13 @@ mod tests {
 
     #[test]
     fn test_fusion_weights_custom() {
-        let weights = FusionWeights::new(50, 30, 20);
+        let weights = FusionWeights::new(50, 30, 20).unwrap();
         assert!(weights.is_valid());
     }
 
     #[test]
-    #[should_panic(expected = "Fusion weights must sum to 100")]
     fn test_fusion_weights_invalid() {
-        let _ = FusionWeights::new(50, 50, 50);
+        assert!(FusionWeights::new(50, 50, 50).is_err());
     }
 
     #[test]
