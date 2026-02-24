@@ -438,6 +438,7 @@ parameter_types! {
 
 impl pallet_zk::Config for Runtime {
     type WeightInfo = ();
+    type Verifier = pallet_zk::StubVerifier;
     type MaxProofSize = MaxProofSize;
     type MaxVerificationsPerBlock = MaxVerificationsPerBlock;
 }
