@@ -58,7 +58,7 @@ pallet-autonomous = { workspace = true }
 pallet-octopus = { workspace = true }
 pallet-device = { workspace = true }
 pallet-vault = { workspace = true }
-pallet-zk = { workspace = true }
+pallet-zk = { workspace = true, features = ["groth16"] }
 pallet-storage = { workspace = true }
 pallet-lifecycle = { workspace = true }
 pallet-triangulation = { workspace = true }
@@ -112,7 +112,6 @@ std = [
     "pallet-device/std",
     "pallet-vault/std",
     "pallet-zk/std",
-    "pallet-zk/groth16",
     "pallet-storage/std",
     "pallet-lifecycle/std",
     "pallet-triangulation/std",

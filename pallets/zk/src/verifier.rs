@@ -14,8 +14,6 @@
 //!
 //! `StubVerifier` -> `Groth16Verifier` (v0.8.20) via `ProofSystemMode` in migration.rs.
 
-#![allow(clippy::expect_used)]
-
 use alloc::vec::Vec;
 use seveny_primitives::traits::ConstantTimeEq;
 use sp_core::{blake2_256, H256};

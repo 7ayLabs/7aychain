@@ -797,6 +797,12 @@ fn register_circuit_duplicate_rejected() {
 #[test]
 fn verify_snark_requires_trusted_verifier() {
     new_test_ext().execute_with(|| {
+        // Transition to Transitional mode to allow SNARK proofs
+        assert_ok!(Zk::transition_proof_system_mode(
+            RuntimeOrigin::root(),
+            crate::migration::ProofSystemMode::Transitional
+        ));
+
         let circuit_id = H256([10u8; 32]);
         let vk = BoundedVec::try_from(vec![1u8; 256]).expect("fits");
 
@@ -820,6 +826,11 @@ fn verify_snark_requires_trusted_verifier() {
 #[test]
 fn verify_snark_circuit_not_found() {
     new_test_ext().execute_with(|| {
+        assert_ok!(Zk::transition_proof_system_mode(
+            RuntimeOrigin::root(),
+            crate::migration::ProofSystemMode::Transitional
+        ));
+
         let verifier_account = 1u64;
         let verifier = account_to_actor(verifier_account);
         assert_ok!(Zk::add_trusted_verifier(RuntimeOrigin::root(), verifier));
@@ -842,6 +853,11 @@ fn verify_snark_circuit_not_found() {
 #[test]
 fn verify_snark_success_with_stub() {
     new_test_ext().execute_with(|| {
+        assert_ok!(Zk::transition_proof_system_mode(
+            RuntimeOrigin::root(),
+            crate::migration::ProofSystemMode::Transitional
+        ));
+
         let verifier_account = 1u64;
         let verifier = account_to_actor(verifier_account);
         assert_ok!(Zk::add_trusted_verifier(RuntimeOrigin::root(), verifier));
@@ -1095,6 +1111,11 @@ fn deregister_already_inactive_circuit_fails() {
 #[test]
 fn verify_snark_on_deregistered_circuit_fails() {
     new_test_ext().execute_with(|| {
+        assert_ok!(Zk::transition_proof_system_mode(
+            RuntimeOrigin::root(),
+            crate::migration::ProofSystemMode::Transitional
+        ));
+
         let verifier_account = 1u64;
         let verifier = account_to_actor(verifier_account);
         assert_ok!(Zk::add_trusted_verifier(RuntimeOrigin::root(), verifier));
