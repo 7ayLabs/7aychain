@@ -14,8 +14,6 @@
 //!
 //! `StubVerifier` -> `Groth16Verifier` (v0.8.20) via `ProofSystemMode` in migration.rs.
 
-#![allow(clippy::expect_used)]
-
 use alloc::vec::Vec;
 use seveny_primitives::crypto::{hash_with_domain, DOMAIN_NULLIFIER};
 use seveny_primitives::traits::ConstantTimeEq;

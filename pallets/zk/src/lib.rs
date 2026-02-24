@@ -714,9 +714,9 @@ pub mod pallet {
         }
 
         /// Verify a SNARK proof against a registered circuit.
-        /// Currently uses stub verifiers pending actual pairing library integration.
-        /// SECURITY: Restricted to trusted verifiers only — stub verifiers are
-        /// NOT cryptographically secure and only check byte length.
+        /// Delegates to `T::Verifier::verify_snark` which performs real
+        /// cryptographic verification (Groth16 BN254 pairing check in production).
+        /// SECURITY: Restricted to trusted verifiers for operational safety.
         #[pallet::call_index(7)]
         #[pallet::weight(T::WeightInfo::verify_snark())]
         pub fn verify_snark(
