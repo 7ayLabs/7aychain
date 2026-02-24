@@ -15,6 +15,7 @@ use parity_scale_codec::{Decode, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
 use seveny_primitives::{
     crypto::{Nullifier, StateRoot},
+    traits::ConstantTimeEq,
     types::ActorId,
 };
 use sp_core::{blake2_256, H256};
@@ -257,7 +258,7 @@ impl ZkVerifier for SimpleHashVerifier {
         input.extend_from_slice(&randomness);
         let computed = H256(blake2_256(&input));
 
-        computed == statement.commitment_hash
+        computed.ct_eq(&statement.commitment_hash)
     }
 
     /// SECURITY WARNING: This stub verifier requires the raw secret in the proof,
@@ -277,7 +278,7 @@ impl ZkVerifier for SimpleHashVerifier {
         // INV1: Nullifier derived from (secret, epoch) only — no nonce
         let derived_nullifier = Nullifier::derive(&secret, statement.epoch_id);
 
-        derived_nullifier == statement.nullifier
+        derived_nullifier.0.ct_eq(&statement.nullifier.0)
     }
 
     fn verify_access_proof(statement: &AccessStatement, proof: &[u8]) -> bool {
@@ -304,7 +305,7 @@ impl ZkVerifier for SimpleHashVerifier {
         input.extend_from_slice(&membership);
         let computed = H256(blake2_256(&input));
 
-        computed == statement.access_hash
+        computed.ct_eq(&statement.access_hash)
     }
 }
 
