@@ -47,4 +47,22 @@ ignore = [
     # 3. Miscompilation of wasm i64x2.shr_s instruction on x86_64
     # Source: sp-wasm-interface -> sp-runtime-interface (polkadot-stable2409)
     "RUSTSEC-2023-0091",
+
+    # =========================================================================
+    # wasmtime 35.0.0
+    # =========================================================================
+    # Panic adding excessive fields to a wasi:http/types.fields instance
+    # Source: sp-wasm-interface -> sp-runtime-interface (polkadot-stable2503)
+    # Severity: 6.9 (medium) - DoS only, no code execution
+    # Tracking: Will be resolved when upgrading to newer Substrate SDK
+    "RUSTSEC-2026-0021",
+
+    # =========================================================================
+    # keccak 0.1.5
+    # =========================================================================
+    # Unsoundness in opt-in ARMv8 assembly backend
+    # Source: sha3 -> w3f-bls -> sp-core (polkadot-stable2503)
+    # Severity: unsound (ARMv8 asm only, opt-in feature)
+    # Tracking: Will be resolved when upgrading to newer Substrate SDK
+    "RUSTSEC-2026-0012",
 ]
