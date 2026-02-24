@@ -441,6 +441,7 @@ impl pallet_zk::Config for Runtime {
     type Verifier = pallet_zk::Groth16Verifier;
     type MaxProofSize = MaxProofSize;
     type MaxVerificationsPerBlock = MaxVerificationsPerBlock;
+    type MaxCircuits = ConstU32<256>;
 }
 
 parameter_types! {
