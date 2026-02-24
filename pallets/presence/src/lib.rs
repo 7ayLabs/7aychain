@@ -396,7 +396,17 @@ pub mod pallet {
     #[pallet::genesis_build]
     impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
         fn build(&self) {
-            let config = QuorumConfig::new(self.quorum_threshold, self.quorum_total);
+            let config = {
+                let requested = QuorumConfig::new(self.quorum_threshold, self.quorum_total);
+                if requested.is_valid() {
+                    requested
+                } else {
+                    QuorumConfig::new(
+                        T::DefaultQuorumThreshold::get(),
+                        T::DefaultQuorumTotal::get(),
+                    )
+                }
+            };
             QuorumConfigStorage::<T>::put(config);
 
             for validator_bytes in &self.initial_validators {
