@@ -151,6 +151,12 @@ impl ConstantTimeEq for H256 {
     }
 }
 
+impl ConstantTimeEq for crate::crypto::PresenceCommitment {
+    fn ct_eq(&self, other: &Self) -> bool {
+        self.0.ct_eq(&other.0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

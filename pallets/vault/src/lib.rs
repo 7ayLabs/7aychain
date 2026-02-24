@@ -726,13 +726,19 @@ pub mod pallet {
         pub fn initiate_recovery(origin: OriginFor<T>, vault_id: VaultId) -> DispatchResult {
             let who = ensure_signed(origin)?;
 
-            let vault = Vaults::<T>::get(vault_id).ok_or(Error::<T>::VaultNotFound)?;
+            let mut vault = Vaults::<T>::get(vault_id).ok_or(Error::<T>::VaultNotFound)?;
             let actor = Self::account_to_actor(who);
+            let block_number = frame_system::Pallet::<T>::block_number();
 
-            ensure!(
-                !RecoveryRequests::<T>::contains_key(vault_id),
-                Error::<T>::RecoveryAlreadyActive
-            );
+            if let Some(existing) = RecoveryRequests::<T>::get(vault_id) {
+                if block_number <= existing.expires_at {
+                    return Err(Error::<T>::RecoveryAlreadyActive.into());
+                }
+                RecoveryRequests::<T>::remove(vault_id);
+                if vault.status == VaultStatus::Recovering {
+                    vault.status = VaultStatus::Active;
+                }
+            }
             ensure!(
                 vault.status == VaultStatus::Active,
                 Error::<T>::VaultNotActive
@@ -742,7 +748,6 @@ pub mod pallet {
                 Error::<T>::NotVaultMember
             );
 
-            let block_number = frame_system::Pallet::<T>::block_number();
             let expires_at = block_number.saturating_add(T::RecoveryPeriodBlocks::get());
 
             let request = RecoveryRequest {
@@ -755,12 +760,9 @@ pub mod pallet {
 
             RecoveryRequests::<T>::insert(vault_id, request);
 
-            Vaults::<T>::mutate(vault_id, |v| {
-                if let Some(ref mut vault) = v {
-                    vault.status = VaultStatus::Recovering;
-                    vault.last_activity = block_number;
-                }
-            });
+            vault.status = VaultStatus::Recovering;
+            vault.last_activity = block_number;
+            Vaults::<T>::insert(vault_id, vault);
 
             Self::deposit_event(Event::RecoveryInitiated {
                 vault_id,
@@ -792,6 +794,18 @@ pub mod pallet {
             );
 
             let block_number = frame_system::Pallet::<T>::block_number();
+            let recovery_complete = RecoveryRequests::<T>::try_mutate(
+                vault_id,
+                |request| -> Result<bool, DispatchError> {
+                    let r = request.as_mut().ok_or(Error::<T>::RecoveryNotActive)?;
+
+                    ensure!(block_number <= r.expires_at, Error::<T>::RecoveryExpired);
+
+                    r.shares_revealed = r.shares_revealed.saturating_add(1);
+
+                    Ok(r.shares_revealed >= vault.threshold)
+                },
+            )?;
 
             Shares::<T>::mutate(share_id, |s| {
                 if let Some(ref mut sh) = s {
@@ -799,26 +813,17 @@ pub mod pallet {
                 }
             });
 
-            RecoveryRequests::<T>::try_mutate(vault_id, |request| -> DispatchResult {
-                let r = request.as_mut().ok_or(Error::<T>::RecoveryNotActive)?;
+            if recovery_complete {
+                RecoveryRequests::<T>::remove(vault_id);
+                Vaults::<T>::mutate(vault_id, |v| {
+                    if let Some(ref mut vault) = v {
+                        vault.status = VaultStatus::Active;
+                        vault.last_activity = block_number;
+                    }
+                });
 
-                ensure!(block_number <= r.expires_at, Error::<T>::RecoveryExpired);
-
-                r.shares_revealed = r.shares_revealed.saturating_add(1);
-
-                if r.shares_revealed >= vault.threshold {
-                    Vaults::<T>::mutate(vault_id, |v| {
-                        if let Some(ref mut vault) = v {
-                            vault.status = VaultStatus::Active;
-                            vault.last_activity = block_number;
-                        }
-                    });
-
-                    Self::deposit_event(Event::RecoveryCompleted { vault_id });
-                }
-
-                Ok(())
-            })?;
+                Self::deposit_event(Event::RecoveryCompleted { vault_id });
+            }
 
             Self::deposit_event(Event::ShareRevealed { vault_id, share_id });
 

@@ -938,3 +938,47 @@ fn is_in_reveal_phase_helper() {
         assert!(!Presence::is_in_reveal_phase(epoch));
     });
 }
+
+#[test]
+fn max_votes_per_presence_enforced() {
+    new_test_ext().execute_with(|| {
+        let epoch = EpochId::new(1);
+        let actor = account_to_actor(1);
+
+        assert_ok!(Presence::declare_presence(RuntimeOrigin::signed(1), epoch));
+
+        // Set vote count to the max limit
+        pallet_presence::VoteCount::<Test>::insert(epoch, actor, 100);
+
+        // Set up a new validator and attempt to vote
+        setup_validator(200);
+
+        assert_noop!(
+            Presence::vote_presence(RuntimeOrigin::signed(200), actor, epoch, true),
+            Error::<Test>::MaxVotesExceeded
+        );
+    });
+}
+
+#[test]
+fn votes_below_max_succeed() {
+    new_test_ext().execute_with(|| {
+        let epoch = EpochId::new(1);
+        let actor = account_to_actor(1);
+
+        assert_ok!(Presence::declare_presence(RuntimeOrigin::signed(1), epoch));
+
+        // Set vote count just below the max
+        pallet_presence::VoteCount::<Test>::insert(epoch, actor, 99);
+
+        // Set up a new validator and vote
+        setup_validator(200);
+
+        assert_ok!(Presence::vote_presence(
+            RuntimeOrigin::signed(200),
+            actor,
+            epoch,
+            true
+        ));
+    });
+}

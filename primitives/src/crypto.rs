@@ -417,10 +417,8 @@ impl ShamirScheme {
         coefficients.push(*secret);
 
         for i in 1..threshold {
-            let mut coeff = [0u8; 32];
             let seed_input = [&entropy[..], &[i][..]].concat();
-            let hash = blake2_256(&seed_input);
-            coeff.copy_from_slice(&hash);
+            let coeff = hash_with_domain(b"7ay:shamir:coeff:v1", &seed_input).0;
             coefficients.push(coeff);
         }
 
