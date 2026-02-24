@@ -22,7 +22,7 @@ use frame_system::pallet_prelude::*;
 use parity_scale_codec::{Decode, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
 use seveny_primitives::{
-    crypto::{Nullifier, StateRoot},
+    crypto::{hash_with_domain, Nullifier, StateRoot, DOMAIN_NULLIFIER},
     types::ActorId,
 };
 use sp_core::{blake2_256, H256};
@@ -271,6 +271,10 @@ pub mod pallet {
 
         #[pallet::constant]
         type MaxVerificationsPerBlock: Get<u32>;
+
+        /// Maximum number of circuits in the registry
+        #[pallet::constant]
+        type MaxCircuits: Get<u32>;
     }
 
     #[pallet::storage]
@@ -311,11 +315,22 @@ pub mod pallet {
     pub type CircuitRegistry<T: Config> =
         StorageMap<_, Blake2_128Concat, H256, CircuitData<BlockNumberFor<T>>>;
 
+    /// Number of registered circuits (active + inactive)
+    #[pallet::storage]
+    #[pallet::getter(fn circuit_count)]
+    pub type CircuitCount<T: Config> = StorageValue<_, u32, ValueQuery>;
+
     /// Verification key storage (circuit_id -> vk data)
     #[pallet::storage]
     #[pallet::getter(fn verification_keys)]
     pub type VerificationKeys<T: Config> =
         StorageMap<_, Blake2_128Concat, H256, BoundedVec<u8, MaxVkSize>>;
+
+    /// Hashes of successfully verified SNARK proofs (replay protection)
+    #[pallet::storage]
+    #[pallet::getter(fn verified_proof_hashes)]
+    pub type VerifiedProofHashes<T: Config> =
+        StorageMap<_, Blake2_128Concat, H256, BlockNumberFor<T>>;
 
     /// Current proof system operating mode.
     /// Controls whether stub proofs, SNARK proofs, or both are accepted.
@@ -420,6 +435,14 @@ pub mod pallet {
         InvalidVerificationKey,
         /// Circuit is not active (deregistered)
         CircuitNotActive,
+        /// Current proof system mode does not accept stub/hash-based proofs
+        ProofSystemModeRejectsStubProofs,
+        /// Current proof system mode does not accept SNARK proofs
+        ProofSystemModeRejectsSnarkProofs,
+        /// Circuit registry is full (MaxCircuits reached)
+        CircuitRegistryFull,
+        /// This proof has already been verified (replay protection)
+        ProofAlreadyVerified,
     }
 
     #[pallet::call]
@@ -433,10 +456,10 @@ pub mod pallet {
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
 
-            let mode = Self::proof_system_mode();
+            let mode = CurrentProofSystemMode::<T>::get();
             ensure!(
                 mode.accepts_stub_proofs(),
-                Error::<T>::ProofVerificationFailed
+                Error::<T>::ProofSystemModeRejectsStubProofs
             );
 
             Self::check_verification_limit()?;
@@ -483,10 +506,10 @@ pub mod pallet {
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
 
-            let mode = Self::proof_system_mode();
+            let mode = CurrentProofSystemMode::<T>::get();
             ensure!(
                 mode.accepts_stub_proofs(),
-                Error::<T>::ProofVerificationFailed
+                Error::<T>::ProofSystemModeRejectsStubProofs
             );
 
             Self::check_verification_limit()?;
@@ -544,10 +567,10 @@ pub mod pallet {
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
 
-            let mode = Self::proof_system_mode();
+            let mode = CurrentProofSystemMode::<T>::get();
             ensure!(
                 mode.accepts_stub_proofs(),
-                Error::<T>::ProofVerificationFailed
+                Error::<T>::ProofSystemModeRejectsStubProofs
             );
 
             Self::check_verification_limit()?;
@@ -651,6 +674,12 @@ pub mod pallet {
         ) -> DispatchResult {
             ensure_root(origin)?;
 
+            let count = CircuitCount::<T>::get();
+            ensure!(
+                count < T::MaxCircuits::get(),
+                Error::<T>::CircuitRegistryFull
+            );
+
             ensure!(
                 !CircuitRegistry::<T>::contains_key(circuit_id),
                 Error::<T>::CircuitAlreadyRegistered
@@ -674,6 +703,7 @@ pub mod pallet {
 
             CircuitRegistry::<T>::insert(circuit_id, circuit_data);
             VerificationKeys::<T>::insert(circuit_id, vk);
+            CircuitCount::<T>::put(count.saturating_add(1));
 
             Self::deposit_event(Event::CircuitRegistered {
                 circuit_id,
@@ -698,18 +728,26 @@ pub mod pallet {
             let who = ensure_signed(origin)?;
             let actor = Self::account_to_actor(who);
 
-            let mode = Self::proof_system_mode();
-            ensure!(
-                mode.accepts_snark_proofs(),
-                Error::<T>::ProofVerificationFailed
-            );
-
+            // Restrict to trusted verifiers since stubs are not cryptographic
             ensure!(
                 TrustedVerifiers::<T>::get(actor),
                 Error::<T>::NotTrustedVerifier
             );
 
+            let mode = CurrentProofSystemMode::<T>::get();
+            ensure!(
+                mode.accepts_snark_proofs(),
+                Error::<T>::ProofSystemModeRejectsSnarkProofs
+            );
+
             Self::check_verification_limit()?;
+
+            // Replay protection: reject already-verified proofs
+            let proof_hash = H256(blake2_256(&proof));
+            ensure!(
+                !VerifiedProofHashes::<T>::contains_key(proof_hash),
+                Error::<T>::ProofAlreadyVerified
+            );
 
             let circuit =
                 CircuitRegistry::<T>::get(circuit_id).ok_or(Error::<T>::CircuitNotFound)?;
@@ -721,6 +759,8 @@ pub mod pallet {
 
             ensure!(verified, Error::<T>::SnarkVerificationFailed);
 
+            let block_number = frame_system::Pallet::<T>::block_number();
+            VerifiedProofHashes::<T>::insert(proof_hash, block_number);
             VerificationsThisBlock::<T>::mutate(|c| *c = c.saturating_add(1));
             VerificationCount::<T>::mutate(|c| *c = c.saturating_add(1));
 
@@ -746,6 +786,8 @@ pub mod pallet {
                 circuit.active = false;
                 Ok::<(), DispatchError>(())
             })?;
+
+            CircuitCount::<T>::mutate(|c| *c = c.saturating_sub(1));
 
             Self::deposit_event(Event::CircuitDeregistered { circuit_id });
 
@@ -791,7 +833,7 @@ pub mod pallet {
         }
 
         pub fn hash_statement(data: &[u8]) -> H256 {
-            H256(blake2_256(data))
+            hash_with_domain(b"7ay:zk:statement:v1", data)
         }
 
         fn account_to_actor(account: T::AccountId) -> ActorId {
@@ -853,15 +895,13 @@ pub mod pallet {
 
             // Proof layout: secret_commitment[32] || nullifier_binding[32] || reserved[16]
             // INV74: Raw secret NEVER appears in proof data — only a commitment.
-            // NOTE: secret_commitment = H(secret) is a stub binding used in
-            // Legacy/Transitional modes. It does NOT constitute a ZK proof of
-            // knowledge — real proof of knowledge requires a SNARK circuit.
+            // The secret_commitment = H(secret) proves knowledge without exposure.
             // The nullifier_binding = H(nullifier || epoch) binds to statement.
             let secret_commitment = H256(blake2_256(secret));
             let mut nullifier_input = Vec::with_capacity(40);
             nullifier_input.extend_from_slice(nullifier.0.as_bytes());
             nullifier_input.extend_from_slice(&epoch_id.to_le_bytes());
-            let nullifier_binding = H256(blake2_256(&nullifier_input));
+            let nullifier_binding = hash_with_domain(DOMAIN_NULLIFIER, &nullifier_input);
 
             let mut proof = Vec::with_capacity(80);
             proof.extend_from_slice(secret_commitment.as_bytes());

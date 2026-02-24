@@ -352,6 +352,13 @@ fn invariant_inv49_evidence_reward_capped() {
             ViolationType::Critical
         ));
 
+        // Reward is deferred — apply slash after defer duration
+        run_to_block(7);
+
+        // Find the slash_id (last one created by report_evidence)
+        let slash_id = Validator::slash_count().saturating_sub(1);
+        assert_ok!(Validator::apply_slash(RuntimeOrigin::root(), slash_id));
+
         let slash_amount = Perbill::from_percent(100).mul_floor(initial_stake);
         let expected_reward = core::cmp::min(slash_amount / 10, 1000);
 
@@ -615,5 +622,212 @@ fn events_emitted_correctly() {
             controller: 1,
             stake: 5000,
         }));
+    });
+}
+
+// ===================================================================
+// Evidence hardening tests
+// ===================================================================
+
+#[test]
+fn report_evidence_duplicate_rejected() {
+    new_test_ext_with_validators().execute_with(|| {
+        let validator_id = account_to_validator(1);
+
+        assert_ok!(Validator::report_evidence(
+            RuntimeOrigin::signed(7),
+            validator_id,
+            ViolationType::Minor
+        ));
+
+        // Same reporter, same validator — should fail
+        assert_noop!(
+            Validator::report_evidence(
+                RuntimeOrigin::signed(7),
+                validator_id,
+                ViolationType::Moderate
+            ),
+            Error::<Test>::DuplicateEvidence
+        );
+    });
+}
+
+#[test]
+fn report_evidence_different_reporters_allowed() {
+    new_test_ext_with_validators().execute_with(|| {
+        let validator_id = account_to_validator(1);
+
+        assert_ok!(Validator::report_evidence(
+            RuntimeOrigin::signed(7),
+            validator_id,
+            ViolationType::Minor
+        ));
+
+        // Different reporter, same validator — should succeed
+        assert_ok!(Validator::report_evidence(
+            RuntimeOrigin::signed(8),
+            validator_id,
+            ViolationType::Minor
+        ));
+    });
+}
+
+#[test]
+fn report_evidence_rate_limit_enforced() {
+    new_test_ext_with_validators().execute_with(|| {
+        let v1 = account_to_validator(1);
+        let v2 = account_to_validator(2);
+        let v3 = account_to_validator(3);
+        let v4 = account_to_validator(4);
+
+        // Reporter 7 reports 3 different validators (max per window)
+        assert_ok!(Validator::report_evidence(
+            RuntimeOrigin::signed(7),
+            v1,
+            ViolationType::Minor
+        ));
+        assert_ok!(Validator::report_evidence(
+            RuntimeOrigin::signed(7),
+            v2,
+            ViolationType::Minor
+        ));
+        assert_ok!(Validator::report_evidence(
+            RuntimeOrigin::signed(7),
+            v3,
+            ViolationType::Minor
+        ));
+
+        // 4th report in same window should fail
+        assert_noop!(
+            Validator::report_evidence(RuntimeOrigin::signed(7), v4, ViolationType::Minor),
+            Error::<Test>::EvidenceRateLimitExceeded
+        );
+    });
+}
+
+#[test]
+fn report_evidence_rate_limit_resets_after_window() {
+    new_test_ext_with_validators().execute_with(|| {
+        let v1 = account_to_validator(1);
+        let v2 = account_to_validator(2);
+        let v3 = account_to_validator(3);
+        let v4 = account_to_validator(4);
+
+        assert_ok!(Validator::report_evidence(
+            RuntimeOrigin::signed(7),
+            v1,
+            ViolationType::Minor
+        ));
+        assert_ok!(Validator::report_evidence(
+            RuntimeOrigin::signed(7),
+            v2,
+            ViolationType::Minor
+        ));
+        assert_ok!(Validator::report_evidence(
+            RuntimeOrigin::signed(7),
+            v3,
+            ViolationType::Minor
+        ));
+
+        // Move past the 100-block window
+        run_to_block(102);
+
+        // Should succeed in new window
+        assert_ok!(Validator::report_evidence(
+            RuntimeOrigin::signed(7),
+            v4,
+            ViolationType::Minor
+        ));
+    });
+}
+
+#[test]
+fn report_evidence_no_immediate_reward() {
+    new_test_ext_with_validators().execute_with(|| {
+        System::reset_events();
+
+        let validator_id = account_to_validator(1);
+        assert_ok!(Validator::report_evidence(
+            RuntimeOrigin::signed(7),
+            validator_id,
+            ViolationType::Critical
+        ));
+
+        // No EvidenceRewardPaid event should be emitted at report time
+        let events = System::events();
+        assert!(
+            !events.iter().any(|e| matches!(
+                &e.event,
+                RuntimeEvent::Validator(Event::EvidenceRewardPaid { .. })
+            )),
+            "Reward should not be paid at report time"
+        );
+    });
+}
+
+// ===================================================================
+// Slash dedup tests
+// ===================================================================
+
+#[test]
+fn slash_validator_duplicate_rejected() {
+    new_test_ext_with_validators().execute_with(|| {
+        let validator_id = account_to_validator(1);
+
+        assert_ok!(Validator::slash_validator(
+            RuntimeOrigin::root(),
+            validator_id,
+            ViolationType::Minor
+        ));
+
+        // Second slash with same violation type should be rejected
+        assert_noop!(
+            Validator::slash_validator(RuntimeOrigin::root(), validator_id, ViolationType::Minor),
+            Error::<Test>::DuplicateSlash
+        );
+    });
+}
+
+#[test]
+fn slash_validator_different_violations_allowed() {
+    new_test_ext_with_validators().execute_with(|| {
+        let validator_id = account_to_validator(1);
+
+        assert_ok!(Validator::slash_validator(
+            RuntimeOrigin::root(),
+            validator_id,
+            ViolationType::Minor
+        ));
+
+        // Different violation type should succeed
+        assert_ok!(Validator::slash_validator(
+            RuntimeOrigin::root(),
+            validator_id,
+            ViolationType::Moderate
+        ));
+    });
+}
+
+#[test]
+fn slash_dedup_cleared_after_apply() {
+    new_test_ext_with_validators().execute_with(|| {
+        let validator_id = account_to_validator(1);
+
+        assert_ok!(Validator::slash_validator(
+            RuntimeOrigin::root(),
+            validator_id,
+            ViolationType::Minor
+        ));
+
+        run_to_block(7);
+
+        assert_ok!(Validator::apply_slash(RuntimeOrigin::root(), 0));
+
+        // After applying, same violation type should be allowed again
+        assert_ok!(Validator::slash_validator(
+            RuntimeOrigin::root(),
+            validator_id,
+            ViolationType::Minor
+        ));
     });
 }

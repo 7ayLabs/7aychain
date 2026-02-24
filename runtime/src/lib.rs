@@ -67,7 +67,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     spec_name: Cow::Borrowed("seveny"),
     impl_name: Cow::Borrowed("seveny-node"),
     authoring_version: 1,
-    spec_version: 105,
+    spec_version: 106,
     impl_version: 1,
     apis: RUNTIME_API_VERSIONS,
     transaction_version: 1,
@@ -84,8 +84,12 @@ pub fn native_version() -> sp_version::NativeVersion {
 
 const NORMAL_DISPATCH_RATIO: Perbill = Perbill::from_percent(75);
 
-/// Restrictive call filter for the runtime.
-/// SECURITY: Before mainnet, further restrict to an explicit extrinsic
+/// Base call filter for the runtime.
+///
+/// Aura and Grandpa expose no user-dispatchable calls in this runtime, so
+/// consensus internals are already not directly callable via extrinsics.
+///
+/// SECURITY: Before mainnet, replace this permissive filter with an explicit
 /// allowlist and evaluate Sudo removal.
 pub struct SafeCallFilter;
 impl Contains<RuntimeCall> for SafeCallFilter {
@@ -436,6 +440,7 @@ impl pallet_zk::Config for Runtime {
     type Verifier = pallet_zk::Groth16Verifier;
     type MaxProofSize = MaxProofSize;
     type MaxVerificationsPerBlock = MaxVerificationsPerBlock;
+    type MaxCircuits = ConstU32<256>;
 }
 
 parameter_types! {

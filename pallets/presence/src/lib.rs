@@ -18,6 +18,7 @@ pub mod pallet {
         traits::{Get, StorageVersion},
     };
     use frame_system::pallet_prelude::*;
+    use seveny_primitives::traits::ConstantTimeEq;
     use seveny_primitives::{
         crypto::DOMAIN_PRESENCE,
         types::{
@@ -378,6 +379,7 @@ pub mod pallet {
         ValidatorPositionNotSet,
         SelfAttestation,
         InvalidBlockNumber,
+        MaxVotesExceeded,
     }
 
     #[pallet::genesis_config]
@@ -394,7 +396,17 @@ pub mod pallet {
     #[pallet::genesis_build]
     impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
         fn build(&self) {
-            let config = QuorumConfig::new(self.quorum_threshold, self.quorum_total);
+            let config = {
+                let requested = QuorumConfig::new(self.quorum_threshold, self.quorum_total);
+                if requested.is_valid() {
+                    requested
+                } else {
+                    QuorumConfig::new(
+                        T::DefaultQuorumThreshold::get(),
+                        T::DefaultQuorumTotal::get(),
+                    )
+                }
+            };
             QuorumConfigStorage::<T>::put(config);
 
             for validator_bytes in &self.initial_validators {
@@ -526,6 +538,12 @@ pub mod pallet {
             Self::ensure_validator_active(&validator)?;
             Self::ensure_epoch_active(&epoch)?;
             Self::ensure_no_duplicate_vote(&epoch, &actor, &validator)?;
+
+            let current_votes = VoteCount::<T>::get(epoch, actor);
+            ensure!(
+                current_votes < T::MaxVotesPerPresence::get(),
+                Error::<T>::MaxVotesExceeded
+            );
 
             let mut record =
                 Presences::<T>::get(epoch, actor).ok_or(Error::<T>::PresenceNotFound)?;
@@ -716,7 +734,7 @@ pub mod pallet {
 
             let expected_commitment =
                 Self::compute_commitment(&actor, &epoch, &secret, &randomness);
-            if declaration.commitment != expected_commitment {
+            if !declaration.commitment.ct_eq(&expected_commitment) {
                 Self::deposit_event(Event::RevealFailed {
                     actor,
                     epoch,
