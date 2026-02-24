@@ -434,7 +434,10 @@ pub mod pallet {
             let who = ensure_signed(origin)?;
 
             let mode = Self::proof_system_mode();
-            ensure!(mode.accepts_stub_proofs(), Error::<T>::ProofVerificationFailed);
+            ensure!(
+                mode.accepts_stub_proofs(),
+                Error::<T>::ProofVerificationFailed
+            );
 
             Self::check_verification_limit()?;
 
@@ -481,7 +484,10 @@ pub mod pallet {
             let who = ensure_signed(origin)?;
 
             let mode = Self::proof_system_mode();
-            ensure!(mode.accepts_stub_proofs(), Error::<T>::ProofVerificationFailed);
+            ensure!(
+                mode.accepts_stub_proofs(),
+                Error::<T>::ProofVerificationFailed
+            );
 
             Self::check_verification_limit()?;
 
@@ -539,7 +545,10 @@ pub mod pallet {
             let who = ensure_signed(origin)?;
 
             let mode = Self::proof_system_mode();
-            ensure!(mode.accepts_stub_proofs(), Error::<T>::ProofVerificationFailed);
+            ensure!(
+                mode.accepts_stub_proofs(),
+                Error::<T>::ProofVerificationFailed
+            );
 
             Self::check_verification_limit()?;
 
@@ -690,7 +699,10 @@ pub mod pallet {
             let actor = Self::account_to_actor(who);
 
             let mode = Self::proof_system_mode();
-            ensure!(mode.accepts_snark_proofs(), Error::<T>::ProofVerificationFailed);
+            ensure!(
+                mode.accepts_snark_proofs(),
+                Error::<T>::ProofVerificationFailed
+            );
 
             ensure!(
                 TrustedVerifiers::<T>::get(actor),
