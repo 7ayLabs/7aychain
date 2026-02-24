@@ -420,6 +420,10 @@ pub mod pallet {
         InvalidVerificationKey,
         /// Circuit is not active (deregistered)
         CircuitNotActive,
+        /// Current proof system mode does not accept stub/hash-based proofs
+        ProofSystemModeRejectsStubProofs,
+        /// Current proof system mode does not accept SNARK proofs
+        ProofSystemModeRejectsSnarkProofs,
     }
 
     #[pallet::call]
@@ -432,6 +436,12 @@ pub mod pallet {
             proof: BoundedVec<u8, T::MaxProofSize>,
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
+
+            let mode = CurrentProofSystemMode::<T>::get();
+            ensure!(
+                mode.accepts_stub_proofs(),
+                Error::<T>::ProofSystemModeRejectsStubProofs
+            );
 
             Self::check_verification_limit()?;
 
@@ -476,6 +486,12 @@ pub mod pallet {
             proof: BoundedVec<u8, T::MaxProofSize>,
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
+
+            let mode = CurrentProofSystemMode::<T>::get();
+            ensure!(
+                mode.accepts_stub_proofs(),
+                Error::<T>::ProofSystemModeRejectsStubProofs
+            );
 
             Self::check_verification_limit()?;
 
@@ -531,6 +547,12 @@ pub mod pallet {
             proof: BoundedVec<u8, T::MaxProofSize>,
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
+
+            let mode = CurrentProofSystemMode::<T>::get();
+            ensure!(
+                mode.accepts_stub_proofs(),
+                Error::<T>::ProofSystemModeRejectsStubProofs
+            );
 
             Self::check_verification_limit()?;
 
@@ -684,6 +706,12 @@ pub mod pallet {
             ensure!(
                 TrustedVerifiers::<T>::get(actor),
                 Error::<T>::NotTrustedVerifier
+            );
+
+            let mode = CurrentProofSystemMode::<T>::get();
+            ensure!(
+                mode.accepts_snark_proofs(),
+                Error::<T>::ProofSystemModeRejectsSnarkProofs
             );
 
             Self::check_verification_limit()?;

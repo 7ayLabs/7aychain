@@ -824,6 +824,12 @@ fn verify_snark_circuit_not_found() {
         let verifier = account_to_actor(verifier_account);
         assert_ok!(Zk::add_trusted_verifier(RuntimeOrigin::root(), verifier));
 
+        // Must transition to Transitional mode for SNARK proofs
+        assert_ok!(Zk::transition_proof_system_mode(
+            RuntimeOrigin::root(),
+            crate::migration::ProofSystemMode::Transitional
+        ));
+
         let proof = BoundedVec::try_from(vec![1u8; 256]).expect("fits");
         let inputs = BoundedVec::try_from(vec![[1u8; 32]]).expect("fits");
 
@@ -845,6 +851,12 @@ fn verify_snark_success_with_stub() {
         let verifier_account = 1u64;
         let verifier = account_to_actor(verifier_account);
         assert_ok!(Zk::add_trusted_verifier(RuntimeOrigin::root(), verifier));
+
+        // Must transition to Transitional mode for SNARK proofs
+        assert_ok!(Zk::transition_proof_system_mode(
+            RuntimeOrigin::root(),
+            crate::migration::ProofSystemMode::Transitional
+        ));
 
         let circuit_id = H256([10u8; 32]);
         let vk = BoundedVec::try_from(vec![1u8; 256]).expect("fits");
@@ -1099,6 +1111,12 @@ fn verify_snark_on_deregistered_circuit_fails() {
         let verifier = account_to_actor(verifier_account);
         assert_ok!(Zk::add_trusted_verifier(RuntimeOrigin::root(), verifier));
 
+        // Must transition to Transitional mode for SNARK proofs
+        assert_ok!(Zk::transition_proof_system_mode(
+            RuntimeOrigin::root(),
+            crate::migration::ProofSystemMode::Transitional
+        ));
+
         let circuit_id = H256([10u8; 32]);
         let vk = BoundedVec::try_from(vec![1u8; 256]).expect("fits");
         assert_ok!(Zk::register_circuit(
@@ -1198,5 +1216,183 @@ fn transition_mode_full_path() {
             Zk::proof_system_mode(),
             crate::migration::ProofSystemMode::SnarkOnly
         );
+    });
+}
+
+// ===================================================================
+// Proof system mode enforcement in extrinsics
+// ===================================================================
+
+#[test]
+fn mode_legacy_accepts_stub_proofs() {
+    new_test_ext().execute_with(|| {
+        // Default mode is Legacy — stub proofs should work
+        assert_eq!(
+            Zk::proof_system_mode(),
+            crate::migration::ProofSystemMode::Legacy
+        );
+
+        let witness = create_share_witness();
+        let (statement, proof) = Zk::generate_share_proof(&witness);
+        let bounded = BoundedVec::try_from(proof).expect("fits");
+        assert_ok!(Zk::verify_share_proof(
+            RuntimeOrigin::signed(1),
+            statement,
+            bounded
+        ));
+    });
+}
+
+#[test]
+fn mode_legacy_rejects_snark_proofs() {
+    new_test_ext().execute_with(|| {
+        // Default mode is Legacy — SNARK proofs should be rejected
+        let verifier_account = 1u64;
+        let verifier = account_to_actor(verifier_account);
+        assert_ok!(Zk::add_trusted_verifier(RuntimeOrigin::root(), verifier));
+
+        let circuit_id = H256([10u8; 32]);
+        let vk = BoundedVec::try_from(vec![1u8; 256]).expect("fits");
+        assert_ok!(Zk::register_circuit(
+            RuntimeOrigin::root(),
+            circuit_id,
+            SnarkProofType::Groth16,
+            vk
+        ));
+
+        let proof = BoundedVec::try_from(vec![1u8; 256]).expect("fits");
+        let inputs = BoundedVec::try_from(vec![[1u8; 32]]).expect("fits");
+
+        assert_noop!(
+            Zk::verify_snark(
+                RuntimeOrigin::signed(verifier_account),
+                circuit_id,
+                proof,
+                inputs
+            ),
+            Error::<Test>::ProofSystemModeRejectsSnarkProofs
+        );
+    });
+}
+
+#[test]
+fn mode_transitional_accepts_both() {
+    new_test_ext().execute_with(|| {
+        assert_ok!(Zk::transition_proof_system_mode(
+            RuntimeOrigin::root(),
+            crate::migration::ProofSystemMode::Transitional
+        ));
+
+        // Stub proofs still work
+        let witness = create_share_witness();
+        let (statement, proof) = Zk::generate_share_proof(&witness);
+        let bounded = BoundedVec::try_from(proof).expect("fits");
+        assert_ok!(Zk::verify_share_proof(
+            RuntimeOrigin::signed(1),
+            statement,
+            bounded
+        ));
+
+        // SNARK proofs also work
+        let verifier_account = 2u64;
+        let verifier = account_to_actor(verifier_account);
+        assert_ok!(Zk::add_trusted_verifier(RuntimeOrigin::root(), verifier));
+
+        let circuit_id = H256([10u8; 32]);
+        let vk = BoundedVec::try_from(vec![1u8; 256]).expect("fits");
+        assert_ok!(Zk::register_circuit(
+            RuntimeOrigin::root(),
+            circuit_id,
+            SnarkProofType::Groth16,
+            vk
+        ));
+
+        let proof = BoundedVec::try_from(vec![1u8; 256]).expect("fits");
+        let inputs = BoundedVec::try_from(vec![[1u8; 32]]).expect("fits");
+        assert_ok!(Zk::verify_snark(
+            RuntimeOrigin::signed(verifier_account),
+            circuit_id,
+            proof,
+            inputs
+        ));
+    });
+}
+
+#[test]
+fn mode_snark_only_rejects_stub_proofs() {
+    new_test_ext().execute_with(|| {
+        // Transition all the way to SnarkOnly
+        assert_ok!(Zk::transition_proof_system_mode(
+            RuntimeOrigin::root(),
+            crate::migration::ProofSystemMode::Transitional
+        ));
+        assert_ok!(Zk::transition_proof_system_mode(
+            RuntimeOrigin::root(),
+            crate::migration::ProofSystemMode::SnarkOnly
+        ));
+
+        // Stub proofs should be rejected
+        let witness = create_share_witness();
+        let (statement, proof) = Zk::generate_share_proof(&witness);
+        let bounded = BoundedVec::try_from(proof).expect("fits");
+        assert_noop!(
+            Zk::verify_share_proof(RuntimeOrigin::signed(1), statement, bounded),
+            Error::<Test>::ProofSystemModeRejectsStubProofs
+        );
+
+        // Presence proofs also rejected
+        let (secret, epoch_id, state_root) = create_presence_params();
+        let (p_statement, p_proof) = Zk::generate_presence_proof(&secret, epoch_id, state_root);
+        let p_bounded = BoundedVec::try_from(p_proof).expect("fits");
+        assert_noop!(
+            Zk::verify_presence_proof(RuntimeOrigin::signed(1), p_statement, p_bounded),
+            Error::<Test>::ProofSystemModeRejectsStubProofs
+        );
+
+        // Access proofs also rejected
+        let (vault_id, actor_id, ring_position, membership) = create_access_params();
+        let (a_statement, a_proof) =
+            Zk::generate_access_proof(vault_id, &actor_id, ring_position, &membership);
+        let a_bounded = BoundedVec::try_from(a_proof).expect("fits");
+        assert_noop!(
+            Zk::verify_access_proof(RuntimeOrigin::signed(1), a_statement, a_bounded),
+            Error::<Test>::ProofSystemModeRejectsStubProofs
+        );
+    });
+}
+
+#[test]
+fn mode_snark_only_accepts_snark_proofs() {
+    new_test_ext().execute_with(|| {
+        assert_ok!(Zk::transition_proof_system_mode(
+            RuntimeOrigin::root(),
+            crate::migration::ProofSystemMode::Transitional
+        ));
+        assert_ok!(Zk::transition_proof_system_mode(
+            RuntimeOrigin::root(),
+            crate::migration::ProofSystemMode::SnarkOnly
+        ));
+
+        let verifier_account = 1u64;
+        let verifier = account_to_actor(verifier_account);
+        assert_ok!(Zk::add_trusted_verifier(RuntimeOrigin::root(), verifier));
+
+        let circuit_id = H256([10u8; 32]);
+        let vk = BoundedVec::try_from(vec![1u8; 256]).expect("fits");
+        assert_ok!(Zk::register_circuit(
+            RuntimeOrigin::root(),
+            circuit_id,
+            SnarkProofType::Groth16,
+            vk
+        ));
+
+        let proof = BoundedVec::try_from(vec![1u8; 256]).expect("fits");
+        let inputs = BoundedVec::try_from(vec![[1u8; 32]]).expect("fits");
+        assert_ok!(Zk::verify_snark(
+            RuntimeOrigin::signed(verifier_account),
+            circuit_id,
+            proof,
+            inputs
+        ));
     });
 }
