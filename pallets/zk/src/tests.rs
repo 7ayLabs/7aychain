@@ -894,6 +894,12 @@ fn verify_snark_success_with_stub() {
 #[test]
 fn verify_snark_replay_rejected() {
     new_test_ext().execute_with(|| {
+        // Enable SNARK proofs by transitioning to Transitional mode
+        assert_ok!(Zk::transition_proof_system_mode(
+            RuntimeOrigin::root(),
+            crate::migration::ProofSystemMode::Transitional
+        ));
+
         let verifier_account = 1u64;
         let verifier = account_to_actor(verifier_account);
         assert_ok!(Zk::add_trusted_verifier(RuntimeOrigin::root(), verifier));
