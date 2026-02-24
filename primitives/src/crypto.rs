@@ -57,11 +57,10 @@ pub struct PresenceCommitment(pub H256);
 impl PresenceCommitment {
     pub fn new<V: Encode>(value: &V, randomness: &[u8; 32]) -> Self {
         let value_bytes = value.encode();
-        let mut input = Vec::with_capacity(DOMAIN_COMMITMENT.len() + value_bytes.len() + 32);
-        input.extend_from_slice(DOMAIN_COMMITMENT);
-        input.extend_from_slice(&value_bytes);
-        input.extend_from_slice(randomness);
-        Self(H256(blake2_256(&input)))
+        let mut data = Vec::with_capacity(value_bytes.len() + 32);
+        data.extend_from_slice(&value_bytes);
+        data.extend_from_slice(randomness);
+        Self(hash_with_domain(DOMAIN_COMMITMENT, &data))
     }
 
     pub fn verify<V: Encode>(&self, value: &V, randomness: &[u8; 32]) -> bool {
@@ -489,11 +488,10 @@ impl ShamirScheme {
     }
 
     pub fn hash_share(share: &Share) -> H256 {
-        let mut input = Vec::with_capacity(DOMAIN_SHARE.len() + 33);
-        input.extend_from_slice(DOMAIN_SHARE);
-        input.push(share.index.0);
-        input.extend_from_slice(&share.value);
-        H256(blake2_256(&input))
+        let mut data = Vec::with_capacity(33);
+        data.push(share.index.0);
+        data.extend_from_slice(&share.value);
+        hash_with_domain(DOMAIN_SHARE, &data)
     }
 
     pub fn create_commitment(share: &Share) -> H256 {
