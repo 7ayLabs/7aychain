@@ -3,6 +3,8 @@
 extern crate alloc;
 
 pub use pallet::*;
+pub mod migration;
+pub mod verifier;
 pub mod weights;
 
 #[cfg(test)]
@@ -19,6 +21,10 @@ use seveny_primitives::{
     types::ActorId,
 };
 use sp_core::{blake2_256, H256};
+
+pub use verifier::{
+    AcceptAllVerifier, ConfigurableVerifier, NullVerifier, StubVerifier, ZkVerifier,
+};
 
 #[derive(
     Clone,
@@ -105,7 +111,7 @@ pub struct PresenceStatement {
     Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo,
 )]
 pub struct PresenceWitness {
-    pub secret: [u8; 32],
+    pub secret_commitment: H256,
     pub randomness: [u8; 32],
     pub merkle_path: Vec<H256>,
     pub leaf_index: u64,
@@ -220,94 +226,20 @@ pub struct CircuitData<BlockNumber> {
     pub vk_hash: H256,
     /// When the circuit was registered
     pub registered_at: BlockNumber,
+    /// Circuit version (monotonically increasing per circuit_id)
+    pub version: u32,
+    /// Whether this circuit is active (can be used for verification)
+    pub active: bool,
 }
 
 /// Maximum size of verification key data
 pub type MaxVkSize = ConstU32<4096>;
 
+/// Minimum size of verification key data (prevents empty/trivial VKs)
+pub const MIN_VK_SIZE: u32 = 32;
+
 /// Maximum number of public inputs
 pub type MaxPublicInputs = ConstU32<16>;
-
-pub trait ZkVerifier {
-    fn verify_share_proof(statement: &ShareStatement, proof: &[u8]) -> bool;
-    fn verify_presence_proof(statement: &PresenceStatement, proof: &[u8]) -> bool;
-    fn verify_access_proof(statement: &AccessStatement, proof: &[u8]) -> bool;
-}
-
-pub struct SimpleHashVerifier;
-
-impl ZkVerifier for SimpleHashVerifier {
-    fn verify_share_proof(statement: &ShareStatement, proof: &[u8]) -> bool {
-        const SHARE_PROOF_SIZE: usize = 65;
-        if proof.len() != SHARE_PROOF_SIZE {
-            return false;
-        }
-
-        let Ok(share_value): Result<[u8; 32], _> = proof[0..32].try_into() else {
-            return false;
-        };
-        let share_index = proof[32];
-        let Ok(randomness): Result<[u8; 32], _> = proof[33..65].try_into() else {
-            return false;
-        };
-
-        let mut input = Vec::with_capacity(DOMAIN_SHARE_PROOF.len() + 65);
-        input.extend_from_slice(DOMAIN_SHARE_PROOF);
-        input.extend_from_slice(&share_value);
-        input.push(share_index);
-        input.extend_from_slice(&randomness);
-        let computed = H256(blake2_256(&input));
-
-        computed.ct_eq(&statement.commitment_hash)
-    }
-
-    /// SECURITY WARNING: This stub verifier requires the raw secret in the proof,
-    /// which means the secret is exposed on-chain in extrinsic call data. This
-    /// completely defeats ZK privacy. Replace with a real ZK circuit (e.g. Groth16)
-    /// before any production deployment. The state_root is also not verified.
-    fn verify_presence_proof(statement: &PresenceStatement, proof: &[u8]) -> bool {
-        const PRESENCE_PROOF_SIZE: usize = 80;
-        if proof.len() != PRESENCE_PROOF_SIZE {
-            return false;
-        }
-
-        let Ok(secret): Result<[u8; 32], _> = proof[0..32].try_into() else {
-            return false;
-        };
-
-        // INV1: Nullifier derived from (secret, epoch) only — no nonce
-        let derived_nullifier = Nullifier::derive(&secret, statement.epoch_id);
-
-        derived_nullifier.0.ct_eq(&statement.nullifier.0)
-    }
-
-    fn verify_access_proof(statement: &AccessStatement, proof: &[u8]) -> bool {
-        const ACCESS_PROOF_SIZE: usize = 68;
-        if proof.len() != ACCESS_PROOF_SIZE {
-            return false;
-        }
-
-        let Ok(actor_bytes): Result<[u8; 32], _> = proof[0..32].try_into() else {
-            return false;
-        };
-        let Ok(ring_position_bytes): Result<[u8; 4], _> = proof[32..36].try_into() else {
-            return false;
-        };
-        let Ok(membership): Result<[u8; 32], _> = proof[36..68].try_into() else {
-            return false;
-        };
-
-        let mut input = Vec::with_capacity(DOMAIN_ACCESS_PROOF.len() + 76);
-        input.extend_from_slice(DOMAIN_ACCESS_PROOF);
-        input.extend_from_slice(&statement.vault_id.to_le_bytes());
-        input.extend_from_slice(&actor_bytes);
-        input.extend_from_slice(&ring_position_bytes);
-        input.extend_from_slice(&membership);
-        let computed = H256(blake2_256(&input));
-
-        computed.ct_eq(&statement.access_hash)
-    }
-}
 
 #[frame_support::pallet]
 pub mod pallet {
@@ -320,6 +252,11 @@ pub mod pallet {
     #[pallet::config]
     pub trait Config: frame_system::Config<RuntimeEvent: From<Event<Self>>> {
         type WeightInfo: WeightInfo;
+
+        /// The ZK verifier implementation used by this pallet.
+        /// Use `StubVerifier` for development, `NullVerifier` to disable,
+        /// or a real verifier (e.g. Groth16Verifier) for production.
+        type Verifier: ZkVerifier;
 
         #[pallet::constant]
         type MaxProofSize: Get<u32>;
@@ -371,6 +308,13 @@ pub mod pallet {
     #[pallet::getter(fn verification_keys)]
     pub type VerificationKeys<T: Config> =
         StorageMap<_, Blake2_128Concat, H256, BoundedVec<u8, MaxVkSize>>;
+
+    /// Current proof system operating mode.
+    /// Controls whether stub proofs, SNARK proofs, or both are accepted.
+    /// Transitions are monotonic: Legacy -> Transitional -> SnarkOnly.
+    #[pallet::storage]
+    #[pallet::getter(fn proof_system_mode)]
+    pub type CurrentProofSystemMode<T> = StorageValue<_, migration::ProofSystemMode, ValueQuery>;
 
     #[pallet::genesis_config]
     #[derive(frame_support::DefaultNoBound)]
@@ -435,6 +379,15 @@ pub mod pallet {
             circuit_id: H256,
             verifier: ActorId,
         },
+        /// Proof system mode was transitioned
+        ProofSystemModeChanged {
+            from: migration::ProofSystemMode,
+            to: migration::ProofSystemMode,
+        },
+        /// A circuit was deregistered (set to inactive)
+        CircuitDeregistered {
+            circuit_id: H256,
+        },
     }
 
     #[pallet::error]
@@ -453,6 +406,12 @@ pub mod pallet {
         CircuitAlreadyRegistered,
         /// SNARK verification failed
         SnarkVerificationFailed,
+        /// Invalid proof system mode transition (must be forward-only)
+        InvalidModeTransition,
+        /// Verification key too small or invalid format
+        InvalidVerificationKey,
+        /// Circuit is not active (deregistered)
+        CircuitNotActive,
     }
 
     #[pallet::call]
@@ -466,6 +425,12 @@ pub mod pallet {
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
 
+            let mode = Self::proof_system_mode();
+            ensure!(
+                mode.accepts_stub_proofs(),
+                Error::<T>::ProofVerificationFailed
+            );
+
             Self::check_verification_limit()?;
 
             let statement_hash = Self::hash_statement(&statement.encode());
@@ -474,7 +439,7 @@ pub mod pallet {
                 Error::<T>::StatementAlreadyVerified
             );
 
-            let verified = SimpleHashVerifier::verify_share_proof(&statement, &proof);
+            let verified = T::Verifier::verify_share_proof(&statement, &proof);
             ensure!(verified, Error::<T>::ProofVerificationFailed);
 
             let block_number = frame_system::Pallet::<T>::block_number();
@@ -510,6 +475,12 @@ pub mod pallet {
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
 
+            let mode = Self::proof_system_mode();
+            ensure!(
+                mode.accepts_stub_proofs(),
+                Error::<T>::ProofVerificationFailed
+            );
+
             Self::check_verification_limit()?;
 
             ensure!(
@@ -523,7 +494,7 @@ pub mod pallet {
                 Error::<T>::StatementAlreadyVerified
             );
 
-            let verified = SimpleHashVerifier::verify_presence_proof(&statement, &proof);
+            let verified = T::Verifier::verify_presence_proof(&statement, &proof);
             ensure!(verified, Error::<T>::ProofVerificationFailed);
 
             let block_number = frame_system::Pallet::<T>::block_number();
@@ -565,6 +536,12 @@ pub mod pallet {
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
 
+            let mode = Self::proof_system_mode();
+            ensure!(
+                mode.accepts_stub_proofs(),
+                Error::<T>::ProofVerificationFailed
+            );
+
             Self::check_verification_limit()?;
 
             let statement_hash = Self::hash_statement(&statement.encode());
@@ -573,7 +550,7 @@ pub mod pallet {
                 Error::<T>::StatementAlreadyVerified
             );
 
-            let verified = SimpleHashVerifier::verify_access_proof(&statement, &proof);
+            let verified = T::Verifier::verify_access_proof(&statement, &proof);
             ensure!(verified, Error::<T>::ProofVerificationFailed);
 
             let block_number = frame_system::Pallet::<T>::block_number();
@@ -655,8 +632,9 @@ pub mod pallet {
 
         /// Register a SNARK circuit with its verification key (root only).
         /// This establishes the upgrade path from hash-based proofs to true ZK.
+        /// VK must be at least MIN_VK_SIZE bytes (prevents trivial/empty VKs).
         #[pallet::call_index(6)]
-        #[pallet::weight(Weight::from_parts(50_000, 0))]
+        #[pallet::weight(T::WeightInfo::register_circuit())]
         pub fn register_circuit(
             origin: OriginFor<T>,
             circuit_id: H256,
@@ -670,6 +648,11 @@ pub mod pallet {
                 Error::<T>::CircuitAlreadyRegistered
             );
 
+            ensure!(
+                vk.len() >= MIN_VK_SIZE as usize,
+                Error::<T>::InvalidVerificationKey
+            );
+
             let vk_hash = H256(blake2_256(&vk));
             let block_number = frame_system::Pallet::<T>::block_number();
 
@@ -677,6 +660,8 @@ pub mod pallet {
                 proof_type,
                 vk_hash,
                 registered_at: block_number,
+                version: 1,
+                active: true,
             };
 
             CircuitRegistry::<T>::insert(circuit_id, circuit_data);
@@ -695,7 +680,7 @@ pub mod pallet {
         /// SECURITY: Restricted to trusted verifiers only — stub verifiers are
         /// NOT cryptographically secure and only check byte length.
         #[pallet::call_index(7)]
-        #[pallet::weight(Weight::from_parts(100_000, 0))]
+        #[pallet::weight(T::WeightInfo::verify_snark())]
         pub fn verify_snark(
             origin: OriginFor<T>,
             circuit_id: H256,
@@ -705,7 +690,12 @@ pub mod pallet {
             let who = ensure_signed(origin)?;
             let actor = Self::account_to_actor(who);
 
-            // Restrict to trusted verifiers since stubs are not cryptographic
+            let mode = Self::proof_system_mode();
+            ensure!(
+                mode.accepts_snark_proofs(),
+                Error::<T>::ProofVerificationFailed
+            );
+
             ensure!(
                 TrustedVerifiers::<T>::get(actor),
                 Error::<T>::NotTrustedVerifier
@@ -715,18 +705,11 @@ pub mod pallet {
 
             let circuit =
                 CircuitRegistry::<T>::get(circuit_id).ok_or(Error::<T>::CircuitNotFound)?;
+            ensure!(circuit.active, Error::<T>::CircuitNotActive);
 
-            // WARNING: Stub verifiers only check byte length / non-empty inputs.
-            // Do NOT treat SnarkVerified as cryptographic proof until real verifiers land.
-            log::warn!(
-                "verify_snark: using STUB verifier for circuit {:?} — not cryptographically secure",
-                circuit_id
-            );
-            let verified = match circuit.proof_type {
-                SnarkProofType::Groth16 => Self::verify_groth16_stub(&proof, &inputs),
-                SnarkProofType::PlonK => Self::verify_plonk_stub(&proof, &inputs),
-                SnarkProofType::Halo2 => Self::verify_halo2_stub(&proof, &inputs),
-            };
+            let vk = VerificationKeys::<T>::get(circuit_id).ok_or(Error::<T>::CircuitNotFound)?;
+
+            let verified = T::Verifier::verify_snark(&proof, &inputs, &vk);
 
             ensure!(verified, Error::<T>::SnarkVerificationFailed);
 
@@ -736,6 +719,53 @@ pub mod pallet {
             Self::deposit_event(Event::SnarkVerified {
                 circuit_id,
                 verifier: actor,
+            });
+
+            Ok(())
+        }
+
+        /// Deregister a SNARK circuit (root only).
+        /// Sets the circuit to inactive. Does not delete storage to preserve
+        /// audit trail. Inactive circuits cannot be used for verification.
+        #[pallet::call_index(9)]
+        #[pallet::weight(T::WeightInfo::deregister_circuit())]
+        pub fn deregister_circuit(origin: OriginFor<T>, circuit_id: H256) -> DispatchResult {
+            ensure_root(origin)?;
+
+            CircuitRegistry::<T>::try_mutate(circuit_id, |maybe_circuit| {
+                let circuit = maybe_circuit.as_mut().ok_or(Error::<T>::CircuitNotFound)?;
+                ensure!(circuit.active, Error::<T>::CircuitNotActive);
+                circuit.active = false;
+                Ok::<(), DispatchError>(())
+            })?;
+
+            Self::deposit_event(Event::CircuitDeregistered { circuit_id });
+
+            Ok(())
+        }
+
+        /// Transition the proof system mode (root only).
+        /// Mode transitions are monotonic: Legacy -> Transitional -> SnarkOnly.
+        /// Cannot downgrade. This is a governance-controlled operation.
+        #[pallet::call_index(8)]
+        #[pallet::weight(T::WeightInfo::transition_proof_system_mode())]
+        pub fn transition_proof_system_mode(
+            origin: OriginFor<T>,
+            new_mode: migration::ProofSystemMode,
+        ) -> DispatchResult {
+            ensure_root(origin)?;
+
+            let current = CurrentProofSystemMode::<T>::get();
+            ensure!(
+                current.can_transition_to(new_mode),
+                Error::<T>::InvalidModeTransition
+            );
+
+            CurrentProofSystemMode::<T>::put(new_mode);
+
+            Self::deposit_event(Event::ProofSystemModeChanged {
+                from: current,
+                to: new_mode,
             });
 
             Ok(())
@@ -782,27 +812,6 @@ pub mod pallet {
             VerificationCount::<T>::get()
         }
 
-        /// STUB: size-only check, no cryptographic verification.
-        /// TODO: replace with BN254 pairing verification.
-        fn verify_groth16_stub(proof: &[u8], inputs: &[[u8; 32]]) -> bool {
-            log::warn!(target: "pallet-zk", "STUB: Groth16 verifier — no pairing check");
-            proof.len() >= 256 && !inputs.is_empty()
-        }
-
-        /// STUB: size-only check, no cryptographic verification.
-        /// TODO: replace with KZG commitment verification.
-        fn verify_plonk_stub(proof: &[u8], inputs: &[[u8; 32]]) -> bool {
-            log::warn!(target: "pallet-zk", "STUB: PlonK verifier — no polynomial check");
-            proof.len() >= 384 && !inputs.is_empty()
-        }
-
-        /// STUB: size-only check, no cryptographic verification.
-        /// TODO: replace with IPA verification.
-        fn verify_halo2_stub(proof: &[u8], inputs: &[[u8; 32]]) -> bool {
-            log::warn!(target: "pallet-zk", "STUB: Halo2 verifier — no IPA check");
-            proof.len() >= 192 && !inputs.is_empty()
-        }
-
         pub fn generate_share_proof(witness: &ShareWitness) -> (ShareStatement, Vec<u8>) {
             let mut input = Vec::with_capacity(DOMAIN_SHARE_PROOF.len() + 65);
             input.extend_from_slice(DOMAIN_SHARE_PROOF);
@@ -826,7 +835,6 @@ pub mod pallet {
             epoch_id: u64,
             state_root: StateRoot,
         ) -> (PresenceStatement, Vec<u8>) {
-            // INV1: Nullifier from (secret, epoch) — no nonce
             let nullifier = Nullifier::derive(secret, epoch_id);
 
             let statement = PresenceStatement {
@@ -835,10 +843,21 @@ pub mod pallet {
                 nullifier,
             };
 
-            // Proof layout: secret[32] || padding[32] || reserved[16]
+            // Proof layout: secret_commitment[32] || nullifier_binding[32] || reserved[16]
+            // INV74: Raw secret NEVER appears in proof data — only a commitment.
+            // NOTE: secret_commitment = H(secret) is a stub binding used in
+            // Legacy/Transitional modes. It does NOT constitute a ZK proof of
+            // knowledge — real proof of knowledge requires a SNARK circuit.
+            // The nullifier_binding = H(nullifier || epoch) binds to statement.
+            let secret_commitment = H256(blake2_256(secret));
+            let mut nullifier_input = Vec::with_capacity(40);
+            nullifier_input.extend_from_slice(nullifier.0.as_bytes());
+            nullifier_input.extend_from_slice(&epoch_id.to_le_bytes());
+            let nullifier_binding = H256(blake2_256(&nullifier_input));
+
             let mut proof = Vec::with_capacity(80);
-            proof.extend_from_slice(secret);
-            proof.extend_from_slice(&[0u8; 32]);
+            proof.extend_from_slice(secret_commitment.as_bytes());
+            proof.extend_from_slice(nullifier_binding.as_bytes());
             proof.extend_from_slice(&[0u8; 16]);
 
             (statement, proof)
