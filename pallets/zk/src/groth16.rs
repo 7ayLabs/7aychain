@@ -4,13 +4,16 @@
 //! (alt_bn128) curve using the arkworks library. Proof generation
 //! remains off-chain.
 //!
-//! # Proof Format (compressed, 128 bytes)
+//! # Proof Format
 //!
-//! | Field | Size | Encoding |
-//! |-------|------|----------|
-//! | pi_a  | 32B  | G1 compressed |
-//! | pi_b  | 64B  | G2 compressed |
-//! | pi_c  | 32B  | G1 compressed |
+//! Accepts both compressed (128 bytes) and uncompressed encodings.
+//! Compressed is tried first; uncompressed is used as fallback.
+//!
+//! | Field | Compressed | Uncompressed |
+//! |-------|-----------|--------------|
+//! | pi_a  | 32B (G1)  | 64B (G1)     |
+//! | pi_b  | 64B (G2)  | 128B (G2)    |
+//! | pi_c  | 32B (G1)  | 64B (G1)     |
 //!
 //! # Public Inputs
 //!
