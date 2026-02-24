@@ -67,7 +67,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     spec_name: Cow::Borrowed("seveny"),
     impl_name: Cow::Borrowed("seveny-node"),
     authoring_version: 1,
-    spec_version: 102,
+    spec_version: 104,
     impl_version: 1,
     apis: RUNTIME_API_VERSIONS,
     transaction_version: 1,
