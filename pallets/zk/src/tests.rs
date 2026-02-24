@@ -871,6 +871,50 @@ fn verify_snark_success_with_stub() {
 }
 
 // ===================================================================
+// SNARK replay protection
+// ===================================================================
+
+#[test]
+fn verify_snark_replay_rejected() {
+    new_test_ext().execute_with(|| {
+        let verifier_account = 1u64;
+        let verifier = account_to_actor(verifier_account);
+        assert_ok!(Zk::add_trusted_verifier(RuntimeOrigin::root(), verifier));
+
+        let circuit_id = H256([10u8; 32]);
+        let vk = BoundedVec::try_from(vec![1u8; 256]).expect("fits");
+        assert_ok!(Zk::register_circuit(
+            RuntimeOrigin::root(),
+            circuit_id,
+            SnarkProofType::Groth16,
+            vk
+        ));
+
+        let proof = BoundedVec::try_from(vec![1u8; 256]).expect("fits");
+        let inputs = BoundedVec::try_from(vec![[1u8; 32]]).expect("fits");
+
+        // First verification succeeds
+        assert_ok!(Zk::verify_snark(
+            RuntimeOrigin::signed(verifier_account),
+            circuit_id,
+            proof.clone(),
+            inputs.clone()
+        ));
+
+        // Same proof replay is rejected
+        assert_noop!(
+            Zk::verify_snark(
+                RuntimeOrigin::signed(verifier_account),
+                circuit_id,
+                proof,
+                inputs
+            ),
+            Error::<Test>::ProofAlreadyVerified
+        );
+    });
+}
+
+// ===================================================================
 // Verification limit enforcement
 // ===================================================================
 
