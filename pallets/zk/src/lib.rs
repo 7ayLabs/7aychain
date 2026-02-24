@@ -23,7 +23,6 @@ use parity_scale_codec::{Decode, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
 use seveny_primitives::{
     crypto::{Nullifier, StateRoot},
-    traits::ConstantTimeEq,
     types::ActorId,
 };
 use sp_core::{blake2_256, H256};
