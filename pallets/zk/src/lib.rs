@@ -3,6 +3,7 @@
 extern crate alloc;
 
 pub use pallet::*;
+pub mod migration;
 pub mod verifier;
 pub mod weights;
 
@@ -300,6 +301,13 @@ pub mod pallet {
     pub type VerificationKeys<T: Config> =
         StorageMap<_, Blake2_128Concat, H256, BoundedVec<u8, MaxVkSize>>;
 
+    /// Current proof system operating mode.
+    /// Controls whether stub proofs, SNARK proofs, or both are accepted.
+    /// Transitions are monotonic: Legacy -> Transitional -> SnarkOnly.
+    #[pallet::storage]
+    #[pallet::getter(fn proof_system_mode)]
+    pub type CurrentProofSystemMode<T> = StorageValue<_, migration::ProofSystemMode, ValueQuery>;
+
     #[pallet::genesis_config]
     #[derive(frame_support::DefaultNoBound)]
     pub struct GenesisConfig<T: Config> {
@@ -363,6 +371,11 @@ pub mod pallet {
             circuit_id: H256,
             verifier: ActorId,
         },
+        /// Proof system mode was transitioned
+        ProofSystemModeChanged {
+            from: migration::ProofSystemMode,
+            to: migration::ProofSystemMode,
+        },
     }
 
     #[pallet::error]
@@ -381,6 +394,8 @@ pub mod pallet {
         CircuitAlreadyRegistered,
         /// SNARK verification failed
         SnarkVerificationFailed,
+        /// Invalid proof system mode transition (must be forward-only)
+        InvalidModeTransition,
     }
 
     #[pallet::call]
@@ -656,6 +671,33 @@ pub mod pallet {
             Self::deposit_event(Event::SnarkVerified {
                 circuit_id,
                 verifier: actor,
+            });
+
+            Ok(())
+        }
+
+        /// Transition the proof system mode (root only).
+        /// Mode transitions are monotonic: Legacy -> Transitional -> SnarkOnly.
+        /// Cannot downgrade. This is a governance-controlled operation.
+        #[pallet::call_index(8)]
+        #[pallet::weight(T::WeightInfo::transition_proof_system_mode())]
+        pub fn transition_proof_system_mode(
+            origin: OriginFor<T>,
+            new_mode: migration::ProofSystemMode,
+        ) -> DispatchResult {
+            ensure_root(origin)?;
+
+            let current = CurrentProofSystemMode::<T>::get();
+            ensure!(
+                current.can_transition_to(new_mode),
+                Error::<T>::InvalidModeTransition
+            );
+
+            CurrentProofSystemMode::<T>::put(new_mode);
+
+            Self::deposit_event(Event::ProofSystemModeChanged {
+                from: current,
+                to: new_mode,
             });
 
             Ok(())
