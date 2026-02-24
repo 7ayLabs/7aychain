@@ -67,7 +67,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     spec_name: Cow::Borrowed("seveny"),
     impl_name: Cow::Borrowed("seveny-node"),
     authoring_version: 1,
-    spec_version: 104,
+    spec_version: 105,
     impl_version: 1,
     apis: RUNTIME_API_VERSIONS,
     transaction_version: 1,
@@ -427,13 +427,13 @@ impl pallet_vault::Config for Runtime {
 }
 
 parameter_types! {
-    pub const MaxProofSize: u32 = 1024;
+    pub const MaxProofSize: u32 = 2048;
     pub const MaxVerificationsPerBlock: u32 = 100;
 }
 
 impl pallet_zk::Config for Runtime {
     type WeightInfo = ();
-    type Verifier = pallet_zk::StubVerifier;
+    type Verifier = pallet_zk::Groth16Verifier;
     type MaxProofSize = MaxProofSize;
     type MaxVerificationsPerBlock = MaxVerificationsPerBlock;
 }
