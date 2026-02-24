@@ -117,6 +117,8 @@ pub mod pallet {
         pub violation: ViolationType,
         pub block: BlockNumberFor<T>,
         pub applied: bool,
+        /// Reporter who submitted evidence (None for root-initiated slashes)
+        pub reporter: Option<T::AccountId>,
     }
 
     #[pallet::storage]
@@ -149,6 +151,25 @@ pub mod pallet {
     #[pallet::storage]
     #[pallet::getter(fn slash_count)]
     pub type SlashCount<T: Config> = StorageValue<_, u64, ValueQuery>;
+
+    /// Tracks evidence submissions: (validator, reporter) -> block number.
+    /// Prevents the same reporter from filing duplicate evidence against
+    /// the same validator.
+    #[pallet::storage]
+    pub type EvidenceSubmissions<T: Config> = StorageDoubleMap<
+        _,
+        Blake2_128Concat,
+        ValidatorId,
+        Blake2_128Concat,
+        T::AccountId,
+        BlockNumberFor<T>,
+    >;
+
+    /// Rate limit tracker: reporter -> (window_start_block, count_in_window).
+    /// Limits evidence reports per reporter to prevent spam.
+    #[pallet::storage]
+    pub type EvidenceReportCount<T: Config> =
+        StorageMap<_, Blake2_128Concat, T::AccountId, (BlockNumberFor<T>, u32)>;
 
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
@@ -217,6 +238,10 @@ pub mod pallet {
         ArithmeticOverflow,
         InsufficientBalance,
         ControllerAlreadyUsed,
+        /// Duplicate evidence submission for this validator by this reporter
+        DuplicateEvidence,
+        /// Evidence report rate limit exceeded
+        EvidenceRateLimitExceeded,
     }
 
     #[pallet::genesis_config]
@@ -493,6 +518,7 @@ pub mod pallet {
                 violation,
                 block: block_number,
                 applied: false,
+                reporter: None,
             };
 
             PendingSlashes::<T>::insert(slash_id, slash_record);
@@ -547,6 +573,7 @@ pub mod pallet {
             let _ = T::Currency::slash_reserved(&info.controller, slash_record.amount);
 
             let new_stake = info.stake.saturating_sub(slash_record.amount);
+            let controller = info.controller.clone();
             TotalStake::<T>::mutate(|total| {
                 *total = total.saturating_sub(slash_record.amount);
             });
@@ -563,9 +590,33 @@ pub mod pallet {
                 amount: slash_record.amount,
             });
 
+            // Pay deferred evidence reward to the reporter (if any)
+            if let Some(ref reporter) = slash_record.reporter {
+                let reward = Self::calculate_evidence_reward(slash_record.amount);
+                if reward > BalanceOf::<T>::zero() {
+                    let _ = T::Currency::transfer(
+                        &controller,
+                        reporter,
+                        reward,
+                        frame_support::traits::ExistenceRequirement::AllowDeath,
+                    );
+
+                    Self::deposit_event(Event::EvidenceRewardPaid {
+                        reporter: reporter.clone(),
+                        amount: reward,
+                    });
+                }
+            }
+
             Ok(())
         }
 
+        /// Report evidence of a validator violation.
+        ///
+        /// Security hardening:
+        /// - Duplicate detection: same reporter cannot report same validator twice
+        /// - Rate limiting: max 3 reports per reporter per 100-block window
+        /// - Deferred rewards: reward paid when slash is applied, not at report time
         #[pallet::call_index(7)]
         #[pallet::weight(T::WeightInfo::report_evidence())]
         pub fn report_evidence(
@@ -576,12 +627,38 @@ pub mod pallet {
             let reporter = ensure_signed(origin)?;
             let block_number = frame_system::Pallet::<T>::block_number();
 
+            // Duplicate evidence check
+            ensure!(
+                !EvidenceSubmissions::<T>::contains_key(validator, &reporter),
+                Error::<T>::DuplicateEvidence
+            );
+
+            // Rate limiting: max 3 reports per 100-block window
+            const MAX_REPORTS_PER_WINDOW: u32 = 3;
+            const RATE_LIMIT_WINDOW: u64 = 100;
+            let window_blocks = BlockNumberFor::<T>::from(RATE_LIMIT_WINDOW as u32);
+            if let Some((window_start, count)) = EvidenceReportCount::<T>::get(&reporter) {
+                if block_number < window_start.saturating_add(window_blocks) {
+                    ensure!(
+                        count < MAX_REPORTS_PER_WINDOW,
+                        Error::<T>::EvidenceRateLimitExceeded
+                    );
+                    EvidenceReportCount::<T>::insert(
+                        &reporter,
+                        (window_start, count.saturating_add(1)),
+                    );
+                } else {
+                    // New window
+                    EvidenceReportCount::<T>::insert(&reporter, (block_number, 1u32));
+                }
+            } else {
+                EvidenceReportCount::<T>::insert(&reporter, (block_number, 1u32));
+            }
+
             let info = Validators::<T>::get(validator).ok_or(Error::<T>::ValidatorNotFound)?;
 
             let slash_pct = Self::get_slash_percentage(&violation);
             let slash_amount = slash_pct.mul_floor(info.stake);
-
-            let reward = Self::calculate_evidence_reward(slash_amount);
 
             let slash_id = SlashCount::<T>::get();
             SlashCount::<T>::put(slash_id.saturating_add(1));
@@ -592,9 +669,11 @@ pub mod pallet {
                 violation,
                 block: block_number,
                 applied: false,
+                reporter: Some(reporter.clone()),
             };
 
             PendingSlashes::<T>::insert(slash_id, slash_record);
+            EvidenceSubmissions::<T>::insert(validator, &reporter, block_number);
 
             Self::deposit_event(Event::ValidatorSlashed {
                 validator,
@@ -602,21 +681,7 @@ pub mod pallet {
                 violation,
             });
 
-            if reward > BalanceOf::<T>::zero() {
-                T::Currency::unreserve(&info.controller, reward);
-                let _ = T::Currency::transfer(
-                    &info.controller,
-                    &reporter,
-                    reward,
-                    frame_support::traits::ExistenceRequirement::AllowDeath,
-                );
-
-                Self::deposit_event(Event::EvidenceRewardPaid {
-                    reporter,
-                    amount: reward,
-                });
-            }
-
+            // Reward is deferred to apply_slash — not paid immediately
             Ok(())
         }
     }
