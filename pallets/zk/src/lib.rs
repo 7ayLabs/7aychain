@@ -271,6 +271,10 @@ pub mod pallet {
 
         #[pallet::constant]
         type MaxVerificationsPerBlock: Get<u32>;
+
+        /// Maximum number of circuits in the registry
+        #[pallet::constant]
+        type MaxCircuits: Get<u32>;
     }
 
     #[pallet::storage]
@@ -310,6 +314,11 @@ pub mod pallet {
     #[pallet::getter(fn circuit_registry)]
     pub type CircuitRegistry<T: Config> =
         StorageMap<_, Blake2_128Concat, H256, CircuitData<BlockNumberFor<T>>>;
+
+    /// Number of registered circuits (active + inactive)
+    #[pallet::storage]
+    #[pallet::getter(fn circuit_count)]
+    pub type CircuitCount<T: Config> = StorageValue<_, u32, ValueQuery>;
 
     /// Verification key storage (circuit_id -> vk data)
     #[pallet::storage]
@@ -420,6 +429,8 @@ pub mod pallet {
         InvalidVerificationKey,
         /// Circuit is not active (deregistered)
         CircuitNotActive,
+        /// Circuit registry is full (MaxCircuits reached)
+        CircuitRegistryFull,
     }
 
     #[pallet::call]
@@ -633,6 +644,12 @@ pub mod pallet {
         ) -> DispatchResult {
             ensure_root(origin)?;
 
+            let count = CircuitCount::<T>::get();
+            ensure!(
+                count < T::MaxCircuits::get(),
+                Error::<T>::CircuitRegistryFull
+            );
+
             ensure!(
                 !CircuitRegistry::<T>::contains_key(circuit_id),
                 Error::<T>::CircuitAlreadyRegistered
@@ -656,6 +673,7 @@ pub mod pallet {
 
             CircuitRegistry::<T>::insert(circuit_id, circuit_data);
             VerificationKeys::<T>::insert(circuit_id, vk);
+            CircuitCount::<T>::put(count.saturating_add(1));
 
             Self::deposit_event(Event::CircuitRegistered {
                 circuit_id,
@@ -723,6 +741,8 @@ pub mod pallet {
                 circuit.active = false;
                 Ok::<(), DispatchError>(())
             })?;
+
+            CircuitCount::<T>::mutate(|c| *c = c.saturating_sub(1));
 
             Self::deposit_event(Event::CircuitDeregistered { circuit_id });
 
