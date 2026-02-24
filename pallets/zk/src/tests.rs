@@ -50,6 +50,7 @@ impl frame_system::Config for Test {
 parameter_types! {
     pub const MaxProofSize: u32 = 512;
     pub const MaxVerificationsPerBlock: u32 = 100;
+    pub const MaxCircuits: u32 = 256;
 }
 
 impl pallet_zk::Config for Test {
@@ -57,6 +58,7 @@ impl pallet_zk::Config for Test {
     type Verifier = crate::StubVerifier;
     type MaxProofSize = MaxProofSize;
     type MaxVerificationsPerBlock = MaxVerificationsPerBlock;
+    type MaxCircuits = MaxCircuits;
 }
 
 fn new_test_ext() -> sp_io::TestExternalities {
@@ -1397,5 +1399,63 @@ fn mode_snark_only_accepts_snark_proofs() {
             proof,
             inputs
         ));
+    });
+}
+
+// ===================================================================
+// Circuit registry bounds
+// ===================================================================
+
+#[test]
+fn circuit_registry_bounded_by_max_circuits() {
+    // Use a small test with limited MaxCircuits=256
+    // Register 256 circuits, then the 257th should fail
+    new_test_ext().execute_with(|| {
+        let vk = BoundedVec::try_from(vec![1u8; 64]).expect("fits");
+
+        for i in 0..256u32 {
+            let mut circuit_id = [0u8; 32];
+            circuit_id[..4].copy_from_slice(&i.to_le_bytes());
+            assert_ok!(Zk::register_circuit(
+                RuntimeOrigin::root(),
+                H256(circuit_id),
+                SnarkProofType::Groth16,
+                vk.clone()
+            ));
+        }
+
+        assert_eq!(Zk::circuit_count(), 256);
+
+        // 257th should fail
+        let mut overflow_id = [0u8; 32];
+        overflow_id[..4].copy_from_slice(&256u32.to_le_bytes());
+        assert_noop!(
+            Zk::register_circuit(
+                RuntimeOrigin::root(),
+                H256(overflow_id),
+                SnarkProofType::Groth16,
+                vk
+            ),
+            Error::<Test>::CircuitRegistryFull
+        );
+    });
+}
+
+#[test]
+fn deregister_decrements_circuit_count() {
+    new_test_ext().execute_with(|| {
+        let circuit_id = H256([10u8; 32]);
+        let vk = BoundedVec::try_from(vec![1u8; 64]).expect("fits");
+
+        assert_ok!(Zk::register_circuit(
+            RuntimeOrigin::root(),
+            circuit_id,
+            SnarkProofType::Groth16,
+            vk
+        ));
+        assert_eq!(Zk::circuit_count(), 1);
+
+        assert_ok!(Zk::deregister_circuit(RuntimeOrigin::root(), circuit_id));
+        assert_eq!(Zk::circuit_count(), 0);
     });
 }
