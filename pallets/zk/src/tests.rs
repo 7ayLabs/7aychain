@@ -54,6 +54,7 @@ parameter_types! {
 
 impl pallet_zk::Config for Test {
     type WeightInfo = ();
+    type Verifier = crate::StubVerifier;
     type MaxProofSize = MaxProofSize;
     type MaxVerificationsPerBlock = MaxVerificationsPerBlock;
 }
