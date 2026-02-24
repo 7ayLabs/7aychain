@@ -17,6 +17,7 @@
 #![allow(clippy::expect_used)]
 
 use alloc::vec::Vec;
+use seveny_primitives::crypto::{hash_with_domain, DOMAIN_NULLIFIER};
 use seveny_primitives::traits::ConstantTimeEq;
 use sp_core::{blake2_256, H256};
 
@@ -105,11 +106,11 @@ impl ZkVerifier for StubVerifier {
             return false;
         }
 
-        // Verify nullifier_binding = H(nullifier || epoch_id)
+        // Verify nullifier_binding = H(DOMAIN_NULLIFIER || nullifier || epoch_id)
         let mut expected_input = Vec::with_capacity(40);
         expected_input.extend_from_slice(statement.nullifier.0.as_bytes());
         expected_input.extend_from_slice(&statement.epoch_id.to_le_bytes());
-        let expected_binding = H256(blake2_256(&expected_input));
+        let expected_binding = hash_with_domain(DOMAIN_NULLIFIER, &expected_input);
 
         expected_binding.ct_eq(&H256(nullifier_binding))
     }
@@ -186,7 +187,7 @@ pub type AcceptAllVerifier = ConfigurableVerifier<true>;
 #[cfg(test)]
 mod verifier_tests {
     use super::*;
-    use seveny_primitives::crypto::{Nullifier, StateRoot};
+    use seveny_primitives::crypto::{hash_with_domain, Nullifier, StateRoot, DOMAIN_NULLIFIER};
 
     #[test]
     fn stub_verifier_share_proof_roundtrip() {
@@ -242,7 +243,7 @@ mod verifier_tests {
         let mut null_input = Vec::with_capacity(40);
         null_input.extend_from_slice(nullifier.0.as_bytes());
         null_input.extend_from_slice(&epoch_id.to_le_bytes());
-        let nullifier_binding = H256(blake2_256(&null_input));
+        let nullifier_binding = hash_with_domain(DOMAIN_NULLIFIER, &null_input);
 
         let mut proof = Vec::with_capacity(80);
         proof.extend_from_slice(secret_commitment.as_bytes());
@@ -307,7 +308,7 @@ mod verifier_tests {
         let mut null_input = Vec::with_capacity(40);
         null_input.extend_from_slice(nullifier.0.as_bytes());
         null_input.extend_from_slice(&epoch_id.to_le_bytes());
-        let nullifier_binding = H256(blake2_256(&null_input));
+        let nullifier_binding = hash_with_domain(DOMAIN_NULLIFIER, &null_input);
 
         let mut proof = Vec::with_capacity(80);
         proof.extend_from_slice(secret_commitment.as_bytes());
