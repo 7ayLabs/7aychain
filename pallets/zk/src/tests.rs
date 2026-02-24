@@ -797,6 +797,7 @@ fn register_circuit_duplicate_rejected() {
 #[test]
 fn verify_snark_requires_trusted_verifier() {
     new_test_ext().execute_with(|| {
+        // Transition to Transitional mode to allow SNARK proofs
         assert_ok!(Zk::transition_proof_system_mode(
             RuntimeOrigin::root(),
             crate::migration::ProofSystemMode::Transitional
