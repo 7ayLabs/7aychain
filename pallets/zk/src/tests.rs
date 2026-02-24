@@ -622,8 +622,11 @@ fn inv74_presence_proof_zero_commitment_rejected() {
         let mut null_input = Vec::with_capacity(40);
         null_input.extend_from_slice(nullifier.0.as_bytes());
         null_input.extend_from_slice(&epoch_id.to_le_bytes());
-        let binding = sp_core::blake2_256(&null_input);
-        bad_proof[32..64].copy_from_slice(&binding);
+        let binding = seveny_primitives::crypto::hash_with_domain(
+            seveny_primitives::crypto::DOMAIN_NULLIFIER,
+            &null_input,
+        );
+        bad_proof[32..64].copy_from_slice(binding.as_bytes());
 
         let bounded = BoundedVec::try_from(bad_proof).expect("fits");
         assert_noop!(
