@@ -3,6 +3,7 @@
 extern crate alloc;
 
 pub use pallet::*;
+pub mod verifier;
 pub mod weights;
 
 #[cfg(test)]
@@ -15,10 +16,13 @@ use parity_scale_codec::{Decode, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
 use seveny_primitives::{
     crypto::{Nullifier, StateRoot},
-    traits::ConstantTimeEq,
     types::ActorId,
 };
 use sp_core::{blake2_256, H256};
+
+pub use verifier::{
+    AcceptAllVerifier, ConfigurableVerifier, NullVerifier, StubVerifier, ZkVerifier,
+};
 
 #[derive(
     Clone,
@@ -228,87 +232,6 @@ pub type MaxVkSize = ConstU32<4096>;
 /// Maximum number of public inputs
 pub type MaxPublicInputs = ConstU32<16>;
 
-pub trait ZkVerifier {
-    fn verify_share_proof(statement: &ShareStatement, proof: &[u8]) -> bool;
-    fn verify_presence_proof(statement: &PresenceStatement, proof: &[u8]) -> bool;
-    fn verify_access_proof(statement: &AccessStatement, proof: &[u8]) -> bool;
-}
-
-pub struct SimpleHashVerifier;
-
-impl ZkVerifier for SimpleHashVerifier {
-    fn verify_share_proof(statement: &ShareStatement, proof: &[u8]) -> bool {
-        const SHARE_PROOF_SIZE: usize = 65;
-        if proof.len() != SHARE_PROOF_SIZE {
-            return false;
-        }
-
-        let Ok(share_value): Result<[u8; 32], _> = proof[0..32].try_into() else {
-            return false;
-        };
-        let share_index = proof[32];
-        let Ok(randomness): Result<[u8; 32], _> = proof[33..65].try_into() else {
-            return false;
-        };
-
-        let mut input = Vec::with_capacity(DOMAIN_SHARE_PROOF.len() + 65);
-        input.extend_from_slice(DOMAIN_SHARE_PROOF);
-        input.extend_from_slice(&share_value);
-        input.push(share_index);
-        input.extend_from_slice(&randomness);
-        let computed = H256(blake2_256(&input));
-
-        computed.ct_eq(&statement.commitment_hash)
-    }
-
-    /// SECURITY WARNING: This stub verifier requires the raw secret in the proof,
-    /// which means the secret is exposed on-chain in extrinsic call data. This
-    /// completely defeats ZK privacy. Replace with a real ZK circuit (e.g. Groth16)
-    /// before any production deployment. The state_root is also not verified.
-    fn verify_presence_proof(statement: &PresenceStatement, proof: &[u8]) -> bool {
-        const PRESENCE_PROOF_SIZE: usize = 80;
-        if proof.len() != PRESENCE_PROOF_SIZE {
-            return false;
-        }
-
-        let Ok(secret): Result<[u8; 32], _> = proof[0..32].try_into() else {
-            return false;
-        };
-
-        // INV1: Nullifier derived from (secret, epoch) only — no nonce
-        let derived_nullifier = Nullifier::derive(&secret, statement.epoch_id);
-
-        derived_nullifier.0.ct_eq(&statement.nullifier.0)
-    }
-
-    fn verify_access_proof(statement: &AccessStatement, proof: &[u8]) -> bool {
-        const ACCESS_PROOF_SIZE: usize = 68;
-        if proof.len() != ACCESS_PROOF_SIZE {
-            return false;
-        }
-
-        let Ok(actor_bytes): Result<[u8; 32], _> = proof[0..32].try_into() else {
-            return false;
-        };
-        let Ok(ring_position_bytes): Result<[u8; 4], _> = proof[32..36].try_into() else {
-            return false;
-        };
-        let Ok(membership): Result<[u8; 32], _> = proof[36..68].try_into() else {
-            return false;
-        };
-
-        let mut input = Vec::with_capacity(DOMAIN_ACCESS_PROOF.len() + 76);
-        input.extend_from_slice(DOMAIN_ACCESS_PROOF);
-        input.extend_from_slice(&statement.vault_id.to_le_bytes());
-        input.extend_from_slice(&actor_bytes);
-        input.extend_from_slice(&ring_position_bytes);
-        input.extend_from_slice(&membership);
-        let computed = H256(blake2_256(&input));
-
-        computed.ct_eq(&statement.access_hash)
-    }
-}
-
 #[frame_support::pallet]
 pub mod pallet {
     use super::*;
@@ -320,6 +243,11 @@ pub mod pallet {
     #[pallet::config]
     pub trait Config: frame_system::Config<RuntimeEvent: From<Event<Self>>> {
         type WeightInfo: WeightInfo;
+
+        /// The ZK verifier implementation used by this pallet.
+        /// Use `StubVerifier` for development, `NullVerifier` to disable,
+        /// or a real verifier (e.g. Groth16Verifier) for production.
+        type Verifier: ZkVerifier;
 
         #[pallet::constant]
         type MaxProofSize: Get<u32>;
@@ -474,7 +402,7 @@ pub mod pallet {
                 Error::<T>::StatementAlreadyVerified
             );
 
-            let verified = SimpleHashVerifier::verify_share_proof(&statement, &proof);
+            let verified = T::Verifier::verify_share_proof(&statement, &proof);
             ensure!(verified, Error::<T>::ProofVerificationFailed);
 
             let block_number = frame_system::Pallet::<T>::block_number();
@@ -523,7 +451,7 @@ pub mod pallet {
                 Error::<T>::StatementAlreadyVerified
             );
 
-            let verified = SimpleHashVerifier::verify_presence_proof(&statement, &proof);
+            let verified = T::Verifier::verify_presence_proof(&statement, &proof);
             ensure!(verified, Error::<T>::ProofVerificationFailed);
 
             let block_number = frame_system::Pallet::<T>::block_number();
@@ -573,7 +501,7 @@ pub mod pallet {
                 Error::<T>::StatementAlreadyVerified
             );
 
-            let verified = SimpleHashVerifier::verify_access_proof(&statement, &proof);
+            let verified = T::Verifier::verify_access_proof(&statement, &proof);
             ensure!(verified, Error::<T>::ProofVerificationFailed);
 
             let block_number = frame_system::Pallet::<T>::block_number();
@@ -713,20 +641,12 @@ pub mod pallet {
 
             Self::check_verification_limit()?;
 
-            let circuit =
+            let _circuit =
                 CircuitRegistry::<T>::get(circuit_id).ok_or(Error::<T>::CircuitNotFound)?;
 
-            // WARNING: Stub verifiers only check byte length / non-empty inputs.
-            // Do NOT treat SnarkVerified as cryptographic proof until real verifiers land.
-            log::warn!(
-                "verify_snark: using STUB verifier for circuit {:?} — not cryptographically secure",
-                circuit_id
-            );
-            let verified = match circuit.proof_type {
-                SnarkProofType::Groth16 => Self::verify_groth16_stub(&proof, &inputs),
-                SnarkProofType::PlonK => Self::verify_plonk_stub(&proof, &inputs),
-                SnarkProofType::Halo2 => Self::verify_halo2_stub(&proof, &inputs),
-            };
+            let vk = VerificationKeys::<T>::get(circuit_id).ok_or(Error::<T>::CircuitNotFound)?;
+
+            let verified = T::Verifier::verify_snark(&proof, &inputs, &vk);
 
             ensure!(verified, Error::<T>::SnarkVerificationFailed);
 
@@ -780,27 +700,6 @@ pub mod pallet {
 
         pub fn total_verifications() -> u64 {
             VerificationCount::<T>::get()
-        }
-
-        /// STUB: size-only check, no cryptographic verification.
-        /// TODO: replace with BN254 pairing verification.
-        fn verify_groth16_stub(proof: &[u8], inputs: &[[u8; 32]]) -> bool {
-            log::warn!(target: "pallet-zk", "STUB: Groth16 verifier — no pairing check");
-            proof.len() >= 256 && !inputs.is_empty()
-        }
-
-        /// STUB: size-only check, no cryptographic verification.
-        /// TODO: replace with KZG commitment verification.
-        fn verify_plonk_stub(proof: &[u8], inputs: &[[u8; 32]]) -> bool {
-            log::warn!(target: "pallet-zk", "STUB: PlonK verifier — no polynomial check");
-            proof.len() >= 384 && !inputs.is_empty()
-        }
-
-        /// STUB: size-only check, no cryptographic verification.
-        /// TODO: replace with IPA verification.
-        fn verify_halo2_stub(proof: &[u8], inputs: &[[u8; 32]]) -> bool {
-            log::warn!(target: "pallet-zk", "STUB: Halo2 verifier — no IPA check");
-            proof.len() >= 192 && !inputs.is_empty()
         }
 
         pub fn generate_share_proof(witness: &ShareWitness) -> (ShareStatement, Vec<u8>) {
