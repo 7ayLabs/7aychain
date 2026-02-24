@@ -49,9 +49,14 @@ ignore = [
     "RUSTSEC-2023-0091",
 
     # =========================================================================
-    # wasmtime 35.0.0
+    # wasmtime 35.0.0 (2 vulnerabilities)
     # =========================================================================
-    # Panic adding excessive fields to a wasi:http/types.fields instance
+    # 1. Guest-controlled resource exhaustion in WASI implementations
+    # Source: sp-wasm-interface -> sp-runtime-interface (polkadot-stable2503)
+    # Tracking: Will be resolved when upgrading to newer Substrate SDK
+    "RUSTSEC-2026-0020",
+
+    # 2. Panic adding excessive fields to a wasi:http/types.fields instance
     # Source: sp-wasm-interface -> sp-runtime-interface (polkadot-stable2503)
     # Severity: 6.9 (medium) - DoS only, no code execution
     # Tracking: Will be resolved when upgrading to newer Substrate SDK
