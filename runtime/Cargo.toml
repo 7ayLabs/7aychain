@@ -112,6 +112,7 @@ std = [
     "pallet-device/std",
     "pallet-vault/std",
     "pallet-zk/std",
+    "pallet-zk/groth16",
     "pallet-storage/std",
     "pallet-lifecycle/std",
     "pallet-triangulation/std",
