@@ -22,7 +22,7 @@ use frame_system::pallet_prelude::*;
 use parity_scale_codec::{Decode, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
 use seveny_primitives::{
-    crypto::{Nullifier, StateRoot},
+    crypto::{hash_with_domain, Nullifier, StateRoot, DOMAIN_NULLIFIER},
     types::ActorId,
 };
 use sp_core::{blake2_256, H256};
@@ -768,7 +768,7 @@ pub mod pallet {
         }
 
         pub fn hash_statement(data: &[u8]) -> H256 {
-            H256(blake2_256(data))
+            hash_with_domain(b"7ay:zk:statement:v1", data)
         }
 
         fn account_to_actor(account: T::AccountId) -> ActorId {
@@ -836,7 +836,7 @@ pub mod pallet {
             let mut nullifier_input = Vec::with_capacity(40);
             nullifier_input.extend_from_slice(nullifier.0.as_bytes());
             nullifier_input.extend_from_slice(&epoch_id.to_le_bytes());
-            let nullifier_binding = H256(blake2_256(&nullifier_input));
+            let nullifier_binding = hash_with_domain(DOMAIN_NULLIFIER, &nullifier_input);
 
             let mut proof = Vec::with_capacity(80);
             proof.extend_from_slice(secret_commitment.as_bytes());
