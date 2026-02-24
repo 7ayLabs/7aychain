@@ -17,6 +17,7 @@ pub trait WeightInfo {
     fn consume_nullifier() -> Weight;
     fn register_circuit() -> Weight;
     fn verify_snark() -> Weight;
+    fn transition_proof_system_mode() -> Weight;
 }
 
 pub struct SubstrateWeight<T>(PhantomData<T>);
@@ -69,6 +70,12 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
             .saturating_add(T::DbWeight::get().reads(4))
             .saturating_add(T::DbWeight::get().writes(2))
     }
+
+    fn transition_proof_system_mode() -> Weight {
+        Weight::from_parts(10_000_000, 0)
+            .saturating_add(T::DbWeight::get().reads(1))
+            .saturating_add(T::DbWeight::get().writes(1))
+    }
 }
 
 impl WeightInfo for () {
@@ -118,5 +125,11 @@ impl WeightInfo for () {
         Weight::from_parts(100_000_000, 0)
             .saturating_add(RocksDbWeight::get().reads(4))
             .saturating_add(RocksDbWeight::get().writes(2))
+    }
+
+    fn transition_proof_system_mode() -> Weight {
+        Weight::from_parts(10_000_000, 0)
+            .saturating_add(RocksDbWeight::get().reads(1))
+            .saturating_add(RocksDbWeight::get().writes(1))
     }
 }
