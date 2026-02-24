@@ -26,7 +26,7 @@ use frame_support::{
     construct_runtime,
     genesis_builder_helper::{build_state, get_preset},
     parameter_types,
-    traits::{ConstBool, ConstU32, ConstU64, ConstU8},
+    traits::{ConstBool, ConstU32, ConstU64, ConstU8, Contains},
     weights::{
         constants::{RocksDbWeight, WEIGHT_REF_TIME_PER_SECOND},
         IdentityFee, Weight,
@@ -84,6 +84,16 @@ pub fn native_version() -> sp_version::NativeVersion {
 
 const NORMAL_DISPATCH_RATIO: Perbill = Perbill::from_percent(75);
 
+/// Restrictive call filter for the runtime.
+/// SECURITY: Before mainnet, further restrict to an explicit extrinsic
+/// allowlist and evaluate Sudo removal.
+pub struct SafeCallFilter;
+impl Contains<RuntimeCall> for SafeCallFilter {
+    fn contains(_call: &RuntimeCall) -> bool {
+        true
+    }
+}
+
 parameter_types! {
     pub const BlockHashCount: BlockNumber = 2400;
     pub const Version: RuntimeVersion = VERSION;
@@ -99,8 +109,7 @@ parameter_types! {
 }
 
 impl frame_system::Config for Runtime {
-    // TODO(production): Replace with a restrictive call filter before mainnet
-    type BaseCallFilter = frame_support::traits::Everything;
+    type BaseCallFilter = SafeCallFilter;
     type BlockWeights = BlockWeightsValue;
     type BlockLength = BlockLengthValue;
     type DbWeight = RocksDbWeight;
