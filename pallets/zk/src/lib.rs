@@ -35,7 +35,6 @@ pub use verifier::{
 #[cfg(feature = "groth16")]
 pub use groth16::Groth16Verifier;
 
-
 #[derive(
     Clone,
     Copy,
