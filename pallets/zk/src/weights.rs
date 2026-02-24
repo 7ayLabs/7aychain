@@ -15,6 +15,10 @@ pub trait WeightInfo {
     fn add_trusted_verifier() -> Weight;
     fn remove_trusted_verifier() -> Weight;
     fn consume_nullifier() -> Weight;
+    fn register_circuit() -> Weight;
+    fn verify_snark() -> Weight;
+    fn transition_proof_system_mode() -> Weight;
+    fn deregister_circuit() -> Weight;
 }
 
 pub struct SubstrateWeight<T>(PhantomData<T>);
@@ -55,6 +59,30 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
             .saturating_add(T::DbWeight::get().reads(2))
             .saturating_add(T::DbWeight::get().writes(1))
     }
+
+    fn register_circuit() -> Weight {
+        Weight::from_parts(40_000_000, 0)
+            .saturating_add(T::DbWeight::get().reads(1))
+            .saturating_add(T::DbWeight::get().writes(2))
+    }
+
+    fn verify_snark() -> Weight {
+        Weight::from_parts(100_000_000, 0)
+            .saturating_add(T::DbWeight::get().reads(6))
+            .saturating_add(T::DbWeight::get().writes(2))
+    }
+
+    fn transition_proof_system_mode() -> Weight {
+        Weight::from_parts(10_000_000, 0)
+            .saturating_add(T::DbWeight::get().reads(1))
+            .saturating_add(T::DbWeight::get().writes(1))
+    }
+
+    fn deregister_circuit() -> Weight {
+        Weight::from_parts(20_000_000, 0)
+            .saturating_add(T::DbWeight::get().reads(1))
+            .saturating_add(T::DbWeight::get().writes(1))
+    }
 }
 
 impl WeightInfo for () {
@@ -91,6 +119,30 @@ impl WeightInfo for () {
     fn consume_nullifier() -> Weight {
         Weight::from_parts(25_000_000, 0)
             .saturating_add(RocksDbWeight::get().reads(2))
+            .saturating_add(RocksDbWeight::get().writes(1))
+    }
+
+    fn register_circuit() -> Weight {
+        Weight::from_parts(40_000_000, 0)
+            .saturating_add(RocksDbWeight::get().reads(1))
+            .saturating_add(RocksDbWeight::get().writes(2))
+    }
+
+    fn verify_snark() -> Weight {
+        Weight::from_parts(100_000_000, 0)
+            .saturating_add(RocksDbWeight::get().reads(6))
+            .saturating_add(RocksDbWeight::get().writes(2))
+    }
+
+    fn transition_proof_system_mode() -> Weight {
+        Weight::from_parts(10_000_000, 0)
+            .saturating_add(RocksDbWeight::get().reads(1))
+            .saturating_add(RocksDbWeight::get().writes(1))
+    }
+
+    fn deregister_circuit() -> Weight {
+        Weight::from_parts(20_000_000, 0)
+            .saturating_add(RocksDbWeight::get().reads(1))
             .saturating_add(RocksDbWeight::get().writes(1))
     }
 }
