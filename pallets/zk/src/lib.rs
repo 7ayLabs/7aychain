@@ -584,7 +584,7 @@ pub mod pallet {
         /// Register a SNARK circuit with its verification key (root only).
         /// This establishes the upgrade path from hash-based proofs to true ZK.
         #[pallet::call_index(6)]
-        #[pallet::weight(Weight::from_parts(50_000, 0))]
+        #[pallet::weight(T::WeightInfo::register_circuit())]
         pub fn register_circuit(
             origin: OriginFor<T>,
             circuit_id: H256,
@@ -623,7 +623,7 @@ pub mod pallet {
         /// SECURITY: Restricted to trusted verifiers only — stub verifiers are
         /// NOT cryptographically secure and only check byte length.
         #[pallet::call_index(7)]
-        #[pallet::weight(Weight::from_parts(100_000, 0))]
+        #[pallet::weight(T::WeightInfo::verify_snark())]
         pub fn verify_snark(
             origin: OriginFor<T>,
             circuit_id: H256,
