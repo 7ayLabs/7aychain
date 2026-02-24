@@ -379,6 +379,7 @@ pub mod pallet {
         ValidatorPositionNotSet,
         SelfAttestation,
         InvalidBlockNumber,
+        MaxVotesExceeded,
     }
 
     #[pallet::genesis_config]
@@ -527,6 +528,12 @@ pub mod pallet {
             Self::ensure_validator_active(&validator)?;
             Self::ensure_epoch_active(&epoch)?;
             Self::ensure_no_duplicate_vote(&epoch, &actor, &validator)?;
+
+            let current_votes = VoteCount::<T>::get(epoch, actor);
+            ensure!(
+                current_votes < T::MaxVotesPerPresence::get(),
+                Error::<T>::MaxVotesExceeded
+            );
 
             let mut record =
                 Presences::<T>::get(epoch, actor).ok_or(Error::<T>::PresenceNotFound)?;
