@@ -959,8 +959,7 @@ pub mod pallet {
             ActorId::from_raw(*validator.as_bytes())
         }
         fn account_to_actor(account: &T::AccountId) -> ActorId {
-            let encoded = account.encode();
-            let hash = sp_core::blake2_256(&encoded);
+            let hash = account.using_encoded(sp_core::blake2_256);
             ActorId::from_raw(hash)
         }
 
