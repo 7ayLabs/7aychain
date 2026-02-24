@@ -13,6 +13,9 @@ pub mod groth16;
 #[cfg(test)]
 mod tests;
 
+#[cfg(all(test, feature = "groth16"))]
+mod groth16_tests;
+
 use alloc::vec::Vec;
 use frame_support::pallet_prelude::*;
 use frame_system::pallet_prelude::*;
