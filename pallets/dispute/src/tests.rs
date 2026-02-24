@@ -86,6 +86,11 @@ fn account_to_validator(account: u64) -> ValidatorId {
     ValidatorId::from(H256(hash.0))
 }
 
+fn move_to_resolution_block() {
+    let target = System::block_number().saturating_add(DisputeResolutionPeriod::get());
+    System::set_block_number(target);
+}
+
 #[test]
 fn open_dispute_success() {
     new_test_ext().execute_with(|| {
@@ -208,6 +213,17 @@ fn resolve_dispute_success() {
         ));
 
         let dispute_id = DisputeId::new(0);
+        assert_ok!(Dispute::submit_evidence(
+            RuntimeOrigin::signed(3),
+            dispute_id,
+            H256([1u8; 32])
+        ));
+        assert_ok!(Dispute::submit_evidence(
+            RuntimeOrigin::signed(4),
+            dispute_id,
+            H256([2u8; 32])
+        ));
+        move_to_resolution_block();
 
         assert_ok!(Dispute::resolve_dispute(
             RuntimeOrigin::root(),
@@ -234,6 +250,17 @@ fn resolve_dispute_already_resolved() {
         ));
 
         let dispute_id = DisputeId::new(0);
+        assert_ok!(Dispute::submit_evidence(
+            RuntimeOrigin::signed(3),
+            dispute_id,
+            H256([1u8; 32])
+        ));
+        assert_ok!(Dispute::submit_evidence(
+            RuntimeOrigin::signed(4),
+            dispute_id,
+            H256([2u8; 32])
+        ));
+        move_to_resolution_block();
 
         assert_ok!(Dispute::resolve_dispute(
             RuntimeOrigin::root(),
@@ -264,6 +291,7 @@ fn reject_dispute_success() {
         ));
 
         let dispute_id = DisputeId::new(0);
+        move_to_resolution_block();
 
         assert_ok!(Dispute::reject_dispute(
             RuntimeOrigin::root(),
@@ -341,6 +369,17 @@ fn open_disputes_tracking() {
         ));
 
         assert_eq!(Dispute::get_open_dispute_count(), 2);
+        assert_ok!(Dispute::submit_evidence(
+            RuntimeOrigin::signed(11),
+            DisputeId::new(0),
+            H256([10u8; 32])
+        ));
+        assert_ok!(Dispute::submit_evidence(
+            RuntimeOrigin::signed(12),
+            DisputeId::new(0),
+            H256([11u8; 32])
+        ));
+        move_to_resolution_block();
 
         assert_ok!(Dispute::resolve_dispute(
             RuntimeOrigin::root(),
@@ -366,6 +405,17 @@ fn is_dispute_open_helper() {
         let dispute_id = DisputeId::new(0);
 
         assert!(Dispute::is_dispute_open(dispute_id));
+        assert_ok!(Dispute::submit_evidence(
+            RuntimeOrigin::signed(3),
+            dispute_id,
+            H256([1u8; 32])
+        ));
+        assert_ok!(Dispute::submit_evidence(
+            RuntimeOrigin::signed(4),
+            dispute_id,
+            H256([2u8; 32])
+        ));
+        move_to_resolution_block();
 
         assert_ok!(Dispute::resolve_dispute(
             RuntimeOrigin::root(),

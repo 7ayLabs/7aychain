@@ -20,6 +20,7 @@ pub mod pallet {
     };
     use frame_system::pallet_prelude::*;
     use seveny_primitives::types::{ValidatorId, ViolationType};
+    use sp_runtime::traits::Saturating;
 
     use crate::WeightInfo;
 
@@ -353,6 +354,10 @@ pub mod pallet {
                 Error::<T>::DisputeAlreadyResolved
             );
             ensure!(
+                block_number <= Self::resolution_deadline(&dispute),
+                Error::<T>::ResolutionPeriodExpired
+            );
+            ensure!(
                 dispute.evidence_count < T::MaxEvidencePerDispute::get(),
                 Error::<T>::MaxEvidenceReached
             );
@@ -407,6 +412,14 @@ pub mod pallet {
                     || dispute.status == DisputeStatus::UnderReview,
                 Error::<T>::DisputeAlreadyResolved
             );
+            ensure!(
+                block_number >= Self::resolution_deadline(&dispute),
+                Error::<T>::ResolutionPeriodNotElapsed
+            );
+            ensure!(
+                dispute.evidence_count >= T::MinEvidenceRequired::get(),
+                Error::<T>::InsufficientEvidence
+            );
 
             dispute.status = DisputeStatus::Resolved;
             dispute.resolved_at = Some(block_number);
@@ -443,6 +456,10 @@ pub mod pallet {
                     || dispute.status == DisputeStatus::UnderReview,
                 Error::<T>::DisputeAlreadyResolved
             );
+            ensure!(
+                block_number >= Self::resolution_deadline(&dispute),
+                Error::<T>::ResolutionPeriodNotElapsed
+            );
 
             dispute.status = DisputeStatus::Rejected;
             dispute.resolved_at = Some(block_number);
@@ -461,6 +478,12 @@ pub mod pallet {
     }
 
     impl<T: Config> Pallet<T> {
+        fn resolution_deadline(dispute: &Dispute<T>) -> BlockNumberFor<T> {
+            dispute
+                .created_at
+                .saturating_add(T::DisputeResolutionPeriod::get())
+        }
+
         pub fn get_dispute(dispute_id: DisputeId) -> Option<Dispute<T>> {
             Disputes::<T>::get(dispute_id)
         }
