@@ -17,7 +17,7 @@
 #![allow(clippy::expect_used)]
 
 use alloc::vec::Vec;
-use seveny_primitives::{crypto::Nullifier, traits::ConstantTimeEq};
+use seveny_primitives::traits::ConstantTimeEq;
 use sp_core::{blake2_256, H256};
 
 use crate::{
@@ -83,19 +83,35 @@ impl ZkVerifier for StubVerifier {
         computed.ct_eq(&statement.commitment_hash)
     }
 
+    /// INV74: Proof data contains secret_commitment and nullifier_binding,
+    /// NOT the raw secret. Verifies the nullifier_binding matches the
+    /// statement's nullifier and epoch. Secret commitment checked for
+    /// non-zero. Actual ZK verification deferred to Groth16 in v0.8.20.
     fn verify_presence_proof(statement: &PresenceStatement, proof: &[u8]) -> bool {
         const PRESENCE_PROOF_SIZE: usize = 80;
         if proof.len() != PRESENCE_PROOF_SIZE {
             return false;
         }
 
-        let Ok(secret): Result<[u8; 32], _> = proof[0..32].try_into() else {
+        let Ok(secret_commitment): Result<[u8; 32], _> = proof[0..32].try_into() else {
+            return false;
+        };
+        let Ok(nullifier_binding): Result<[u8; 32], _> = proof[32..64].try_into() else {
             return false;
         };
 
-        let derived_nullifier = Nullifier::derive(&secret, statement.epoch_id);
+        // Reject zero commitment (no valid secret hashes to all-zero)
+        if secret_commitment == [0u8; 32] {
+            return false;
+        }
 
-        derived_nullifier.0.ct_eq(&statement.nullifier.0)
+        // Verify nullifier_binding = H(nullifier || epoch_id)
+        let mut expected_input = Vec::with_capacity(40);
+        expected_input.extend_from_slice(statement.nullifier.0.as_bytes());
+        expected_input.extend_from_slice(&statement.epoch_id.to_le_bytes());
+        let expected_binding = H256(blake2_256(&expected_input));
+
+        expected_binding.ct_eq(&H256(nullifier_binding))
     }
 
     fn verify_access_proof(statement: &AccessStatement, proof: &[u8]) -> bool {
@@ -170,7 +186,7 @@ pub type AcceptAllVerifier = ConfigurableVerifier<true>;
 #[cfg(test)]
 mod verifier_tests {
     use super::*;
-    use seveny_primitives::crypto::StateRoot;
+    use seveny_primitives::crypto::{Nullifier, StateRoot};
 
     #[test]
     fn stub_verifier_share_proof_roundtrip() {
@@ -221,26 +237,91 @@ mod verifier_tests {
             nullifier,
         };
 
+        // Proof: secret_commitment[32] || nullifier_binding[32] || reserved[16]
+        let secret_commitment = H256(blake2_256(&secret));
+        let mut null_input = Vec::with_capacity(40);
+        null_input.extend_from_slice(nullifier.0.as_bytes());
+        null_input.extend_from_slice(&epoch_id.to_le_bytes());
+        let nullifier_binding = H256(blake2_256(&null_input));
+
         let mut proof = Vec::with_capacity(80);
-        proof.extend_from_slice(&secret);
-        proof.extend_from_slice(&[0u8; 48]);
+        proof.extend_from_slice(secret_commitment.as_bytes());
+        proof.extend_from_slice(nullifier_binding.as_bytes());
+        proof.extend_from_slice(&[0u8; 16]);
 
         assert!(StubVerifier::verify_presence_proof(&statement, &proof));
     }
 
     #[test]
-    fn stub_verifier_rejects_wrong_nullifier() {
+    fn stub_verifier_rejects_wrong_nullifier_binding() {
         let statement = PresenceStatement {
             epoch_id: 1,
             state_root: StateRoot::EMPTY,
             nullifier: Nullifier(H256([0xff; 32])),
         };
 
+        // Non-zero commitment but wrong nullifier binding
         let mut proof = Vec::with_capacity(80);
-        proof.extend_from_slice(&[3u8; 32]);
-        proof.extend_from_slice(&[0u8; 48]);
+        proof.extend_from_slice(&[3u8; 32]); // non-zero commitment
+        proof.extend_from_slice(&[0u8; 32]); // wrong binding
+        proof.extend_from_slice(&[0u8; 16]);
 
         assert!(!StubVerifier::verify_presence_proof(&statement, &proof));
+    }
+
+    #[test]
+    fn stub_verifier_rejects_zero_commitment() {
+        let secret = [3u8; 32];
+        let epoch_id = 1u64;
+        let nullifier = Nullifier::derive(&secret, epoch_id);
+
+        let statement = PresenceStatement {
+            epoch_id,
+            state_root: StateRoot::EMPTY,
+            nullifier,
+        };
+
+        // Zero commitment should be rejected (INV74)
+        let mut proof = Vec::with_capacity(80);
+        proof.extend_from_slice(&[0u8; 32]); // zero commitment
+        proof.extend_from_slice(&[0u8; 32]);
+        proof.extend_from_slice(&[0u8; 16]);
+
+        assert!(!StubVerifier::verify_presence_proof(&statement, &proof));
+    }
+
+    #[test]
+    fn stub_verifier_proof_does_not_contain_raw_secret() {
+        let secret = [42u8; 32];
+        let epoch_id = 5u64;
+        let nullifier = Nullifier::derive(&secret, epoch_id);
+
+        let statement = PresenceStatement {
+            epoch_id,
+            state_root: StateRoot::EMPTY,
+            nullifier,
+        };
+
+        // Build valid proof
+        let secret_commitment = H256(blake2_256(&secret));
+        let mut null_input = Vec::with_capacity(40);
+        null_input.extend_from_slice(nullifier.0.as_bytes());
+        null_input.extend_from_slice(&epoch_id.to_le_bytes());
+        let nullifier_binding = H256(blake2_256(&null_input));
+
+        let mut proof = Vec::with_capacity(80);
+        proof.extend_from_slice(secret_commitment.as_bytes());
+        proof.extend_from_slice(nullifier_binding.as_bytes());
+        proof.extend_from_slice(&[0u8; 16]);
+
+        // The raw secret must NOT appear anywhere in the proof
+        assert!(
+            !proof.windows(32).any(|w| w == secret),
+            "Raw secret found in proof data — INV74 violation"
+        );
+
+        // But the proof should still verify
+        assert!(StubVerifier::verify_presence_proof(&statement, &proof));
     }
 
     #[test]
