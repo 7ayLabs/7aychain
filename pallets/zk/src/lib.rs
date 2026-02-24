@@ -7,6 +7,9 @@ pub mod migration;
 pub mod verifier;
 pub mod weights;
 
+#[cfg(feature = "groth16")]
+pub mod groth16;
+
 #[cfg(test)]
 mod tests;
 
@@ -24,6 +27,9 @@ use sp_core::{blake2_256, H256};
 pub use verifier::{
     AcceptAllVerifier, ConfigurableVerifier, NullVerifier, StubVerifier, ZkVerifier,
 };
+
+#[cfg(feature = "groth16")]
+pub use groth16::Groth16Verifier;
 
 #[derive(
     Clone,

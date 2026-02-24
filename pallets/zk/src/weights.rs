@@ -67,7 +67,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
     }
 
     fn verify_snark() -> Weight {
-        Weight::from_parts(100_000_000, 0)
+        // Groth16 BN254 pairing: ~23ms WASM, ~5ms native
+        Weight::from_parts(250_000_000, 0)
             .saturating_add(T::DbWeight::get().reads(4))
             .saturating_add(T::DbWeight::get().writes(2))
     }
@@ -129,7 +130,8 @@ impl WeightInfo for () {
     }
 
     fn verify_snark() -> Weight {
-        Weight::from_parts(100_000_000, 0)
+        // Groth16 BN254 pairing: ~23ms WASM, ~5ms native
+        Weight::from_parts(250_000_000, 0)
             .saturating_add(RocksDbWeight::get().reads(4))
             .saturating_add(RocksDbWeight::get().writes(2))
     }
