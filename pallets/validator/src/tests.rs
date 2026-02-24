@@ -617,3 +617,66 @@ fn events_emitted_correctly() {
         }));
     });
 }
+
+#[test]
+fn slash_validator_duplicate_rejected() {
+    new_test_ext_with_validators().execute_with(|| {
+        let validator_id = account_to_validator(1);
+
+        assert_ok!(Validator::slash_validator(
+            RuntimeOrigin::root(),
+            validator_id,
+            ViolationType::Minor
+        ));
+
+        // Second slash with same violation type should be rejected
+        assert_noop!(
+            Validator::slash_validator(RuntimeOrigin::root(), validator_id, ViolationType::Minor),
+            Error::<Test>::DuplicateSlash
+        );
+    });
+}
+
+#[test]
+fn slash_validator_different_violations_allowed() {
+    new_test_ext_with_validators().execute_with(|| {
+        let validator_id = account_to_validator(1);
+
+        assert_ok!(Validator::slash_validator(
+            RuntimeOrigin::root(),
+            validator_id,
+            ViolationType::Minor
+        ));
+
+        // Different violation type should succeed
+        assert_ok!(Validator::slash_validator(
+            RuntimeOrigin::root(),
+            validator_id,
+            ViolationType::Moderate
+        ));
+    });
+}
+
+#[test]
+fn slash_dedup_cleared_after_apply() {
+    new_test_ext_with_validators().execute_with(|| {
+        let validator_id = account_to_validator(1);
+
+        assert_ok!(Validator::slash_validator(
+            RuntimeOrigin::root(),
+            validator_id,
+            ViolationType::Minor
+        ));
+
+        run_to_block(7);
+
+        assert_ok!(Validator::apply_slash(RuntimeOrigin::root(), 0));
+
+        // After applying, same violation type should be allowed again
+        assert_ok!(Validator::slash_validator(
+            RuntimeOrigin::root(),
+            validator_id,
+            ViolationType::Minor
+        ));
+    });
+}

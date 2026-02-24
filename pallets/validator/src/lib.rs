@@ -147,6 +147,17 @@ pub mod pallet {
         StorageMap<_, Blake2_128Concat, u64, SlashRecord<T>, OptionQuery>;
 
     #[pallet::storage]
+    pub type SlashDedup<T: Config> = StorageDoubleMap<
+        _,
+        Blake2_128Concat,
+        ValidatorId,
+        Blake2_128Concat,
+        ViolationType,
+        BlockNumberFor<T>,
+        OptionQuery,
+    >;
+
+    #[pallet::storage]
     #[pallet::getter(fn slash_count)]
     pub type SlashCount<T: Config> = StorageValue<_, u64, ValueQuery>;
 
@@ -217,6 +228,7 @@ pub mod pallet {
         ArithmeticOverflow,
         InsufficientBalance,
         ControllerAlreadyUsed,
+        DuplicateSlash,
     }
 
     #[pallet::genesis_config]
@@ -477,6 +489,12 @@ pub mod pallet {
             ensure_root(origin)?;
             let block_number = frame_system::Pallet::<T>::block_number();
 
+            // Prevent duplicate slash for same validator + violation type
+            ensure!(
+                !SlashDedup::<T>::contains_key(validator, violation),
+                Error::<T>::DuplicateSlash
+            );
+
             let info = Validators::<T>::get(validator).ok_or(Error::<T>::ValidatorNotFound)?;
 
             let slash_pct = Self::get_slash_percentage(&violation);
@@ -496,6 +514,7 @@ pub mod pallet {
             };
 
             PendingSlashes::<T>::insert(slash_id, slash_record);
+            SlashDedup::<T>::insert(validator, violation, block_number);
 
             Self::deposit_event(Event::SlashDeferred {
                 validator,
@@ -557,6 +576,9 @@ pub mod pallet {
 
             slash_record.applied = true;
             PendingSlashes::<T>::insert(slash_id, slash_record.clone());
+
+            // Clear dedup entry so a new slash can be created for this violation type
+            SlashDedup::<T>::remove(slash_record.validator, slash_record.violation);
 
             Self::deposit_event(Event::SlashApplied {
                 validator: slash_record.validator,
