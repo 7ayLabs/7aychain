@@ -109,7 +109,7 @@ pub struct PresenceStatement {
     Clone, Debug, PartialEq, Eq, Encode, Decode, parity_scale_codec::DecodeWithMemTracking, TypeInfo,
 )]
 pub struct PresenceWitness {
-    pub secret: [u8; 32],
+    pub secret_commitment: H256,
     pub randomness: [u8; 32],
     pub merkle_path: Vec<H256>,
     pub leaf_index: u64,
@@ -725,7 +725,6 @@ pub mod pallet {
             epoch_id: u64,
             state_root: StateRoot,
         ) -> (PresenceStatement, Vec<u8>) {
-            // INV1: Nullifier from (secret, epoch) — no nonce
             let nullifier = Nullifier::derive(secret, epoch_id);
 
             let statement = PresenceStatement {
@@ -734,10 +733,19 @@ pub mod pallet {
                 nullifier,
             };
 
-            // Proof layout: secret[32] || padding[32] || reserved[16]
+            // Proof layout: secret_commitment[32] || nullifier_binding[32] || reserved[16]
+            // INV74: Raw secret NEVER appears in proof data — only a commitment.
+            // The secret_commitment = H(secret) proves knowledge without exposure.
+            // The nullifier_binding = H(nullifier || epoch) binds to statement.
+            let secret_commitment = H256(blake2_256(secret));
+            let mut nullifier_input = Vec::with_capacity(40);
+            nullifier_input.extend_from_slice(nullifier.0.as_bytes());
+            nullifier_input.extend_from_slice(&epoch_id.to_le_bytes());
+            let nullifier_binding = H256(blake2_256(&nullifier_input));
+
             let mut proof = Vec::with_capacity(80);
-            proof.extend_from_slice(secret);
-            proof.extend_from_slice(&[0u8; 32]);
+            proof.extend_from_slice(secret_commitment.as_bytes());
+            proof.extend_from_slice(nullifier_binding.as_bytes());
             proof.extend_from_slice(&[0u8; 16]);
 
             (statement, proof)
