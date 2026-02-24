@@ -424,6 +424,9 @@ pub mod pallet {
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
 
+            let mode = Self::proof_system_mode();
+            ensure!(mode.accepts_stub_proofs(), Error::<T>::ProofVerificationFailed);
+
             Self::check_verification_limit()?;
 
             let statement_hash = Self::hash_statement(&statement.encode());
@@ -467,6 +470,9 @@ pub mod pallet {
             proof: BoundedVec<u8, T::MaxProofSize>,
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
+
+            let mode = Self::proof_system_mode();
+            ensure!(mode.accepts_stub_proofs(), Error::<T>::ProofVerificationFailed);
 
             Self::check_verification_limit()?;
 
@@ -522,6 +528,9 @@ pub mod pallet {
             proof: BoundedVec<u8, T::MaxProofSize>,
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
+
+            let mode = Self::proof_system_mode();
+            ensure!(mode.accepts_stub_proofs(), Error::<T>::ProofVerificationFailed);
 
             Self::check_verification_limit()?;
 
@@ -671,7 +680,9 @@ pub mod pallet {
             let who = ensure_signed(origin)?;
             let actor = Self::account_to_actor(who);
 
-            // Restrict to trusted verifiers since stubs are not cryptographic
+            let mode = Self::proof_system_mode();
+            ensure!(mode.accepts_snark_proofs(), Error::<T>::ProofVerificationFailed);
+
             ensure!(
                 TrustedVerifiers::<T>::get(actor),
                 Error::<T>::NotTrustedVerifier
@@ -821,7 +832,9 @@ pub mod pallet {
 
             // Proof layout: secret_commitment[32] || nullifier_binding[32] || reserved[16]
             // INV74: Raw secret NEVER appears in proof data — only a commitment.
-            // The secret_commitment = H(secret) proves knowledge without exposure.
+            // NOTE: secret_commitment = H(secret) is a stub binding used in
+            // Legacy/Transitional modes. It does NOT constitute a ZK proof of
+            // knowledge — real proof of knowledge requires a SNARK circuit.
             // The nullifier_binding = H(nullifier || epoch) binds to statement.
             let secret_commitment = H256(blake2_256(secret));
             let mut nullifier_input = Vec::with_capacity(40);

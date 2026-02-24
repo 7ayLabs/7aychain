@@ -68,7 +68,7 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 
     fn verify_snark() -> Weight {
         Weight::from_parts(100_000_000, 0)
-            .saturating_add(T::DbWeight::get().reads(4))
+            .saturating_add(T::DbWeight::get().reads(6))
             .saturating_add(T::DbWeight::get().writes(2))
     }
 
@@ -130,7 +130,7 @@ impl WeightInfo for () {
 
     fn verify_snark() -> Weight {
         Weight::from_parts(100_000_000, 0)
-            .saturating_add(RocksDbWeight::get().reads(4))
+            .saturating_add(RocksDbWeight::get().reads(6))
             .saturating_add(RocksDbWeight::get().writes(2))
     }
 
