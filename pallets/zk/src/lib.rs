@@ -10,11 +10,17 @@ pub mod weights;
 #[cfg(feature = "groth16")]
 pub mod groth16;
 
+#[cfg(any(test, feature = "circuits"))]
+pub mod circuits;
+
 #[cfg(test)]
 mod tests;
 
 #[cfg(all(test, feature = "groth16"))]
 mod groth16_tests;
+
+#[cfg(test)]
+mod circuit_tests;
 
 use alloc::vec::Vec;
 use frame_support::pallet_prelude::*;
