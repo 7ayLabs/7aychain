@@ -146,10 +146,7 @@ impl MockLatencyScanner {
         for i in 0..peer_count {
             let variance =
                 ((self.seed.wrapping_mul(i as u64 + 1)) % (self.variance_ms as u64 * 2)) as u32;
-            let rtt = self
-                .base_latency_ms
-                .saturating_add(variance)
-                .saturating_sub(self.variance_ms);
+            let rtt = self.base_latency_ms + variance - self.variance_ms;
 
             let mut peer_bytes = [0u8; 38];
             peer_bytes[0..8].copy_from_slice(&(i as u64).to_le_bytes());

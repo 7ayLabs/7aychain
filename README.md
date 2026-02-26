@@ -10,7 +10,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-BUSL--1.1-blue.svg?style=for-the-badge" alt="License"></a>
   <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/rust-stable-orange.svg?style=for-the-badge" alt="Rust"></a>
   <a href="https://github.com/paritytech/polkadot-sdk"><img src="https://img.shields.io/badge/substrate-polkadot--stable2503-blueviolet?style=for-the-badge" alt="Substrate"></a>
-  <a href="https://github.com/7ayLabs/7aychain/releases/tag/v0.8.26"><img src="https://img.shields.io/badge/version-v0.8.26-green?style=for-the-badge" alt="Version"></a>
+  <a href="https://github.com/7ayLabs/7aychain/releases/tag/v0.8.16"><img src="https://img.shields.io/badge/version-v0.8.16-green?style=for-the-badge" alt="Version"></a>
 </p>
 
 **7aychain** is a Layer 1 blockchain built to answer one question: _is this actor actually here?_ Validators form witness circles, measure network latency between peers, and triangulate positions — no GPS, no external oracles, no special hardware. Presence is verified through the protocol itself and finalized on-chain with quorum consensus.

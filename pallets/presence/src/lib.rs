@@ -937,7 +937,7 @@ pub mod pallet {
 
         /// Set a validator's position (root only or self-registration).
         #[pallet::call_index(12)]
-        #[pallet::weight(T::WeightInfo::set_validator_position())]
+        #[pallet::weight(T::WeightInfo::set_validator_status())]
         pub fn set_validator_position(
             origin: OriginFor<T>,
             validator: ValidatorId,

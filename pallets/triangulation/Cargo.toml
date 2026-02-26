@@ -1,6 +1,6 @@
 [package]
 name = "pallet-triangulation"
-version.workspace = true
+version = "0.1.0"
 edition = "2021"
 license = "BUSL-1.1"
 repository = "https://github.com/7aychain/7aychain"
