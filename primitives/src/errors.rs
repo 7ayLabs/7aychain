@@ -22,11 +22,11 @@ pub enum ProtocolError {
     // Epoch (INV14-18)
     EpochInvalidState,
     EpochNotFound,
-    EphemeralOutOfBounds,     // INV14
-    EpochSequenceGap,         // INV15
-    ActorNotInEpoch,          // INV16
-    EpochImmutable,           // INV17
-    EpochTransitionGrace,     // INV18
+    EphemeralOutOfBounds, // INV14
+    EpochSequenceGap,     // INV15
+    ActorNotInEpoch,      // INV16
+    EpochImmutable,       // INV17
+    EpochTransitionGrace, // INV18
 
     // Validator (INV46-49)
     InsufficientValidators, // INV46
@@ -90,10 +90,10 @@ pub enum ProtocolError {
     KeyRotationRequired,  // INV78
 
     // Boomerang (INV30-33)
-    BoomerangPathInvalid,      // INV30
-    BoomerangTimeout,          // INV31
-    BoomerangExtensionLimit,   // INV32
-    BoomerangVerification,     // INV33
+    BoomerangPathInvalid,    // INV30
+    BoomerangTimeout,        // INV31
+    BoomerangExtensionLimit, // INV32
+    BoomerangVerification,   // INV33
 
     // Autonomous (INV34-37)
     AutonomousIntentInvalid, // INV34
@@ -115,10 +115,10 @@ pub enum ProtocolError {
     SmallNetworkDiscovery,    // INV56
 
     // Reputation (INV50-53)
-    ReputationOutOfBounds,    // INV50
-    ReputationUpdateInvalid,  // INV51
-    ReputationDecayInvalid,   // INV52
-    CooldownActive,           // INV53
+    ReputationOutOfBounds,   // INV50
+    ReputationUpdateInvalid, // INV51
+    ReputationDecayInvalid,  // INV52
+    CooldownActive,          // INV53
 
     // Generic
     ArithmeticOverflow,
@@ -287,21 +287,13 @@ mod tests {
     fn invariant_coverage_completeness() {
         // All invariants that should be covered based on CLAUDE.md
         let expected_invariants = [
-            "INV1", "INV2", "INV4", "INV7", "INV8", "INV9", "INV10", "INV11", "INV13",
-            "INV14", "INV15", "INV16", "INV17", "INV18",
-            "INV30", "INV31", "INV32", "INV33",
-            "INV34", "INV35", "INV36", "INV37",
-            "INV38", "INV39", "INV40", "INV41", "INV42",
-            "INV43", "INV44", "INV45",
-            "INV46", "INV47", "INV48", "INV49",
-            "INV50", "INV51", "INV52", "INV53",
-            "INV54", "INV55", "INV56",
-            "INV57", "INV58", "INV59", "INV60",
-            "INV63", "INV64", "INV65",
-            "INV66", "INV67", "INV68", "INV69",
-            "INV70", "INV71", "INV72",
-            "INV73", "INV74", "INV75",
-            "INV76", "INV77", "INV78",
+            "INV1", "INV2", "INV4", "INV7", "INV8", "INV9", "INV10", "INV11", "INV13", "INV14",
+            "INV15", "INV16", "INV17", "INV18", "INV30", "INV31", "INV32", "INV33", "INV34",
+            "INV35", "INV36", "INV37", "INV38", "INV39", "INV40", "INV41", "INV42", "INV43",
+            "INV44", "INV45", "INV46", "INV47", "INV48", "INV49", "INV50", "INV51", "INV52",
+            "INV53", "INV54", "INV55", "INV56", "INV57", "INV58", "INV59", "INV60", "INV63",
+            "INV64", "INV65", "INV66", "INV67", "INV68", "INV69", "INV70", "INV71", "INV72",
+            "INV73", "INV74", "INV75", "INV76", "INV77", "INV78",
         ];
 
         // Collect all invariants from the enum
@@ -371,10 +363,7 @@ mod tests {
             ProtocolError::KeyRotationRequired,
         ];
 
-        let mut covered: Vec<&str> = all_variants
-            .iter()
-            .filter_map(|e| e.invariant())
-            .collect();
+        let mut covered: Vec<&str> = all_variants.iter().filter_map(|e| e.invariant()).collect();
         covered.sort();
         covered.dedup();
 

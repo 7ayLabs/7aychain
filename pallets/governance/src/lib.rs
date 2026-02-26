@@ -326,14 +326,16 @@ pub mod pallet {
             let mut expired_count = 0u32;
 
             for id in &expired_ids {
-                if let Some(ref mut capability) = Capabilities::<T>::get(id) {
-                    if capability.status == CapabilityStatus::Active {
-                        capability.status = CapabilityStatus::Expired;
-                        Capabilities::<T>::insert(id, capability);
-                        Self::deposit_event(Event::CapabilityExpired { capability_id: *id });
-                        expired_count = expired_count.saturating_add(1);
-                    }
+                let Some(mut capability) = Capabilities::<T>::get(id) else {
+                    continue;
+                };
+                if capability.status != CapabilityStatus::Active {
+                    continue;
                 }
+                capability.status = CapabilityStatus::Expired;
+                Capabilities::<T>::insert(id, capability);
+                Self::deposit_event(Event::CapabilityExpired { capability_id: *id });
+                expired_count = expired_count.saturating_add(1);
             }
 
             T::DbWeight::get()
@@ -390,9 +392,7 @@ pub mod pallet {
 
             // H09: index by expiry block for O(1) cleanup
             if let Some(exp) = expires_at {
-                let _ = ExpiryIndex::<T>::try_mutate(exp, |ids| {
-                    ids.try_push(capability_id)
-                });
+                let _ = ExpiryIndex::<T>::try_mutate(exp, |ids| ids.try_push(capability_id));
             }
 
             ActorCapabilities::<T>::try_mutate(grantee, |caps| {
@@ -510,9 +510,7 @@ pub mod pallet {
 
             // H09: index by expiry block for O(1) cleanup
             if let Some(exp) = delegated_expiry {
-                let _ = ExpiryIndex::<T>::try_mutate(exp, |ids| {
-                    ids.try_push(new_capability_id)
-                });
+                let _ = ExpiryIndex::<T>::try_mutate(exp, |ids| ids.try_push(new_capability_id));
             }
 
             DelegationDepth::<T>::insert(new_capability_id, current_depth.saturating_add(1));
