@@ -621,9 +621,18 @@ pub mod pallet {
             vault.member_count = vault.member_count.saturating_add(1);
             vault.last_activity = block_number;
 
+            // H16: check per-actor vault limit for new member
+            let member_vault_count = VaultCountPerActor::<T>::get(member);
+            ensure!(
+                member_vault_count < T::MaxVaultsPerActor::get(),
+                Error::<T>::MaxVaultsReached
+            );
+
             Vaults::<T>::insert(vault_id, vault);
             VaultMembers::<T>::insert(vault_id, member, vault_member);
             ActorVaults::<T>::insert(member, vault_id, ());
+            // H16: increment VaultCountPerActor for new member
+            VaultCountPerActor::<T>::mutate(member, |c| *c = c.saturating_add(1));
 
             Self::deposit_event(Event::MemberAdded {
                 vault_id,
@@ -870,6 +879,26 @@ pub mod pallet {
 
                 v.status = VaultStatus::Dissolved;
                 v.last_activity = frame_system::Pallet::<T>::block_number();
+
+                // M19: clean up members and decrement their VaultCountPerActor
+                for (actor, _) in VaultMembers::<T>::drain_prefix(vault_id) {
+                    ActorVaults::<T>::remove(actor, vault_id);
+                    VaultCountPerActor::<T>::mutate(actor, |c| *c = c.saturating_sub(1));
+                }
+
+                // M19: clean up shares
+                for (share_id, _) in VaultShares::<T>::drain_prefix(vault_id) {
+                    if let Some(share) = Shares::<T>::take(share_id) {
+                        ActorShares::<T>::remove(share.holder, share_id);
+                    }
+                }
+
+                // M19: clean up files
+                let _ = VaultFiles::<T>::clear_prefix(vault_id, u32::MAX, None);
+                VaultFileCount::<T>::remove(vault_id);
+
+                // M19: clean up recovery requests
+                RecoveryRequests::<T>::remove(vault_id);
 
                 Self::deposit_event(Event::VaultDissolved { vault_id });
 
