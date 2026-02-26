@@ -782,7 +782,7 @@ pub mod pallet {
         /// Claim a position for the current epoch.
         /// The position will be verified through witness attestations.
         #[pallet::call_index(9)]
-        #[pallet::weight(T::WeightInfo::declare_presence())]
+        #[pallet::weight(T::WeightInfo::claim_position())]
         pub fn claim_position(
             origin: OriginFor<T>,
             epoch: EpochId,
@@ -814,7 +814,7 @@ pub mod pallet {
         /// Submit a witness attestation for another node's presence.
         /// The witness must have a registered position.
         #[pallet::call_index(10)]
-        #[pallet::weight(T::WeightInfo::vote_presence())]
+        #[pallet::weight(T::WeightInfo::submit_witness_attestation())]
         pub fn submit_witness_attestation(
             origin: OriginFor<T>,
             target: ActorId,
@@ -886,7 +886,7 @@ pub mod pallet {
         /// Verify a position claim by triangulating from witness attestations.
         /// Anyone can call this once enough witnesses have attested.
         #[pallet::call_index(11)]
-        #[pallet::weight(T::WeightInfo::finalize_presence())]
+        #[pallet::weight(T::WeightInfo::verify_position())]
         pub fn verify_position(
             origin: OriginFor<T>,
             target: ActorId,
@@ -952,7 +952,7 @@ pub mod pallet {
 
         /// Set a validator's position (root only or self-registration).
         #[pallet::call_index(12)]
-        #[pallet::weight(T::WeightInfo::set_validator_status())]
+        #[pallet::weight(T::WeightInfo::set_validator_position())]
         pub fn set_validator_position(
             origin: OriginFor<T>,
             validator: ValidatorId,
