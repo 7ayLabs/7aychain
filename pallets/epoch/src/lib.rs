@@ -185,6 +185,8 @@ pub mod pallet {
         EpochExpired,
         GracePeriodNotElapsed,
         InvalidScheduleConfig,
+        /// M20: start_block must be in the future
+        StartBlockInPast,
     }
 
     #[pallet::genesis_config]
@@ -279,6 +281,10 @@ pub mod pallet {
                 duration >= T::MinEpochDuration::get() && duration <= T::MaxEpochDuration::get(),
                 Error::<T>::InvalidEpochDuration
             );
+
+            // M20: start_block must be in the future
+            let current_block = frame_system::Pallet::<T>::block_number();
+            ensure!(start_block > current_block, Error::<T>::StartBlockInPast);
 
             let current_count = EpochCount::<T>::get();
             let next_epoch_id = EpochId::new(current_count.saturating_add(1));
