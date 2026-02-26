@@ -19,6 +19,7 @@ pub mod pallet {
         BoundedVec,
     };
     use frame_system::pallet_prelude::*;
+    use seveny_primitives::traits::ValidatorChecker as _;
     use seveny_primitives::types::{ValidatorId, ViolationType};
     use sp_runtime::traits::Saturating;
 
@@ -152,6 +153,9 @@ pub mod pallet {
     #[pallet::config]
     pub trait Config: frame_system::Config<RuntimeEvent: From<Event<Self>>> {
         type WeightInfo: WeightInfo;
+
+        /// Checks if the dispute target is a registered validator (M05).
+        type ValidatorChecker: seveny_primitives::traits::ValidatorChecker;
 
         #[pallet::constant]
         type MaxEvidencePerDispute: Get<u32>;
@@ -296,6 +300,12 @@ pub mod pallet {
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
             let block_number = frame_system::Pallet::<T>::block_number();
+
+            // M05: verify target is a registered validator
+            ensure!(
+                T::ValidatorChecker::is_validator_registered(target),
+                Error::<T>::TargetNotValidator
+            );
 
             let dispute_id = DisputeId::new(DisputeCount::<T>::get());
             DisputeCount::<T>::put(dispute_id.inner().saturating_add(1));
