@@ -92,7 +92,7 @@ fn account_to_actor(account: u64) -> ActorId {
 #[test]
 fn register_device_success() {
     new_test_ext().execute_with(|| {
-        let _owner = account_to_actor(1);
+        let owner = account_to_actor(1);
         let public_key = H256([1u8; 32]);
 
         assert_ok!(Device::register_device(
@@ -424,7 +424,7 @@ fn cannot_reactivate_revoked_device() {
 #[test]
 fn get_actor_devices_helper() {
     new_test_ext().execute_with(|| {
-        let _owner = account_to_actor(1);
+        let owner = account_to_actor(1);
 
         for i in 0..3 {
             assert_ok!(Device::register_device(
@@ -443,7 +443,7 @@ fn get_actor_devices_helper() {
 #[test]
 fn get_active_devices_helper() {
     new_test_ext().execute_with(|| {
-        let _owner = account_to_actor(1);
+        let owner = account_to_actor(1);
 
         for i in 0..3 {
             assert_ok!(Device::register_device(
@@ -497,7 +497,7 @@ fn is_attestation_valid_helper() {
 #[test]
 fn events_emitted_correctly() {
     new_test_ext().execute_with(|| {
-        let _owner = account_to_actor(1);
+        let owner = account_to_actor(1);
 
         assert_ok!(Device::register_device(
             RuntimeOrigin::signed(1),

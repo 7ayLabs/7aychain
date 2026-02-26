@@ -530,10 +530,7 @@ fn rotation_cooldown_enforced() {
         register_and_activate(1, key1);
 
         // First rotation
-        assert_ok!(Lifecycle::initiate_rotation(
-            RuntimeOrigin::signed(1),
-            key2
-        ));
+        assert_ok!(Lifecycle::initiate_rotation(RuntimeOrigin::signed(1), key2));
         assert_ok!(Lifecycle::complete_rotation(RuntimeOrigin::signed(1)));
 
         // Immediately try second rotation — should fail (cooldown=10)
@@ -544,10 +541,7 @@ fn rotation_cooldown_enforced() {
 
         // Advance past cooldown
         System::set_block_number(12);
-        assert_ok!(Lifecycle::initiate_rotation(
-            RuntimeOrigin::signed(1),
-            key3
-        ));
+        assert_ok!(Lifecycle::initiate_rotation(RuntimeOrigin::signed(1), key3));
     });
 }
 
@@ -615,10 +609,7 @@ fn rotation_timeout_reverts_key_status() {
         let key2 = create_key_hash(2);
         register_and_activate(1, key1);
 
-        assert_ok!(Lifecycle::initiate_rotation(
-            RuntimeOrigin::signed(1),
-            key2
-        ));
+        assert_ok!(Lifecycle::initiate_rotation(RuntimeOrigin::signed(1), key2));
 
         let actor = account_to_actor(1);
         let lifecycle = Lifecycle::actors(actor).expect("actor should exist");

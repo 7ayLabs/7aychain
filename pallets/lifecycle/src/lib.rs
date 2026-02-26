@@ -717,6 +717,7 @@ pub mod pallet {
             Weight::from_parts(cancelled as u64 * 10_000, 0)
         }
 
+        #[allow(clippy::excessive_nesting)]
         fn process_destruction_timeouts(current_block: BlockNumberFor<T>) -> Weight {
             let mut processed = 0u32;
             let max_process = 5u32;
@@ -736,8 +737,7 @@ pub mod pallet {
                     // H13: insufficient attestations at timeout — revert actor
                     // to prior status instead of leaving stuck in Destroying
                     DestructionRequests::<T>::remove(actor);
-                    let _ =
-                        DestructionAttestations::<T>::clear_prefix(actor, u32::MAX, None);
+                    let _ = DestructionAttestations::<T>::clear_prefix(actor, u32::MAX, None);
                     Actors::<T>::mutate(actor, |l| {
                         if let Some(ref mut lifecycle) = l {
                             lifecycle.status = request.prior_status;
