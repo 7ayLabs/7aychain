@@ -15,7 +15,7 @@ pub mod pallet {
     use alloc::vec::Vec;
     use frame_support::{
         pallet_prelude::*,
-        traits::{Currency, Get, ReservableCurrency, StorageVersion},
+        traits::{Currency, Get, Imbalance, ReservableCurrency, StorageVersion},
     };
     use frame_system::pallet_prelude::*;
     use seveny_primitives::{
@@ -587,7 +587,8 @@ pub mod pallet {
             let info = Validators::<T>::get(slash_record.validator)
                 .ok_or(Error::<T>::ValidatorNotFound)?;
 
-            let _ = T::Currency::slash_reserved(&info.controller, slash_record.amount);
+            let (slash_imbalance, _remainder) =
+                T::Currency::slash_reserved(&info.controller, slash_record.amount);
 
             let new_stake = info.stake.saturating_sub(slash_record.amount);
             TotalStake::<T>::mutate(|total| {
@@ -609,18 +610,25 @@ pub mod pallet {
                 amount: slash_record.amount,
             });
 
-            // C04: pay evidence reward from slash imbalance, not from
-            // the validator's free balance (which would double-punish).
+            // C04: pay evidence reward from slash imbalance, not by minting
+            // new tokens. Split the slashed amount into reward + burn.
             if let Some(ref reporter) = slash_record.reporter {
                 let reward = Self::calculate_evidence_reward(slash_record.amount);
                 if reward > BalanceOf::<T>::zero() {
-                    let _ = T::Currency::deposit_creating(reporter, reward);
+                    let (reward_imbalance, burn_imbalance) =
+                        slash_imbalance.split(reward);
+                    T::Currency::resolve_creating(reporter, reward_imbalance);
+                    drop(burn_imbalance);
 
                     Self::deposit_event(Event::EvidenceRewardPaid {
                         reporter: reporter.clone(),
                         amount: reward,
                     });
+                } else {
+                    drop(slash_imbalance);
                 }
+            } else {
+                drop(slash_imbalance);
             }
 
             Ok(())
