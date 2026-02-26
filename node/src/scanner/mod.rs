@@ -83,6 +83,9 @@ pub async fn run_scanner(config: ScannerConfig, scan_results: ScanResultsHandle)
 
 async fn run_latency_scanner(config: ScannerConfig, scan_results: ScanResultsHandle) {
     let scan_interval = Duration::from_secs(config.scan_interval_secs);
+    let mut scanner = latency::LatencyScanner::new();
+    let mut mock_source =
+        latency::MockLatencyScanner::new(50, 15, config.mock_seed);
 
     log::info!(
         "Latency-based scanner started - Interval: {}s, Position: ({}, {}, {})",
@@ -93,13 +96,52 @@ async fn run_latency_scanner(config: ScannerConfig, scan_results: ScanResultsHan
     );
 
     loop {
-        {
-            let guard = scan_results.read().await;
-            log::debug!(
-                "Latency scanner active - {} measurements",
-                guard.devices.len()
-            );
+        // Generate latency measurements and feed them into the scanner
+        let measurements =
+            mock_source.generate_measurements(config.mock_device_count as usize);
+        for (peer_id, latency) in &measurements {
+            scanner.update_peer_latency(peer_id.clone(), latency.rtt_ms, latency.direct);
         }
+
+        let stats = scanner.get_statistics();
+
+        // Convert latency peers into ScannedDevice entries for the inherent
+        let devices: Vec<ScannedDevice> = measurements
+            .iter()
+            .filter(|(_, lat)| lat.is_valid())
+            .map(|(peer_id, lat)| {
+                let mac_hash = sp_core::H256(sp_core::blake2_256(
+                    &peer_id.to_bytes(),
+                ));
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                ScannedDevice {
+                    mac_hash,
+                    rssi: -(lat.rtt_ms.min(127) as i8),
+                    signal_type: ScanSignalType::default(),
+                    device_type: DetectedDeviceType::NetworkDevice,
+                    vendor: None,
+                    device_name: None,
+                    frequency: None,
+                    detected_at: now,
+                }
+            })
+            .collect();
+
+        {
+            let mut guard = scan_results.write().await;
+            guard.devices = devices.clone();
+            guard.last_scan = Some(std::time::SystemTime::now());
+        }
+
+        log::info!(
+            "Latency scan complete: {} peers, avg_rtt={}ms, {} devices",
+            stats.peer_count,
+            stats.avg_rtt_ms,
+            devices.len()
+        );
 
         tokio::time::sleep(scan_interval).await;
     }

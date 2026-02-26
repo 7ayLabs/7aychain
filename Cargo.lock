@@ -5403,7 +5403,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-device-scanner"
-version = "0.1.0"
+version = "0.8.26"
 dependencies = [
  "frame-support",
  "frame-system",
@@ -5668,7 +5668,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-triangulation"
-version = "0.1.0"
+version = "0.8.26"
 dependencies = [
  "frame-support",
  "frame-system",
