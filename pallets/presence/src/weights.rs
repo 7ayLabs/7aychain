@@ -15,6 +15,7 @@ pub trait WeightInfo {
     fn finalize_presence() -> Weight;
     fn slash_presence() -> Weight;
     fn set_quorum_config() -> Weight;
+    fn set_validator_position() -> Weight;
     fn reveal_commitment() -> Weight;
 }
 
@@ -53,6 +54,12 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 
     fn set_quorum_config() -> Weight {
         Weight::from_parts(10_000_000, 0).saturating_add(T::DbWeight::get().writes(1))
+    }
+
+    fn set_validator_position() -> Weight {
+        Weight::from_parts(12_000_000, 0)
+            .saturating_add(T::DbWeight::get().reads(1))
+            .saturating_add(T::DbWeight::get().writes(1))
     }
 
     fn reveal_commitment() -> Weight {
@@ -95,6 +102,12 @@ impl WeightInfo for () {
 
     fn set_quorum_config() -> Weight {
         Weight::from_parts(10_000_000, 0).saturating_add(RocksDbWeight::get().writes(1))
+    }
+
+    fn set_validator_position() -> Weight {
+        Weight::from_parts(12_000_000, 0)
+            .saturating_add(RocksDbWeight::get().reads(1))
+            .saturating_add(RocksDbWeight::get().writes(1))
     }
 
     fn reveal_commitment() -> Weight {
