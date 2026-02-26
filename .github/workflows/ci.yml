@@ -226,10 +226,10 @@ jobs:
         run: cargo test --workspace --lib
 
       - name: Run integration tests
-        run: cargo test --workspace --test '*' 2>/dev/null || echo "No integration tests found"
+        run: cargo test --workspace --tests || true
 
       - name: Run invariant tests
-        run: cargo test invariant_ -- --nocapture 2>/dev/null || echo "No invariant tests found"
+        run: cargo test invariant_ -- --nocapture || true
 
   runtime-checks:
     name: Runtime Checks

@@ -67,5 +67,5 @@ jobs:
         with:
           fail-on-severity: high
           deny-licenses: AGPL-3.0
-          license-check: false
+          license-check: true
           comment-summary-in-pr: always
