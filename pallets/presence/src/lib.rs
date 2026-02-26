@@ -380,6 +380,8 @@ pub mod pallet {
         SelfAttestation,
         InvalidBlockNumber,
         MaxVotesExceeded,
+        /// M14: Commitment exists but has not been revealed before finalization.
+        CommitmentNotRevealed,
     }
 
     #[pallet::genesis_config]
@@ -621,6 +623,11 @@ pub mod pallet {
             let quorum = QuorumConfigStorage::<T>::get();
             ensure!(quorum.is_met(record.vote_count), Error::<T>::QuorumNotMet);
 
+            // M14: if a commitment was submitted, it must be revealed before finalization
+            if let Some(declaration) = Declarations::<T>::get(epoch, actor) {
+                ensure!(declaration.revealed, Error::<T>::CommitmentNotRevealed);
+            }
+
             record.state = PresenceState::Finalized;
             record.finalized_at = Some(block_number);
 
@@ -750,6 +757,14 @@ pub mod pallet {
             RevealCount::<T>::mutate(epoch, |count| {
                 *count = count.saturating_add(1);
             });
+
+            // M15: update PresenceRecord to reflect the reveal
+            if let Some(mut record) = Presences::<T>::get(epoch, actor) {
+                if record.state == PresenceState::Declared {
+                    record.validated_at = Some(block_number);
+                }
+                Presences::<T>::insert(epoch, actor, record);
+            }
 
             Self::deposit_event(Event::CommitmentRevealed {
                 actor,
