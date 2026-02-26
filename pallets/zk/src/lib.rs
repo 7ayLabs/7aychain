@@ -10,6 +10,9 @@ pub mod weights;
 #[cfg(feature = "groth16")]
 pub mod groth16;
 
+#[cfg(any(test, feature = "groth16"))]
+pub mod ec_vss;
+
 #[cfg(any(test, feature = "circuits"))]
 pub mod circuits;
 
