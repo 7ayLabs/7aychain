@@ -15,8 +15,10 @@ use ark_snark::SNARK;
 use ark_std::rand::{rngs::StdRng, SeedableRng};
 
 use crate::circuits::{
-    access::AccessCircuit, position::PositionProximityCircuit,
-    presence::PresenceCircuit, share::ShareCircuit,
+    access::AccessCircuit, attestation::AttestationCircuit,
+    position::PositionProximityCircuit, presence::PresenceCircuit,
+    reputation::ReputationCircuit, share::ShareCircuit,
+    stake::StakeCircuit, vote::VoteCircuit,
 };
 
 fn test_rng() -> StdRng {
@@ -315,4 +317,238 @@ fn position_circuit_groth16_rejects_wrong_commitment() {
     let valid = Groth16::<Bn254>::verify(&vk, &public_inputs, &proof)
         .expect("verify failed");
     assert!(!valid, "wrong region commitment should fail");
+}
+
+// ─── Vote Circuit E2E ───────────────────────────────────────────────────
+
+#[test]
+fn vote_circuit_groth16_prove_verify() {
+    let mut rng = test_rng();
+    let depth = 5;
+
+    let validator_id = Fr::from(0xABCDu64);
+    let vote_value = Fr::from(1u64);
+    let randomness = Fr::from(0xCAFEu64);
+    let vote_topic = Fr::from(42u64);
+
+    let siblings: Vec<Fr> =
+        (0..depth).map(|i| Fr::from((i + 500) as u64)).collect();
+    let path_bits: Vec<bool> =
+        (0..depth).map(|i| i % 2 == 0).collect();
+
+    let blank = VoteCircuit::blank(depth);
+    let (pk, vk) = Groth16::<Bn254>::circuit_specific_setup(blank, &mut rng)
+        .expect("setup failed");
+
+    let circuit = VoteCircuit::new(
+        validator_id,
+        vote_value,
+        randomness,
+        vote_topic,
+        siblings,
+        path_bits,
+    );
+    let public_inputs = circuit.public_inputs();
+    let proof =
+        Groth16::<Bn254>::prove(&pk, circuit, &mut rng).expect("prove failed");
+
+    let valid = Groth16::<Bn254>::verify(&vk, &public_inputs, &proof)
+        .expect("verify failed");
+    assert!(valid, "valid vote proof should verify");
+}
+
+#[test]
+fn vote_circuit_groth16_rejects_wrong_nullifier() {
+    let mut rng = test_rng();
+    let depth = 5;
+
+    let blank = VoteCircuit::blank(depth);
+    let (pk, vk) = Groth16::<Bn254>::circuit_specific_setup(blank, &mut rng)
+        .expect("setup failed");
+
+    let circuit = VoteCircuit::new(
+        Fr::from(0xABCDu64),
+        Fr::from(1u64),
+        Fr::from(0xCAFEu64),
+        Fr::from(42u64),
+        (0..depth).map(|i| Fr::from((i + 500) as u64)).collect(),
+        (0..depth).map(|i| i % 2 == 0).collect(),
+    );
+    let mut public_inputs = circuit.public_inputs();
+    let proof =
+        Groth16::<Bn254>::prove(&pk, circuit, &mut rng).expect("prove failed");
+
+    // Tamper with vote nullifier
+    public_inputs[2] = Fr::from(999u64);
+    let valid = Groth16::<Bn254>::verify(&vk, &public_inputs, &proof)
+        .expect("verify failed");
+    assert!(!valid, "wrong vote nullifier should fail");
+}
+
+// ─── Attestation Circuit E2E ────────────────────────────────────────────
+
+#[test]
+fn attestation_circuit_groth16_prove_verify() {
+    let mut rng = test_rng();
+    let depth = 7;
+
+    let device_id = Fr::from(0xDE01u64);
+    let challenge = Fr::from(0xC0A1u64);
+    let response = Fr::from(0xBE5Bu64);
+    let epoch_id = Fr::from(1u64);
+
+    let siblings: Vec<Fr> =
+        (0..depth).map(|i| Fr::from((i + 300) as u64)).collect();
+    let path_bits: Vec<bool> =
+        (0..depth).map(|i| i % 2 == 1).collect();
+
+    let blank = AttestationCircuit::blank(depth);
+    let (pk, vk) = Groth16::<Bn254>::circuit_specific_setup(blank, &mut rng)
+        .expect("setup failed");
+
+    let circuit = AttestationCircuit::new(
+        device_id,
+        challenge,
+        response,
+        epoch_id,
+        siblings,
+        path_bits,
+    );
+    let public_inputs = circuit.public_inputs();
+    let proof =
+        Groth16::<Bn254>::prove(&pk, circuit, &mut rng).expect("prove failed");
+
+    let valid = Groth16::<Bn254>::verify(&vk, &public_inputs, &proof)
+        .expect("verify failed");
+    assert!(valid, "valid attestation proof should verify");
+}
+
+#[test]
+fn attestation_circuit_groth16_rejects_wrong_device() {
+    let mut rng = test_rng();
+    let depth = 7;
+
+    let blank = AttestationCircuit::blank(depth);
+    let (pk, vk) = Groth16::<Bn254>::circuit_specific_setup(blank, &mut rng)
+        .expect("setup failed");
+
+    let circuit = AttestationCircuit::new(
+        Fr::from(0xDE01u64),
+        Fr::from(0xC0A1u64),
+        Fr::from(0xBE5Bu64),
+        Fr::from(1u64),
+        (0..depth).map(|i| Fr::from((i + 300) as u64)).collect(),
+        (0..depth).map(|i| i % 2 == 1).collect(),
+    );
+    let mut public_inputs = circuit.public_inputs();
+    let proof =
+        Groth16::<Bn254>::prove(&pk, circuit, &mut rng).expect("prove failed");
+
+    // Tamper with device root
+    public_inputs[0] = Fr::from(999u64);
+    let valid = Groth16::<Bn254>::verify(&vk, &public_inputs, &proof)
+        .expect("verify failed");
+    assert!(!valid, "wrong device root should fail");
+}
+
+// ─── Reputation Circuit E2E ─────────────────────────────────────────────
+
+#[test]
+fn reputation_circuit_groth16_prove_verify() {
+    let mut rng = test_rng();
+
+    let blank = ReputationCircuit::blank();
+    let (pk, vk) = Groth16::<Bn254>::circuit_specific_setup(blank, &mut rng)
+        .expect("setup failed");
+
+    let circuit =
+        ReputationCircuit::new(Fr::from(1u64), 85, 50, Fr::from(0xABu64))
+            .expect("score >= threshold");
+    let public_inputs = circuit.public_inputs();
+    let proof =
+        Groth16::<Bn254>::prove(&pk, circuit, &mut rng).expect("prove failed");
+
+    let valid = Groth16::<Bn254>::verify(&vk, &public_inputs, &proof)
+        .expect("verify failed");
+    assert!(valid, "valid reputation proof should verify");
+}
+
+#[test]
+fn reputation_circuit_groth16_rejects_wrong_commitment() {
+    let mut rng = test_rng();
+
+    let blank = ReputationCircuit::blank();
+    let (pk, vk) = Groth16::<Bn254>::circuit_specific_setup(blank, &mut rng)
+        .expect("setup failed");
+
+    let circuit =
+        ReputationCircuit::new(Fr::from(1u64), 85, 50, Fr::from(0xABu64))
+            .expect("score >= threshold");
+    let mut public_inputs = circuit.public_inputs();
+    let proof =
+        Groth16::<Bn254>::prove(&pk, circuit, &mut rng).expect("prove failed");
+
+    // Tamper with score commitment
+    public_inputs[0] = Fr::from(999u64);
+    let valid = Groth16::<Bn254>::verify(&vk, &public_inputs, &proof)
+        .expect("verify failed");
+    assert!(!valid, "wrong score commitment should fail");
+}
+
+// ─── Stake Circuit E2E ──────────────────────────────────────────────────
+
+#[test]
+fn stake_circuit_groth16_prove_verify() {
+    let mut rng = test_rng();
+    let depth = 5;
+
+    let blank = StakeCircuit::blank(depth);
+    let (pk, vk) = Groth16::<Bn254>::circuit_specific_setup(blank, &mut rng)
+        .expect("setup failed");
+
+    let circuit = StakeCircuit::new(
+        Fr::from(0xABCDu64),
+        10_000u128,
+        5_000u128,
+        Fr::from(0xCAFEu64),
+        (0..depth).map(|i| Fr::from((i + 400) as u64)).collect(),
+        (0..depth).map(|i| i % 2 == 0).collect(),
+    )
+    .expect("stake >= min_stake");
+    let public_inputs = circuit.public_inputs();
+    let proof =
+        Groth16::<Bn254>::prove(&pk, circuit, &mut rng).expect("prove failed");
+
+    let valid = Groth16::<Bn254>::verify(&vk, &public_inputs, &proof)
+        .expect("verify failed");
+    assert!(valid, "valid stake proof should verify");
+}
+
+#[test]
+fn stake_circuit_groth16_rejects_wrong_commitment() {
+    let mut rng = test_rng();
+    let depth = 5;
+
+    let blank = StakeCircuit::blank(depth);
+    let (pk, vk) = Groth16::<Bn254>::circuit_specific_setup(blank, &mut rng)
+        .expect("setup failed");
+
+    let circuit = StakeCircuit::new(
+        Fr::from(0xABCDu64),
+        10_000u128,
+        5_000u128,
+        Fr::from(0xCAFEu64),
+        (0..depth).map(|i| Fr::from((i + 400) as u64)).collect(),
+        (0..depth).map(|i| i % 2 == 0).collect(),
+    )
+    .expect("stake >= min_stake");
+    let mut public_inputs = circuit.public_inputs();
+    let proof =
+        Groth16::<Bn254>::prove(&pk, circuit, &mut rng).expect("prove failed");
+
+    // Tamper with stake commitment
+    public_inputs[0] = Fr::from(999u64);
+    let valid = Groth16::<Bn254>::verify(&vk, &public_inputs, &proof)
+        .expect("verify failed");
+    assert!(!valid, "wrong stake commitment should fail");
 }

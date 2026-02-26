@@ -21,14 +21,22 @@
 //! constraints per hash absorption.
 
 pub mod access;
+pub mod attestation;
 pub mod position;
 pub mod presence;
+pub mod reputation;
 pub mod share;
+pub mod stake;
+pub mod vote;
 
 pub use access::AccessCircuit;
+pub use attestation::AttestationCircuit;
 pub use position::PositionProximityCircuit;
 pub use presence::PresenceCircuit;
+pub use reputation::ReputationCircuit;
 pub use share::ShareCircuit;
+pub use stake::StakeCircuit;
+pub use vote::VoteCircuit;
 
 use ark_bn254::Fr;
 use ark_ff::{Field, PrimeField, Zero};
