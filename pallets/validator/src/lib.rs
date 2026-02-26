@@ -615,8 +615,7 @@ pub mod pallet {
             if let Some(ref reporter) = slash_record.reporter {
                 let reward = Self::calculate_evidence_reward(slash_record.amount);
                 if reward > BalanceOf::<T>::zero() {
-                    let (reward_imbalance, burn_imbalance) =
-                        slash_imbalance.split(reward);
+                    let (reward_imbalance, burn_imbalance) = slash_imbalance.split(reward);
                     T::Currency::resolve_creating(reporter, reward_imbalance);
                     drop(burn_imbalance);
 
