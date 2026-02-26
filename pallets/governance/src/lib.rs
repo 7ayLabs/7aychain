@@ -230,6 +230,17 @@ pub mod pallet {
         ValueQuery,
     >;
 
+    /// Block-indexed capability expiry for O(1) cleanup per block (H09).
+    #[pallet::storage]
+    #[pallet::getter(fn expiry_index)]
+    pub type ExpiryIndex<T: Config> = StorageMap<
+        _,
+        Blake2_128Concat,
+        BlockNumberFor<T>,
+        BoundedVec<CapabilityId, T::MaxCapabilitiesPerActor>,
+        ValueQuery,
+    >;
+
     #[pallet::storage]
     #[pallet::getter(fn delegations)]
     pub type Delegations<T: Config> = StorageDoubleMap<
@@ -309,34 +320,24 @@ pub mod pallet {
 
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
-        #[allow(clippy::excessive_nesting)]
+        /// H09: O(1) capability expiry using block-indexed ExpiryIndex.
         fn on_initialize(now: BlockNumberFor<T>) -> Weight {
+            let expired_ids = ExpiryIndex::<T>::take(now);
             let mut expired_count = 0u32;
-            const MAX_EXPIRY_PER_BLOCK: u32 = 50;
 
-            for (id, capability) in Capabilities::<T>::iter() {
-                if expired_count >= MAX_EXPIRY_PER_BLOCK {
-                    break;
-                }
-
-                let should_expire = capability.status == CapabilityStatus::Active
-                    && capability.expires_at.is_some_and(|exp| now >= exp);
-
-                if !should_expire {
-                    continue;
-                }
-
-                Capabilities::<T>::mutate(id, |cap| {
-                    if let Some(ref mut c) = cap {
-                        c.status = CapabilityStatus::Expired;
+            for id in &expired_ids {
+                if let Some(ref mut capability) = Capabilities::<T>::get(id) {
+                    if capability.status == CapabilityStatus::Active {
+                        capability.status = CapabilityStatus::Expired;
+                        Capabilities::<T>::insert(id, capability);
+                        Self::deposit_event(Event::CapabilityExpired { capability_id: *id });
+                        expired_count = expired_count.saturating_add(1);
                     }
-                });
-                Self::deposit_event(Event::CapabilityExpired { capability_id: id });
-                expired_count = expired_count.saturating_add(1);
+                }
             }
 
             T::DbWeight::get()
-                .reads(expired_count.into())
+                .reads(1u64.saturating_add(expired_count.into()))
                 .saturating_add(T::DbWeight::get().writes(expired_count.into()))
         }
     }
@@ -386,6 +387,13 @@ pub mod pallet {
             };
 
             Capabilities::<T>::insert(capability_id, capability);
+
+            // H09: index by expiry block for O(1) cleanup
+            if let Some(exp) = expires_at {
+                let _ = ExpiryIndex::<T>::try_mutate(exp, |ids| {
+                    ids.try_push(capability_id)
+                });
+            }
 
             ActorCapabilities::<T>::try_mutate(grantee, |caps| {
                 caps.try_push(capability_id)
@@ -499,6 +507,13 @@ pub mod pallet {
             };
 
             Capabilities::<T>::insert(new_capability_id, new_capability);
+
+            // H09: index by expiry block for O(1) cleanup
+            if let Some(exp) = delegated_expiry {
+                let _ = ExpiryIndex::<T>::try_mutate(exp, |ids| {
+                    ids.try_push(new_capability_id)
+                });
+            }
 
             DelegationDepth::<T>::insert(new_capability_id, current_depth.saturating_add(1));
 
