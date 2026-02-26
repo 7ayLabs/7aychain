@@ -825,7 +825,7 @@ pub mod pallet {
         /// Only allowed when current mode is SnarkOnly. This is a safety valve
         /// for situations where SNARK verification becomes unavailable.
         #[pallet::call_index(10)]
-        #[pallet::weight(T::WeightInfo::transition_proof_system_mode())]
+        #[pallet::weight(T::WeightInfo::emergency_revert_mode())]
         pub fn emergency_revert_mode(origin: OriginFor<T>) -> DispatchResult {
             ensure_root(origin)?;
 
@@ -850,7 +850,7 @@ pub mod pallet {
         /// given block. Bounded to max_entries per call to prevent unbounded
         /// iteration. Root only.
         #[pallet::call_index(11)]
-        #[pallet::weight(T::WeightInfo::transition_proof_system_mode())]
+        #[pallet::weight(T::WeightInfo::prune_old_proofs())]
         pub fn prune_old_proofs(
             origin: OriginFor<T>,
             older_than: BlockNumberFor<T>,
