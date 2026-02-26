@@ -3,15 +3,17 @@
 use crate::{self as pallet_presence, Error, Event};
 use frame_support::{assert_noop, assert_ok, derive_impl, parameter_types, traits::ConstU32};
 use frame_system as system;
+use parity_scale_codec::Encode;
 use seveny_primitives::{
     types::{ActorId, EpochId, PresenceState, ValidatorId},
     PresenceCommitment,
 };
 use sp_core::H256;
 use sp_runtime::{
-    traits::{BlakeTwo256, Hash, IdentityLookup},
+    traits::{BlakeTwo256, IdentityLookup},
     BuildStorage,
 };
+use std::cell::RefCell;
 
 type Block = frame_system::mocking::MockBlock<Test>;
 
@@ -21,6 +23,36 @@ frame_support::construct_runtime!(
         Presence: pallet_presence,
     }
 );
+
+// =========================================================================
+// Mock EpochProvider and ValidatorProvider
+// =========================================================================
+
+thread_local! {
+    static ACTIVE_EPOCHS: RefCell<Vec<u64>> = RefCell::new(vec![1]);
+    static ACTIVE_VALIDATORS: RefCell<Vec<ValidatorId>> = RefCell::new(Vec::new());
+}
+
+pub struct MockEpochProvider;
+impl seveny_primitives::traits::EpochProvider for MockEpochProvider {
+    fn is_epoch_active(epoch_id: EpochId) -> bool {
+        ACTIVE_EPOCHS.with(|e| e.borrow().contains(&epoch_id.inner()))
+    }
+    fn current_epoch() -> EpochId {
+        EpochId::new(1)
+    }
+}
+
+pub struct MockValidatorProvider;
+impl seveny_primitives::traits::ValidatorProvider for MockValidatorProvider {
+    fn is_validator_active(validator_id: ValidatorId) -> bool {
+        ACTIVE_VALIDATORS.with(|v| v.borrow().iter().any(|v| *v == validator_id))
+    }
+}
+
+// =========================================================================
+// Test Config
+// =========================================================================
 
 #[derive_impl(frame_system::config_preludes::TestDefaultConfig)]
 impl system::Config for Test {
@@ -67,9 +99,19 @@ impl pallet_presence::Config for Test {
     type RevealWindow = RevealWindow;
     type MinWitnessesForVerification = MinWitnessesForVerification;
     type PositionToleranceMeters = PositionToleranceMeters;
+    type EpochProvider = MockEpochProvider;
+    type ValidatorProvider = MockValidatorProvider;
 }
 
+// =========================================================================
+// Helpers
+// =========================================================================
+
 fn new_test_ext() -> sp_io::TestExternalities {
+    // Reset mock provider state for test isolation
+    ACTIVE_EPOCHS.with(|e| *e.borrow_mut() = vec![1]);
+    ACTIVE_VALIDATORS.with(|v| v.borrow_mut().clear());
+
     let mut t = system::GenesisConfig::<Test>::default()
         .build_storage()
         .expect("storage build failed");
@@ -77,8 +119,6 @@ fn new_test_ext() -> sp_io::TestExternalities {
     pallet_presence::GenesisConfig::<Test> {
         quorum_threshold: 3,
         quorum_total: 5,
-        initial_validators: vec![[1u8; 32], [2u8; 32], [3u8; 32], [4u8; 32], [5u8; 32]],
-        initial_epoch: 1,
         _phantom: Default::default(),
     }
     .assimilate_storage(&mut t)
@@ -90,19 +130,44 @@ fn new_test_ext() -> sp_io::TestExternalities {
 }
 
 fn account_to_actor(account: u64) -> ActorId {
-    let hash = BlakeTwo256::hash_of(&account);
-    ActorId::from(H256(hash.0))
+    seveny_primitives::crypto::derive_actor_id(&account.encode())
 }
 
 fn account_to_validator(account: u64) -> ValidatorId {
-    let hash = BlakeTwo256::hash_of(&account);
-    ValidatorId::from(H256(hash.0))
+    seveny_primitives::crypto::derive_validator_id(&account.encode())
 }
 
 fn setup_validator(account: u64) {
     let validator = account_to_validator(account);
-    pallet_presence::ActiveValidators::<Test>::insert(validator, true);
+    ACTIVE_VALIDATORS.with(|v| v.borrow_mut().push(validator));
 }
+
+fn run_to_block(n: u64) {
+    while System::block_number() < n {
+        System::set_block_number(System::block_number() + 1);
+    }
+}
+
+fn compute_test_commitment(
+    actor: &ActorId,
+    epoch: &EpochId,
+    secret: &[u8; 32],
+    randomness: &[u8; 32],
+) -> PresenceCommitment {
+    use seveny_primitives::crypto::{hash_with_domain, DOMAIN_COMMITMENT};
+
+    let mut data = Vec::with_capacity(32 + 8 + 32 + 32);
+    data.extend_from_slice(actor.as_bytes());
+    data.extend_from_slice(&epoch.inner().to_le_bytes());
+    data.extend_from_slice(secret);
+    data.extend_from_slice(randomness);
+
+    PresenceCommitment(hash_with_domain(DOMAIN_COMMITMENT, &data))
+}
+
+// =========================================================================
+// Invariant Tests
+// =========================================================================
 
 #[test]
 fn invariant_inv1_uniqueness_no_duplicate_presence() {
@@ -298,6 +363,10 @@ fn invariant_inv13_vote_timing_only_during_active_epoch() {
     });
 }
 
+// =========================================================================
+// Functional Tests
+// =========================================================================
+
 #[test]
 fn declare_presence_success() {
     new_test_ext().execute_with(|| {
@@ -490,7 +559,8 @@ fn same_actor_different_epochs() {
         let epoch1 = EpochId::new(1);
         let epoch2 = EpochId::new(2);
 
-        pallet_presence::EpochActive::<Test>::insert(epoch2, true);
+        // Register epoch 2 as active via mock provider
+        ACTIVE_EPOCHS.with(|e| e.borrow_mut().push(2));
 
         assert_ok!(Presence::declare_presence(RuntimeOrigin::signed(1), epoch1));
         assert_ok!(Presence::declare_presence(RuntimeOrigin::signed(1), epoch2));
@@ -541,30 +611,9 @@ fn events_emitted_correctly() {
     });
 }
 
-fn run_to_block(n: u64) {
-    while System::block_number() < n {
-        System::set_block_number(System::block_number() + 1);
-    }
-}
-
-fn compute_test_commitment(
-    actor: &ActorId,
-    epoch: &EpochId,
-    secret: &[u8; 32],
-    randomness: &[u8; 32],
-) -> PresenceCommitment {
-    use seveny_primitives::crypto::DOMAIN_PRESENCE;
-
-    let mut preimage = Vec::with_capacity(DOMAIN_PRESENCE.len() + 32 + 8 + 32 + 32);
-    preimage.extend_from_slice(DOMAIN_PRESENCE);
-    preimage.extend_from_slice(actor.as_bytes());
-    preimage.extend_from_slice(&epoch.inner().to_le_bytes());
-    preimage.extend_from_slice(secret);
-    preimage.extend_from_slice(randomness);
-
-    let hash = BlakeTwo256::hash(&preimage);
-    PresenceCommitment(H256(hash.0))
-}
+// =========================================================================
+// Commit-Reveal Tests
+// =========================================================================
 
 #[test]
 fn commitment_submitted_event_emitted() {
@@ -939,6 +988,10 @@ fn is_in_reveal_phase_helper() {
     });
 }
 
+// =========================================================================
+// MaxVotes Tests
+// =========================================================================
+
 #[test]
 fn max_votes_per_presence_enforced() {
     new_test_ext().execute_with(|| {
@@ -979,6 +1032,106 @@ fn votes_below_max_succeed() {
             actor,
             epoch,
             true
+        ));
+    });
+}
+
+// =========================================================================
+// C13 Fix: Reject votes on already-Validated presences
+// =========================================================================
+
+#[test]
+fn vote_rejected_on_validated_presence() {
+    new_test_ext().execute_with(|| {
+        let epoch = EpochId::new(1);
+
+        assert_ok!(Presence::declare_presence(RuntimeOrigin::signed(1), epoch));
+
+        setup_validator(10);
+        setup_validator(11);
+        setup_validator(12);
+        setup_validator(13);
+
+        let actor = account_to_actor(1);
+
+        // Vote to quorum (3 out of 5 needed)
+        assert_ok!(Presence::vote_presence(
+            RuntimeOrigin::signed(10),
+            actor,
+            epoch,
+            true
+        ));
+        assert_ok!(Presence::vote_presence(
+            RuntimeOrigin::signed(11),
+            actor,
+            epoch,
+            true
+        ));
+        assert_ok!(Presence::vote_presence(
+            RuntimeOrigin::signed(12),
+            actor,
+            epoch,
+            true
+        ));
+
+        let record = Presence::presences(epoch, actor).expect("presence should exist");
+        assert_eq!(record.state, PresenceState::Validated);
+
+        // Additional vote on Validated presence should be rejected (C13)
+        assert_noop!(
+            Presence::vote_presence(RuntimeOrigin::signed(13), actor, epoch, true),
+            Error::<Test>::InvalidStateTransition
+        );
+    });
+}
+
+// =========================================================================
+// M16 Fix: Finalize authorization check
+// =========================================================================
+
+#[test]
+fn finalize_requires_authorization() {
+    new_test_ext().execute_with(|| {
+        let epoch = EpochId::new(1);
+
+        assert_ok!(Presence::declare_presence(RuntimeOrigin::signed(1), epoch));
+
+        setup_validator(10);
+        setup_validator(11);
+        setup_validator(12);
+
+        let actor = account_to_actor(1);
+
+        assert_ok!(Presence::vote_presence(
+            RuntimeOrigin::signed(10),
+            actor,
+            epoch,
+            true
+        ));
+        assert_ok!(Presence::vote_presence(
+            RuntimeOrigin::signed(11),
+            actor,
+            epoch,
+            true
+        ));
+        assert_ok!(Presence::vote_presence(
+            RuntimeOrigin::signed(12),
+            actor,
+            epoch,
+            true
+        ));
+
+        // Unauthorized account (neither the actor nor a validator) should fail
+        assert_noop!(
+            Presence::finalize_presence(RuntimeOrigin::signed(999), actor, epoch),
+            Error::<Test>::UnauthorizedDeclaration
+        );
+
+        // The actor themselves should succeed
+        assert_ok!(Presence::finalize_presence(
+            RuntimeOrigin::signed(1),
+            actor,
+            epoch
         ));
     });
 }

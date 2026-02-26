@@ -18,9 +18,8 @@ pub mod pallet {
         traits::{Get, StorageVersion},
     };
     use frame_system::pallet_prelude::*;
-    use seveny_primitives::traits::ConstantTimeEq;
+    use seveny_primitives::traits::{ConstantTimeEq, EpochProvider, ValidatorProvider};
     use seveny_primitives::{
-        crypto::DOMAIN_PRESENCE,
         types::{
             ActorId, BlockRef, EpochId, PresenceRecord, PresenceState, QuorumConfig, ValidatorId,
             Vote,
@@ -30,7 +29,7 @@ pub mod pallet {
         },
         Position, PresenceCommitment,
     };
-    use sp_runtime::{traits::Hash, Saturating};
+    use sp_runtime::Saturating;
 
     use crate::WeightInfo;
 
@@ -43,6 +42,12 @@ pub mod pallet {
     #[pallet::config]
     pub trait Config: frame_system::Config<RuntimeEvent: From<Event<Self>>> {
         type WeightInfo: WeightInfo;
+
+        /// Epoch state provider — reads from canonical epoch pallet.
+        type EpochProvider: seveny_primitives::traits::EpochProvider;
+
+        /// Validator set provider — reads from canonical validator pallet.
+        type ValidatorProvider: seveny_primitives::traits::ValidatorProvider;
 
         #[pallet::constant]
         type MaxVotesPerPresence: Get<u32>;
@@ -119,19 +124,6 @@ pub mod pallet {
     #[pallet::storage]
     #[pallet::getter(fn quorum_config)]
     pub type QuorumConfigStorage<T: Config> = StorageValue<_, QuorumConfig, ValueQuery>;
-
-    #[pallet::storage]
-    #[pallet::getter(fn active_validators)]
-    pub type ActiveValidators<T: Config> =
-        StorageMap<_, Blake2_128Concat, ValidatorId, bool, ValueQuery>;
-
-    #[pallet::storage]
-    #[pallet::getter(fn current_epoch)]
-    pub type CurrentEpoch<T: Config> = StorageValue<_, EpochId, ValueQuery>;
-
-    #[pallet::storage]
-    #[pallet::getter(fn epoch_active)]
-    pub type EpochActive<T: Config> = StorageMap<_, Blake2_128Concat, EpochId, bool, ValueQuery>;
 
     #[pallet::storage]
     #[pallet::getter(fn epoch_commit_start)]
@@ -387,8 +379,6 @@ pub mod pallet {
     pub struct GenesisConfig<T: Config> {
         pub quorum_threshold: u32,
         pub quorum_total: u32,
-        pub initial_validators: Vec<[u8; 32]>,
-        pub initial_epoch: u64,
         #[serde(skip)]
         pub _phantom: PhantomData<T>,
     }
@@ -408,15 +398,6 @@ pub mod pallet {
                 }
             };
             QuorumConfigStorage::<T>::put(config);
-
-            for validator_bytes in &self.initial_validators {
-                let validator = ValidatorId::from_raw(*validator_bytes);
-                ActiveValidators::<T>::insert(validator, true);
-            }
-
-            let epoch = EpochId::new(self.initial_epoch);
-            CurrentEpoch::<T>::put(epoch);
-            EpochActive::<T>::insert(epoch, true);
         }
     }
 
@@ -606,8 +587,17 @@ pub mod pallet {
             actor: ActorId,
             epoch: EpochId,
         ) -> DispatchResult {
-            ensure_signed(origin)?;
+            let who = ensure_signed(origin)?;
+            let caller_actor = Self::account_to_actor(&who);
+            let caller_validator = Self::account_to_validator(&who);
             let block_number = frame_system::Pallet::<T>::block_number();
+
+            // M16: only the actor or an active validator can finalize
+            ensure!(
+                caller_actor == actor
+                    || T::ValidatorProvider::is_validator_active(caller_validator),
+                Error::<T>::UnauthorizedDeclaration
+            );
 
             let mut record =
                 Presences::<T>::get(epoch, actor).ok_or(Error::<T>::PresenceNotFound)?;
@@ -672,37 +662,6 @@ pub mod pallet {
             QuorumConfigStorage::<T>::put(config);
 
             Self::deposit_event(Event::QuorumConfigUpdated { threshold, total });
-
-            Ok(())
-        }
-
-        #[pallet::call_index(6)]
-        #[pallet::weight(T::WeightInfo::set_validator_status())]
-        pub fn set_validator_status(
-            origin: OriginFor<T>,
-            validator: ValidatorId,
-            active: bool,
-        ) -> DispatchResult {
-            ensure_root(origin)?;
-
-            ActiveValidators::<T>::insert(validator, active);
-
-            Ok(())
-        }
-
-        #[pallet::call_index(7)]
-        #[pallet::weight(T::WeightInfo::set_epoch_active())]
-        pub fn set_epoch_active(
-            origin: OriginFor<T>,
-            epoch: EpochId,
-            active: bool,
-        ) -> DispatchResult {
-            ensure_root(origin)?;
-
-            EpochActive::<T>::insert(epoch, active);
-            if active {
-                CurrentEpoch::<T>::put(epoch);
-            }
 
             Ok(())
         }
@@ -937,7 +896,7 @@ pub mod pallet {
 
         /// Set a validator's position (root only or self-registration).
         #[pallet::call_index(12)]
-        #[pallet::weight(T::WeightInfo::set_validator_status())]
+        #[pallet::weight(T::WeightInfo::set_quorum_config())]
         pub fn set_validator_position(
             origin: OriginFor<T>,
             validator: ValidatorId,
@@ -957,7 +916,7 @@ pub mod pallet {
 
             // Only active validators can set their position
             ensure!(
-                ActiveValidators::<T>::get(validator),
+                T::ValidatorProvider::is_validator_active(validator),
                 Error::<T>::ValidatorNotActive
             );
 
@@ -977,21 +936,18 @@ pub mod pallet {
             ActorId::from_raw(*validator.as_bytes())
         }
         fn account_to_actor(account: &T::AccountId) -> ActorId {
-            let hash = account.using_encoded(sp_core::blake2_256);
-            ActorId::from_raw(hash)
+            seveny_primitives::crypto::derive_actor_id(&account.encode())
         }
 
         fn account_to_validator(account: &T::AccountId) -> ValidatorId {
-            let hash = T::Hashing::hash_of(account);
-            let hash_bytes: [u8; 32] = hash
-                .as_ref()
-                .try_into()
-                .expect("runtime hash must be 32 bytes");
-            ValidatorId::from(sp_core::H256(hash_bytes))
+            seveny_primitives::crypto::derive_validator_id(&account.encode())
         }
 
         fn ensure_epoch_active(epoch: &EpochId) -> DispatchResult {
-            ensure!(EpochActive::<T>::get(epoch), Error::<T>::EpochNotActive);
+            ensure!(
+                T::EpochProvider::is_epoch_active(*epoch),
+                Error::<T>::EpochNotActive
+            );
             Ok(())
         }
 
@@ -1005,7 +961,7 @@ pub mod pallet {
 
         fn ensure_validator_active(validator: &ValidatorId) -> DispatchResult {
             ensure!(
-                ActiveValidators::<T>::get(validator),
+                T::ValidatorProvider::is_validator_active(*validator),
                 Error::<T>::ValidatorNotActive
             );
             Ok(())
@@ -1029,8 +985,9 @@ pub mod pallet {
         }
 
         fn ensure_valid_vote_state(state: &PresenceState) -> DispatchResult {
+            // C13: only allow voting on Declared presences, not Validated
             ensure!(
-                matches!(state, PresenceState::Declared | PresenceState::Validated),
+                matches!(state, PresenceState::Declared),
                 Error::<T>::InvalidStateTransition
             );
             Ok(())
@@ -1099,25 +1056,23 @@ pub mod pallet {
             }
         }
 
+        /// C05: use DOMAIN_COMMITMENT + hash_with_domain for consistent
+        /// cross-module commitment verification.
         pub fn compute_commitment(
             actor: &ActorId,
             epoch: &EpochId,
             secret: &[u8; 32],
             randomness: &[u8; 32],
         ) -> PresenceCommitment {
-            let mut preimage = Vec::with_capacity(DOMAIN_PRESENCE.len() + 32 + 8 + 32 + 32);
-            preimage.extend_from_slice(DOMAIN_PRESENCE);
-            preimage.extend_from_slice(actor.as_bytes());
-            preimage.extend_from_slice(&epoch.inner().to_le_bytes());
-            preimage.extend_from_slice(secret);
-            preimage.extend_from_slice(randomness);
+            use seveny_primitives::crypto::{hash_with_domain, DOMAIN_COMMITMENT};
 
-            let hash = T::Hashing::hash(&preimage);
-            let hash_bytes: [u8; 32] = hash
-                .as_ref()
-                .try_into()
-                .expect("runtime hash must be 32 bytes");
-            PresenceCommitment(sp_core::H256(hash_bytes))
+            let mut data = Vec::with_capacity(32 + 8 + 32 + 32);
+            data.extend_from_slice(actor.as_bytes());
+            data.extend_from_slice(&epoch.inner().to_le_bytes());
+            data.extend_from_slice(secret);
+            data.extend_from_slice(randomness);
+
+            PresenceCommitment(hash_with_domain(DOMAIN_COMMITMENT, &data))
         }
 
         pub fn is_in_commit_phase(epoch: EpochId) -> bool {

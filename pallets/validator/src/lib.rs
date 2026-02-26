@@ -267,15 +267,9 @@ pub mod pallet {
     #[pallet::genesis_build]
     impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
         fn build(&self) {
-            use sp_runtime::traits::Hash;
-
             for (controller, stake) in &self.initial_validators {
-                let hash = T::Hashing::hash_of(controller);
-                let hash_bytes: [u8; 32] = hash
-                    .as_ref()
-                    .try_into()
-                    .expect("runtime hash must be 32 bytes in genesis");
-                let validator_id = ValidatorId::from(sp_core::H256(hash_bytes));
+                let validator_id =
+                    seveny_primitives::crypto::derive_validator_id(&controller.encode());
 
                 let info = ValidatorInfo {
                     id: validator_id,
@@ -319,7 +313,7 @@ pub mod pallet {
                 Error::<T>::MaxValidatorsReached
             );
 
-            Self::ensure_stake_ratio_valid(stake)?;
+            Self::ensure_stake_ratio_valid(stake, stake)?;
 
             T::Currency::reserve(&who, stake)?;
 
@@ -485,7 +479,7 @@ pub mod pallet {
                 Validators::<T>::get(validator_id).ok_or(Error::<T>::ValidatorNotFound)?;
 
             let new_stake = info.stake.saturating_add(additional);
-            Self::ensure_stake_ratio_valid(new_stake)?;
+            Self::ensure_stake_ratio_valid(new_stake, additional)?;
 
             T::Currency::reserve(&who, additional)?;
 
@@ -549,13 +543,17 @@ pub mod pallet {
             });
 
             if violation == ViolationType::Critical && info.status != ValidatorStatus::Slashed {
+                // H04: only decrement ActiveValidatorCount for Active validators
+                let was_active = info.status == ValidatorStatus::Active;
                 let mut info_mut = info;
                 info_mut.status = ValidatorStatus::Slashed;
                 Validators::<T>::insert(validator, info_mut);
 
-                ActiveValidatorCount::<T>::mutate(|count| {
-                    *count = count.saturating_sub(1);
-                });
+                if was_active {
+                    ActiveValidatorCount::<T>::mutate(|count| {
+                        *count = count.saturating_sub(1);
+                    });
+                }
             }
 
             Self::deposit_event(Event::ValidatorSlashed {
@@ -592,7 +590,6 @@ pub mod pallet {
             let _ = T::Currency::slash_reserved(&info.controller, slash_record.amount);
 
             let new_stake = info.stake.saturating_sub(slash_record.amount);
-            let controller = info.controller.clone();
             TotalStake::<T>::mutate(|total| {
                 *total = total.saturating_sub(slash_record.amount);
             });
@@ -612,16 +609,12 @@ pub mod pallet {
                 amount: slash_record.amount,
             });
 
-            // Pay deferred evidence reward to the reporter (if any)
+            // C04: pay evidence reward from slash imbalance, not from
+            // the validator's free balance (which would double-punish).
             if let Some(ref reporter) = slash_record.reporter {
                 let reward = Self::calculate_evidence_reward(slash_record.amount);
                 if reward > BalanceOf::<T>::zero() {
-                    let _ = T::Currency::transfer(
-                        &controller,
-                        reporter,
-                        reward,
-                        frame_support::traits::ExistenceRequirement::AllowDeath,
-                    );
+                    let _ = T::Currency::deposit_creating(reporter, reward);
 
                     Self::deposit_event(Event::EvidenceRewardPaid {
                         reporter: reporter.clone(),
@@ -653,6 +646,12 @@ pub mod pallet {
             ensure!(
                 !EvidenceSubmissions::<T>::contains_key(validator, &reporter),
                 Error::<T>::DuplicateEvidence
+            );
+
+            // C03: prevent stacking slashes for same validator + violation type
+            ensure!(
+                !SlashDedup::<T>::contains_key(validator, violation),
+                Error::<T>::DuplicateSlash
             );
 
             // Rate limiting: max 3 reports per 100-block window
@@ -696,6 +695,7 @@ pub mod pallet {
 
             PendingSlashes::<T>::insert(slash_id, slash_record);
             EvidenceSubmissions::<T>::insert(validator, &reporter, block_number);
+            SlashDedup::<T>::insert(validator, violation, block_number);
 
             Self::deposit_event(Event::ValidatorSlashed {
                 validator,
@@ -710,25 +710,29 @@ pub mod pallet {
 
     impl<T: Config> Pallet<T> {
         fn account_to_validator(account: &T::AccountId) -> ValidatorId {
-            use sp_runtime::traits::Hash;
-            let hash = T::Hashing::hash_of(account);
-            let hash_bytes: [u8; 32] = hash
-                .as_ref()
-                .try_into()
-                .expect("runtime hash must be 32 bytes");
-            ValidatorId::from(sp_core::H256(hash_bytes))
+            seveny_primitives::crypto::derive_validator_id(&account.encode())
         }
 
-        fn ensure_stake_ratio_valid(stake: BalanceOf<T>) -> DispatchResult {
+        /// Check that a validator's stake does not exceed MAX_STAKE_RATIO of
+        /// the total after the operation.
+        ///
+        /// `validator_stake`: the validator's full stake after the operation.
+        /// `additional_to_total`: amount being added to TotalStake (avoids
+        ///   double-counting when increase_stake passes full new_stake).
+        fn ensure_stake_ratio_valid(
+            validator_stake: BalanceOf<T>,
+            additional_to_total: BalanceOf<T>,
+        ) -> DispatchResult {
             let total_stake = TotalStake::<T>::get();
 
+            // During bootstrap (no existing stake), allow registration
             if total_stake.is_zero() {
                 return Ok(());
             }
 
-            let new_total = total_stake.saturating_add(stake);
-            let max_allowed = MAX_STAKE_RATIO.mul_floor(new_total);
-            ensure!(stake <= max_allowed, Error::<T>::StakeTooHigh);
+            let total_after = total_stake.saturating_add(additional_to_total);
+            let max_allowed = MAX_STAKE_RATIO.mul_floor(total_after);
+            ensure!(validator_stake <= max_allowed, Error::<T>::StakeTooHigh);
 
             Ok(())
         }
@@ -789,6 +793,12 @@ pub mod pallet {
             } else {
                 Some((info.stake, total))
             }
+        }
+    }
+
+    impl<T: Config> seveny_primitives::traits::ValidatorProvider for Pallet<T> {
+        fn is_validator_active(validator_id: ValidatorId) -> bool {
+            Self::is_validator_active(validator_id)
         }
     }
 }
