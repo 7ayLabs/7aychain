@@ -185,6 +185,8 @@ pub mod pallet {
         EpochExpired,
         GracePeriodNotElapsed,
         InvalidScheduleConfig,
+        StartBlockInPast,
+        ForceTransitionSkipsState,
     }
 
     #[pallet::genesis_config]
@@ -477,6 +479,7 @@ pub mod pallet {
                 Error::<T>::EpochImmutable
             );
 
+            // H03: only allow sequential state transitions (one step at a time)
             ensure!(
                 metadata.state.can_transition_to(&new_state),
                 Error::<T>::InvalidEpochTransition
@@ -484,12 +487,14 @@ pub mod pallet {
 
             let block_number = frame_system::Pallet::<T>::block_number();
 
-            metadata.state = new_state;
+            // H03: enforce grace period for Closed->Finalized even in force mode
             if new_state == EpochState::Finalized {
+                Self::ensure_grace_period_elapsed(&metadata)?;
                 metadata.finalized_block = Some(block_number);
                 LastFinalizedEpoch::<T>::put(epoch_id);
             }
 
+            metadata.state = new_state;
             EpochInfo::<T>::insert(epoch_id, metadata);
 
             if new_state == EpochState::Active {
