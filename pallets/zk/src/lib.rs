@@ -25,6 +25,9 @@ mod groth16_tests;
 #[cfg(test)]
 mod circuit_tests;
 
+#[cfg(test)]
+mod integration_tests;
+
 use alloc::vec::Vec;
 use frame_support::pallet_prelude::*;
 use frame_system::pallet_prelude::*;
