@@ -11,7 +11,10 @@ use frame_support::pallet_prelude::*;
 use frame_system::pallet_prelude::*;
 use parity_scale_codec::{Decode, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
-use seveny_primitives::types::{ActorId, EpochId};
+use seveny_primitives::{
+    crypto::{derive_actor_id, hash_with_domain, DOMAIN_STORAGE_KEY},
+    types::{ActorId, EpochId},
+};
 use sp_core::H256;
 use sp_runtime::Saturating;
 
@@ -37,8 +40,7 @@ impl DataKey {
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Self {
-        let hash = sp_core::blake2_256(bytes);
-        Self(H256(hash))
+        Self(hash_with_domain(DOMAIN_STORAGE_KEY, bytes))
     }
 }
 
@@ -525,9 +527,7 @@ pub mod pallet {
 
     impl<T: Config> Pallet<T> {
         fn account_to_actor(account: T::AccountId) -> ActorId {
-            let encoded = account.encode();
-            let hash = sp_core::blake2_256(&encoded);
-            ActorId::from_raw(hash)
+            derive_actor_id(&account.encode())
         }
 
         fn check_actor_quota(actor: ActorId, additional_bytes: u32) -> DispatchResult {

@@ -72,9 +72,7 @@ fn new_test_ext() -> sp_io::TestExternalities {
 
 fn account_to_actor(account: u64) -> ActorId {
     use parity_scale_codec::Encode;
-    let encoded = account.encode();
-    let hash = sp_core::blake2_256(&encoded);
-    ActorId::from_raw(hash)
+    seveny_primitives::crypto::derive_actor_id(&account.encode())
 }
 
 fn create_share_witness() -> ShareWitness {
@@ -609,7 +607,7 @@ fn inv74_presence_proof_zero_commitment_rejected() {
     new_test_ext().execute_with(|| {
         let secret = [3u8; 32];
         let epoch_id = 1u64;
-        let nullifier = seveny_primitives::crypto::Nullifier::derive(&secret, epoch_id);
+        let nullifier = seveny_primitives::crypto::Nullifier::derive(&secret, epoch_id, &[0u8; 32]);
 
         let statement = PresenceStatement {
             epoch_id,
@@ -857,13 +855,12 @@ fn verify_snark_circuit_not_found() {
 }
 
 #[test]
-fn verify_snark_success_with_stub() {
+fn verify_snark_rejected_by_stub_verifier() {
     new_test_ext().execute_with(|| {
         let verifier_account = 1u64;
         let verifier = account_to_actor(verifier_account);
         assert_ok!(Zk::add_trusted_verifier(RuntimeOrigin::root(), verifier));
 
-        // Must transition to Transitional mode for SNARK proofs
         assert_ok!(Zk::transition_proof_system_mode(
             RuntimeOrigin::root(),
             crate::migration::ProofSystemMode::Transitional
@@ -878,18 +875,19 @@ fn verify_snark_success_with_stub() {
             vk
         ));
 
-        // StubVerifier::verify_snark needs len >= 192 and non-empty inputs
+        // StubVerifier now correctly rejects all SNARK proofs (C10 fail-closed)
         let proof = BoundedVec::try_from(vec![1u8; 256]).expect("fits");
         let inputs = BoundedVec::try_from(vec![[1u8; 32]]).expect("fits");
 
-        assert_ok!(Zk::verify_snark(
-            RuntimeOrigin::signed(verifier_account),
-            circuit_id,
-            proof,
-            inputs
-        ));
-
-        assert_eq!(Zk::total_verifications(), 1);
+        assert_noop!(
+            Zk::verify_snark(
+                RuntimeOrigin::signed(verifier_account),
+                circuit_id,
+                proof,
+                inputs
+            ),
+            Error::<Test>::SnarkVerificationFailed
+        );
     });
 }
 
@@ -900,7 +898,6 @@ fn verify_snark_success_with_stub() {
 #[test]
 fn verify_snark_replay_rejected() {
     new_test_ext().execute_with(|| {
-        // Enable SNARK proofs by transitioning to Transitional mode
         assert_ok!(Zk::transition_proof_system_mode(
             RuntimeOrigin::root(),
             crate::migration::ProofSystemMode::Transitional
@@ -919,18 +916,21 @@ fn verify_snark_replay_rejected() {
             vk
         ));
 
+        let inputs: BoundedVec<[u8; 32], MaxPublicInputs> =
+            BoundedVec::try_from(vec![[1u8; 32]]).expect("fits");
+
+        // Pre-compute replay hash (circuit_id || inputs) and insert it
+        // to simulate a previously verified proof (H05: inputs-based replay)
+        let mut replay_data = Vec::with_capacity(64);
+        replay_data.extend_from_slice(circuit_id.as_bytes());
+        for input in inputs.iter() {
+            replay_data.extend_from_slice(input);
+        }
+        let proof_hash = H256(sp_core::blake2_256(&replay_data));
+        VerifiedProofHashes::<Test>::insert(proof_hash, 1u64);
+
+        // Same inputs should be rejected as replay before reaching the verifier
         let proof = BoundedVec::try_from(vec![1u8; 256]).expect("fits");
-        let inputs = BoundedVec::try_from(vec![[1u8; 32]]).expect("fits");
-
-        // First verification succeeds
-        assert_ok!(Zk::verify_snark(
-            RuntimeOrigin::signed(verifier_account),
-            circuit_id,
-            proof.clone(),
-            inputs.clone()
-        ));
-
-        // Same proof replay is rejected
         assert_noop!(
             Zk::verify_snark(
                 RuntimeOrigin::signed(verifier_account),
@@ -1010,7 +1010,7 @@ fn circuit_registry_stores_vk_hash() {
 #[test]
 fn circuit_registry_all_proof_types() {
     new_test_ext().execute_with(|| {
-        let vk = BoundedVec::try_from(vec![1u8; 64]).expect("fits");
+        let vk = BoundedVec::try_from(vec![1u8; 96]).expect("fits");
 
         assert_ok!(Zk::register_circuit(
             RuntimeOrigin::root(),
@@ -1079,7 +1079,7 @@ fn register_circuit_rejects_small_vk() {
 fn register_circuit_sets_version_and_active() {
     new_test_ext().execute_with(|| {
         let circuit_id = H256([10u8; 32]);
-        let vk = BoundedVec::try_from(vec![1u8; 64]).expect("fits");
+        let vk = BoundedVec::try_from(vec![1u8; 96]).expect("fits");
 
         assert_ok!(Zk::register_circuit(
             RuntimeOrigin::root(),
@@ -1098,7 +1098,7 @@ fn register_circuit_sets_version_and_active() {
 fn deregister_circuit_success() {
     new_test_ext().execute_with(|| {
         let circuit_id = H256([10u8; 32]);
-        let vk = BoundedVec::try_from(vec![1u8; 64]).expect("fits");
+        let vk = BoundedVec::try_from(vec![1u8; 96]).expect("fits");
 
         assert_ok!(Zk::register_circuit(
             RuntimeOrigin::root(),
@@ -1118,7 +1118,7 @@ fn deregister_circuit_success() {
 fn deregister_circuit_requires_root() {
     new_test_ext().execute_with(|| {
         let circuit_id = H256([10u8; 32]);
-        let vk = BoundedVec::try_from(vec![1u8; 64]).expect("fits");
+        let vk = BoundedVec::try_from(vec![1u8; 96]).expect("fits");
 
         assert_ok!(Zk::register_circuit(
             RuntimeOrigin::root(),
@@ -1148,7 +1148,7 @@ fn deregister_nonexistent_circuit_fails() {
 fn deregister_already_inactive_circuit_fails() {
     new_test_ext().execute_with(|| {
         let circuit_id = H256([10u8; 32]);
-        let vk = BoundedVec::try_from(vec![1u8; 64]).expect("fits");
+        let vk = BoundedVec::try_from(vec![1u8; 96]).expect("fits");
 
         assert_ok!(Zk::register_circuit(
             RuntimeOrigin::root(),
@@ -1268,6 +1268,17 @@ fn transition_mode_full_path() {
             RuntimeOrigin::root(),
             crate::migration::ProofSystemMode::Transitional
         ));
+
+        // SnarkOnly requires at least 1 registered circuit (H19)
+        let circuit_id = H256([10u8; 32]);
+        let vk = BoundedVec::try_from(vec![1u8; 256]).expect("fits");
+        assert_ok!(Zk::register_circuit(
+            RuntimeOrigin::root(),
+            circuit_id,
+            SnarkProofType::Groth16,
+            vk
+        ));
+
         assert_ok!(Zk::transition_proof_system_mode(
             RuntimeOrigin::root(),
             crate::migration::ProofSystemMode::SnarkOnly
@@ -1276,6 +1287,39 @@ fn transition_mode_full_path() {
         assert_eq!(
             Zk::proof_system_mode(),
             crate::migration::ProofSystemMode::SnarkOnly
+        );
+    });
+}
+
+#[test]
+fn transition_to_snark_only_without_circuits_fails() {
+    new_test_ext().execute_with(|| {
+        assert_ok!(Zk::transition_proof_system_mode(
+            RuntimeOrigin::root(),
+            crate::migration::ProofSystemMode::Transitional
+        ));
+
+        // No circuits registered — SnarkOnly should be rejected
+        assert_noop!(
+            Zk::transition_proof_system_mode(
+                RuntimeOrigin::root(),
+                crate::migration::ProofSystemMode::SnarkOnly
+            ),
+            Error::<Test>::NoActiveCircuits
+        );
+    });
+}
+
+#[test]
+fn skip_mode_transition_rejected() {
+    new_test_ext().execute_with(|| {
+        // Legacy -> SnarkOnly should be rejected (H19 sequential only)
+        assert_noop!(
+            Zk::transition_proof_system_mode(
+                RuntimeOrigin::root(),
+                crate::migration::ProofSystemMode::SnarkOnly
+            ),
+            Error::<Test>::InvalidModeTransition
         );
     });
 }
@@ -1354,7 +1398,7 @@ fn mode_transitional_accepts_both() {
             bounded
         ));
 
-        // SNARK proofs also work
+        // SNARK proofs are accepted by mode but rejected by StubVerifier (C10)
         let verifier_account = 2u64;
         let verifier = account_to_actor(verifier_account);
         assert_ok!(Zk::add_trusted_verifier(RuntimeOrigin::root(), verifier));
@@ -1370,23 +1414,37 @@ fn mode_transitional_accepts_both() {
 
         let proof = BoundedVec::try_from(vec![1u8; 256]).expect("fits");
         let inputs = BoundedVec::try_from(vec![[1u8; 32]]).expect("fits");
-        assert_ok!(Zk::verify_snark(
-            RuntimeOrigin::signed(verifier_account),
-            circuit_id,
-            proof,
-            inputs
-        ));
+        // Mode accepts SNARKs, but StubVerifier correctly rejects
+        assert_noop!(
+            Zk::verify_snark(
+                RuntimeOrigin::signed(verifier_account),
+                circuit_id,
+                proof,
+                inputs
+            ),
+            Error::<Test>::SnarkVerificationFailed
+        );
     });
 }
 
 #[test]
 fn mode_snark_only_rejects_stub_proofs() {
     new_test_ext().execute_with(|| {
-        // Transition all the way to SnarkOnly
         assert_ok!(Zk::transition_proof_system_mode(
             RuntimeOrigin::root(),
             crate::migration::ProofSystemMode::Transitional
         ));
+
+        // Register circuit before SnarkOnly (H19)
+        let circuit_id = H256([10u8; 32]);
+        let vk = BoundedVec::try_from(vec![1u8; 256]).expect("fits");
+        assert_ok!(Zk::register_circuit(
+            RuntimeOrigin::root(),
+            circuit_id,
+            SnarkProofType::Groth16,
+            vk
+        ));
+
         assert_ok!(Zk::transition_proof_system_mode(
             RuntimeOrigin::root(),
             crate::migration::ProofSystemMode::SnarkOnly
@@ -1423,20 +1481,12 @@ fn mode_snark_only_rejects_stub_proofs() {
 }
 
 #[test]
-fn mode_snark_only_accepts_snark_proofs() {
+fn mode_snark_only_accepts_snark_submissions() {
     new_test_ext().execute_with(|| {
         assert_ok!(Zk::transition_proof_system_mode(
             RuntimeOrigin::root(),
             crate::migration::ProofSystemMode::Transitional
         ));
-        assert_ok!(Zk::transition_proof_system_mode(
-            RuntimeOrigin::root(),
-            crate::migration::ProofSystemMode::SnarkOnly
-        ));
-
-        let verifier_account = 1u64;
-        let verifier = account_to_actor(verifier_account);
-        assert_ok!(Zk::add_trusted_verifier(RuntimeOrigin::root(), verifier));
 
         let circuit_id = H256([10u8; 32]);
         let vk = BoundedVec::try_from(vec![1u8; 256]).expect("fits");
@@ -1447,14 +1497,27 @@ fn mode_snark_only_accepts_snark_proofs() {
             vk
         ));
 
+        assert_ok!(Zk::transition_proof_system_mode(
+            RuntimeOrigin::root(),
+            crate::migration::ProofSystemMode::SnarkOnly
+        ));
+
+        let verifier_account = 1u64;
+        let verifier = account_to_actor(verifier_account);
+        assert_ok!(Zk::add_trusted_verifier(RuntimeOrigin::root(), verifier));
+
         let proof = BoundedVec::try_from(vec![1u8; 256]).expect("fits");
         let inputs = BoundedVec::try_from(vec![[1u8; 32]]).expect("fits");
-        assert_ok!(Zk::verify_snark(
-            RuntimeOrigin::signed(verifier_account),
-            circuit_id,
-            proof,
-            inputs
-        ));
+        // Mode accepts SNARK submissions; StubVerifier rejects (C10)
+        assert_noop!(
+            Zk::verify_snark(
+                RuntimeOrigin::signed(verifier_account),
+                circuit_id,
+                proof,
+                inputs
+            ),
+            Error::<Test>::SnarkVerificationFailed
+        );
     });
 }
 
@@ -1467,7 +1530,7 @@ fn circuit_registry_bounded_by_max_circuits() {
     // Use a small test with limited MaxCircuits=256
     // Register 256 circuits, then the 257th should fail
     new_test_ext().execute_with(|| {
-        let vk = BoundedVec::try_from(vec![1u8; 64]).expect("fits");
+        let vk = BoundedVec::try_from(vec![1u8; 96]).expect("fits");
 
         for i in 0..256u32 {
             let mut circuit_id = [0u8; 32];
@@ -1501,7 +1564,7 @@ fn circuit_registry_bounded_by_max_circuits() {
 fn deregister_decrements_circuit_count() {
     new_test_ext().execute_with(|| {
         let circuit_id = H256([10u8; 32]);
-        let vk = BoundedVec::try_from(vec![1u8; 64]).expect("fits");
+        let vk = BoundedVec::try_from(vec![1u8; 96]).expect("fits");
 
         assert_ok!(Zk::register_circuit(
             RuntimeOrigin::root(),

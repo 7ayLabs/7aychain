@@ -1,4 +1,4 @@
-#![allow(clippy::disallowed_macros)]
+#![allow(clippy::disallowed_macros, clippy::missing_const_for_thread_local)]
 
 use crate::{self as pallet_presence, Error, Event};
 use frame_support::{assert_noop, assert_ok, derive_impl, parameter_types, traits::ConstU32};
@@ -30,7 +30,7 @@ frame_support::construct_runtime!(
 
 thread_local! {
     static ACTIVE_EPOCHS: RefCell<Vec<u64>> = RefCell::new(vec![1]);
-    static ACTIVE_VALIDATORS: RefCell<Vec<ValidatorId>> = RefCell::new(Vec::new());
+    static ACTIVE_VALIDATORS: RefCell<Vec<ValidatorId>> = const { RefCell::new(Vec::new()) };
 }
 
 pub struct MockEpochProvider;
@@ -46,7 +46,7 @@ impl seveny_primitives::traits::EpochProvider for MockEpochProvider {
 pub struct MockValidatorProvider;
 impl seveny_primitives::traits::ValidatorProvider for MockValidatorProvider {
     fn is_validator_active(validator_id: ValidatorId) -> bool {
-        ACTIVE_VALIDATORS.with(|v| v.borrow().iter().any(|v| *v == validator_id))
+        ACTIVE_VALIDATORS.with(|v| v.borrow().contains(&validator_id))
     }
 }
 
