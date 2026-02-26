@@ -96,7 +96,6 @@ impl Contains<RuntimeCall> for SafeCallFilter {
             RuntimeCall::System(..)
                 | RuntimeCall::Timestamp(..)
                 | RuntimeCall::Balances(..)
-                | RuntimeCall::Sudo(..)
                 | RuntimeCall::Presence(..)
                 | RuntimeCall::Epoch(..)
                 | RuntimeCall::Validator(..)
