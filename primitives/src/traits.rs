@@ -130,6 +130,34 @@ pub trait Invariant {
     }
 }
 
+/// Checks if an epoch is currently active.
+/// Used by pallets that need cross-pallet epoch state without direct dependency.
+pub trait EpochActiveChecker {
+    fn is_epoch_active(epoch: crate::types::EpochId) -> bool;
+}
+
+/// Always returns true -- use in tests or pallets without epoch validation.
+pub struct AlwaysActiveEpoch;
+impl EpochActiveChecker for AlwaysActiveEpoch {
+    fn is_epoch_active(_epoch: crate::types::EpochId) -> bool {
+        true
+    }
+}
+
+/// Checks if a validator is registered and active.
+/// Used by pallets that need to verify validator identity without direct dependency.
+pub trait ValidatorChecker {
+    fn is_validator_registered(validator: crate::types::ValidatorId) -> bool;
+}
+
+/// Always returns true -- use in tests or pallets without validator validation.
+pub struct AlwaysValidValidator;
+impl ValidatorChecker for AlwaysValidValidator {
+    fn is_validator_registered(_validator: crate::types::ValidatorId) -> bool {
+        true
+    }
+}
+
 /// Cross-pallet epoch state provider.
 ///
 /// Allows pallets to query epoch state from the canonical epoch pallet

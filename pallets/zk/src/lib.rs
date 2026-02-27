@@ -843,6 +843,78 @@ pub mod pallet {
 
             Ok(())
         }
+
+        /// M21: Emergency revert from SnarkOnly back to Transitional (root only).
+        /// Only allowed when current mode is SnarkOnly. This is a safety valve
+        /// for situations where SNARK verification becomes unavailable.
+        #[pallet::call_index(10)]
+        #[pallet::weight(T::WeightInfo::emergency_revert_mode())]
+        pub fn emergency_revert_mode(origin: OriginFor<T>) -> DispatchResult {
+            ensure_root(origin)?;
+
+            let current = CurrentProofSystemMode::<T>::get();
+            ensure!(
+                current == migration::ProofSystemMode::SnarkOnly,
+                Error::<T>::InvalidModeTransition
+            );
+
+            let target = migration::ProofSystemMode::Transitional;
+            CurrentProofSystemMode::<T>::put(target);
+
+            Self::deposit_event(Event::ProofSystemModeChanged {
+                from: current,
+                to: target,
+            });
+
+            Ok(())
+        }
+
+        /// M24: Prune old nullifiers and verified proof hashes older than a
+        /// given block. Bounded to max_entries per call to prevent unbounded
+        /// iteration. Root only.
+        #[pallet::call_index(11)]
+        #[pallet::weight(T::WeightInfo::prune_old_proofs())]
+        pub fn prune_old_proofs(
+            origin: OriginFor<T>,
+            older_than: BlockNumberFor<T>,
+            max_entries: u32,
+        ) -> DispatchResult {
+            ensure_root(origin)?;
+
+            let mut pruned = 0u32;
+
+            // Prune nullifiers older than the threshold
+            let mut to_remove_nullifiers = Vec::new();
+            for (nullifier, block) in Nullifiers::<T>::iter() {
+                if pruned >= max_entries {
+                    break;
+                }
+                if block < older_than {
+                    to_remove_nullifiers.push(nullifier);
+                    pruned = pruned.saturating_add(1);
+                }
+            }
+            for nullifier in to_remove_nullifiers {
+                Nullifiers::<T>::remove(nullifier);
+            }
+
+            // Prune verified proof hashes older than the threshold
+            let mut to_remove_proofs = Vec::new();
+            for (hash, block) in VerifiedProofHashes::<T>::iter() {
+                if pruned >= max_entries {
+                    break;
+                }
+                if block < older_than {
+                    to_remove_proofs.push(hash);
+                    pruned = pruned.saturating_add(1);
+                }
+            }
+            for hash in to_remove_proofs {
+                VerifiedProofHashes::<T>::remove(hash);
+            }
+
+            Ok(())
+        }
     }
 
     impl<T: Config> Pallet<T> {

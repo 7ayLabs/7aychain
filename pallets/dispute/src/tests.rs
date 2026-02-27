@@ -58,6 +58,7 @@ parameter_types! {
 
 impl pallet_dispute::Config for Test {
     type WeightInfo = ();
+    type ValidatorChecker = seveny_primitives::AlwaysValidValidator;
     type MaxEvidencePerDispute = MaxEvidencePerDispute;
     type DisputeResolutionPeriod = DisputeResolutionPeriod;
     type MinEvidenceRequired = MinEvidenceRequired;

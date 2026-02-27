@@ -178,6 +178,7 @@ pub struct EpochStorage<T: Config> {
 pub mod pallet {
     use super::*;
     pub use crate::weights::WeightInfo;
+    use seveny_primitives::traits::EpochActiveChecker as _;
 
     #[pallet::pallet]
     pub struct Pallet<T>(_);
@@ -185,6 +186,9 @@ pub mod pallet {
     #[pallet::config]
     pub trait Config: frame_system::Config<RuntimeEvent: From<Event<Self>>> {
         type WeightInfo: WeightInfo;
+
+        /// Checks if an epoch is active before allowing data storage (INV70).
+        type EpochChecker: seveny_primitives::traits::EpochActiveChecker;
 
         #[pallet::constant]
         type MaxDataSize: Get<u32>;
@@ -330,6 +334,12 @@ pub mod pallet {
             retention: RetentionPolicy,
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
+
+            // M07/INV70: verify epoch is active before storing data
+            ensure!(
+                T::EpochChecker::is_epoch_active(epoch),
+                Error::<T>::EpochNotActive
+            );
 
             ensure!(
                 size_bytes <= T::MaxDataSize::get(),

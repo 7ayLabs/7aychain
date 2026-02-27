@@ -321,6 +321,7 @@ fn force_transition_success() {
     new_test_ext().execute_with(|| {
         let epoch_id = EpochId::new(1);
 
+        // Active -> Closed is valid
         assert_ok!(Epoch::force_transition(
             RuntimeOrigin::root(),
             epoch_id,
@@ -329,6 +330,17 @@ fn force_transition_success() {
 
         let metadata = Epoch::epoch_info(epoch_id).expect("epoch should exist");
         assert_eq!(metadata.state, EpochState::Closed);
+
+        // Closed -> Finalized requires grace period
+        run_to_block(112);
+        assert_ok!(Epoch::force_transition(
+            RuntimeOrigin::root(),
+            epoch_id,
+            EpochState::Finalized
+        ));
+
+        let metadata = Epoch::epoch_info(epoch_id).expect("epoch should exist");
+        assert_eq!(metadata.state, EpochState::Finalized);
     });
 }
 
@@ -337,9 +349,30 @@ fn force_transition_invalid() {
     new_test_ext().execute_with(|| {
         let epoch_id = EpochId::new(1);
 
+        // Cannot go backwards
         assert_noop!(
             Epoch::force_transition(RuntimeOrigin::root(), epoch_id, EpochState::Scheduled),
             Error::<Test>::InvalidEpochTransition
+        );
+    });
+}
+
+#[test]
+fn force_transition_finalize_requires_grace_period() {
+    new_test_ext().execute_with(|| {
+        let epoch_id = EpochId::new(1);
+
+        // Close the epoch first
+        assert_ok!(Epoch::force_transition(
+            RuntimeOrigin::root(),
+            epoch_id,
+            EpochState::Closed
+        ));
+
+        // Try to finalize immediately - should fail due to grace period
+        assert_noop!(
+            Epoch::force_transition(RuntimeOrigin::root(), epoch_id, EpochState::Finalized),
+            Error::<Test>::GracePeriodNotElapsed
         );
     });
 }

@@ -56,6 +56,7 @@ parameter_types! {
 
 impl pallet_storage::Config for Test {
     type WeightInfo = ();
+    type EpochChecker = seveny_primitives::AlwaysActiveEpoch;
     type MaxDataSize = MaxDataSize;
     type MaxEntriesPerActor = MaxEntriesPerActor;
     type MaxEntriesPerEpoch = MaxEntriesPerEpoch;

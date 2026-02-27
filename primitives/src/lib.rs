@@ -28,8 +28,9 @@ pub use crypto::{
 
 // Re-export traits with explicit names
 pub use traits::{
-    AggregateSignature, ChainBound, Commitment, ConstantTimeEq, CryptoHash, DomainSeparatedHash,
-    EpochBound, EpochProvider, Invariant, MerkleTree, SecretSharing, Signature, StateTransition,
+    AggregateSignature, AlwaysActiveEpoch, AlwaysValidValidator, ChainBound, Commitment,
+    ConstantTimeEq, CryptoHash, DomainSeparatedHash, EpochActiveChecker, EpochBound, EpochProvider,
+    Invariant, MerkleTree, SecretSharing, Signature, StateTransition, ValidatorChecker,
     ValidatorProvider, ZkProof,
 };
 
