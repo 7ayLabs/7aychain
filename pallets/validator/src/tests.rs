@@ -6,11 +6,12 @@ use frame_support::{
     traits::{ConstU32, ConstU64},
 };
 use frame_system as system;
+use parity_scale_codec::Encode;
 use seveny_primitives::types::{ValidatorId, ViolationType};
 use sp_arithmetic::Perbill;
 use sp_core::H256;
 use sp_runtime::{
-    traits::{BlakeTwo256, Hash, IdentityLookup},
+    traits::{BlakeTwo256, IdentityLookup},
     BuildStorage,
 };
 
@@ -156,8 +157,7 @@ fn new_test_ext_with_validators() -> sp_io::TestExternalities {
 }
 
 fn account_to_validator(account: u64) -> ValidatorId {
-    let hash = BlakeTwo256::hash_of(&account);
-    ValidatorId::from(H256(hash.0))
+    seveny_primitives::crypto::derive_validator_id(&account.encode())
 }
 
 fn run_to_block(n: u64) {
@@ -481,7 +481,7 @@ fn increase_stake_success() {
     new_test_ext().execute_with(|| {
         assert_ok!(Validator::register_validator(
             RuntimeOrigin::signed(1),
-            3000
+            5000
         ));
         assert_ok!(Validator::register_validator(
             RuntimeOrigin::signed(2),
@@ -495,7 +495,7 @@ fn increase_stake_success() {
 
         assert_eq!(info.stake, 1700);
         assert_eq!(Validator::validator_stake(validator_id), 1700);
-        assert_eq!(Validator::total_stake(), 4700);
+        assert_eq!(Validator::total_stake(), 6700);
     });
 }
 
@@ -653,7 +653,7 @@ fn report_evidence_duplicate_rejected() {
 }
 
 #[test]
-fn report_evidence_different_reporters_allowed() {
+fn report_evidence_same_violation_different_reporter_rejected() {
     new_test_ext_with_validators().execute_with(|| {
         let validator_id = account_to_validator(1);
 
@@ -663,11 +663,34 @@ fn report_evidence_different_reporters_allowed() {
             ViolationType::Minor
         ));
 
-        // Different reporter, same validator — should succeed
+        // C03: same (validator, violation) pair blocked even from different reporter
+        assert_noop!(
+            Validator::report_evidence(
+                RuntimeOrigin::signed(8),
+                validator_id,
+                ViolationType::Minor
+            ),
+            Error::<Test>::DuplicateSlash
+        );
+    });
+}
+
+#[test]
+fn report_evidence_different_violations_allowed() {
+    new_test_ext_with_validators().execute_with(|| {
+        let validator_id = account_to_validator(1);
+
+        assert_ok!(Validator::report_evidence(
+            RuntimeOrigin::signed(7),
+            validator_id,
+            ViolationType::Minor
+        ));
+
+        // Different violation type on same validator should succeed
         assert_ok!(Validator::report_evidence(
             RuntimeOrigin::signed(8),
             validator_id,
-            ViolationType::Minor
+            ViolationType::Moderate
         ));
     });
 }

@@ -67,7 +67,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     spec_name: Cow::Borrowed("seveny"),
     impl_name: Cow::Borrowed("seveny-node"),
     authoring_version: 1,
-    spec_version: 106,
+    spec_version: 107,
     impl_version: 1,
     apis: RUNTIME_API_VERSIONS,
     transaction_version: 1,
@@ -86,15 +86,34 @@ const NORMAL_DISPATCH_RATIO: Perbill = Perbill::from_percent(75);
 
 /// Base call filter for the runtime.
 ///
-/// Aura and Grandpa expose no user-dispatchable calls in this runtime, so
-/// consensus internals are already not directly callable via extrinsics.
-///
-/// SECURITY: Before mainnet, replace this permissive filter with an explicit
-/// allowlist and evaluate Sudo removal.
+/// Explicit allowlist of dispatchable calls. Only listed pallets and call
+/// variants are permitted. Consensus internals (Aura, Grandpa) are excluded.
 pub struct SafeCallFilter;
 impl Contains<RuntimeCall> for SafeCallFilter {
-    fn contains(_call: &RuntimeCall) -> bool {
-        true
+    fn contains(call: &RuntimeCall) -> bool {
+        matches!(
+            call,
+            RuntimeCall::System(..)
+                | RuntimeCall::Timestamp(..)
+                | RuntimeCall::Balances(..)
+                | RuntimeCall::Sudo(..)
+                | RuntimeCall::Presence(..)
+                | RuntimeCall::Epoch(..)
+                | RuntimeCall::Validator(..)
+                | RuntimeCall::Dispute(..)
+                | RuntimeCall::Governance(..)
+                | RuntimeCall::Semantic(..)
+                | RuntimeCall::Boomerang(..)
+                | RuntimeCall::Autonomous(..)
+                | RuntimeCall::Octopus(..)
+                | RuntimeCall::Device(..)
+                | RuntimeCall::Vault(..)
+                | RuntimeCall::Zk(..)
+                | RuntimeCall::Storage(..)
+                | RuntimeCall::Lifecycle(..)
+                | RuntimeCall::Triangulation(..)
+                | RuntimeCall::DeviceScanner(..)
+        )
     }
 }
 
@@ -245,6 +264,8 @@ impl pallet_presence::Config for Runtime {
     type RevealWindow = RevealWindow;
     type MinWitnessesForVerification = MinWitnessesForVerification;
     type PositionToleranceMeters = PositionToleranceMeters;
+    type EpochProvider = Epoch;
+    type ValidatorProvider = Validator;
 }
 
 parameter_types! {
