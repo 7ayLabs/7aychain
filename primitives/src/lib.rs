@@ -20,16 +20,18 @@ pub use types::*;
 
 // Re-export crypto with explicit names to avoid conflicts
 pub use crypto::{
-    hash_pair, hash_with_domain, MerkleProof, Nullifier, PresenceCommitment, PresenceProof,
-    PresenceStatement, PresenceWitness, Share, ShareIndex, StateRoot, DOMAIN_COMMITMENT,
-    DOMAIN_EPOCH, DOMAIN_MERKLE, DOMAIN_NULLIFIER, DOMAIN_PRESENCE,
+    derive_actor_id, derive_validator_id, hash_pair, hash_with_domain, MerkleProof, Nullifier,
+    PresenceCommitment, PresenceProof, PresenceStatement, PresenceWitness, Share, ShareIndex,
+    StateRoot, DOMAIN_ACTOR, DOMAIN_COMMITMENT, DOMAIN_EPOCH, DOMAIN_MERKLE, DOMAIN_NULLIFIER,
+    DOMAIN_PRESENCE, DOMAIN_VALIDATOR_ID,
 };
 
 // Re-export traits with explicit names
 pub use traits::{
     AggregateSignature, AlwaysActiveEpoch, AlwaysValidValidator, ChainBound, Commitment,
-    ConstantTimeEq, CryptoHash, DomainSeparatedHash, EpochActiveChecker, EpochBound, Invariant,
-    MerkleTree, SecretSharing, Signature, StateTransition, ValidatorChecker, ZkProof,
+    ConstantTimeEq, CryptoHash, DomainSeparatedHash, EpochActiveChecker, EpochBound,
+    EpochProvider, Invariant, MerkleTree, SecretSharing, Signature, StateTransition,
+    ValidatorChecker, ValidatorProvider, ZkProof,
 };
 
 pub use fusion::{

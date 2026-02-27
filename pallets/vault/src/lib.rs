@@ -845,6 +845,10 @@ pub mod pallet {
                 v.status = VaultStatus::Locked;
                 v.last_activity = frame_system::Pallet::<T>::block_number();
 
+                ActiveVaultCount::<T>::mutate(|count| {
+                    *count = count.saturating_sub(1);
+                });
+
                 Self::deposit_event(Event::VaultLocked { vault_id });
 
                 Ok(())

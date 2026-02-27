@@ -382,6 +382,21 @@ impl DomainSeparatedHash for PresenceCommitment {
     }
 }
 
+pub const DOMAIN_ACTOR: &[u8] = b"7ay:actor:v1";
+pub const DOMAIN_VALIDATOR_ID: &[u8] = b"7ay:validator:v1";
+
+/// Derive an ActorId from SCALE-encoded account bytes using domain separation.
+pub fn derive_actor_id(account_bytes: &[u8]) -> crate::types::ActorId {
+    let hash = hash_with_domain(DOMAIN_ACTOR, account_bytes);
+    crate::types::ActorId::from_raw(hash.0)
+}
+
+/// Derive a ValidatorId from SCALE-encoded account bytes using domain separation.
+pub fn derive_validator_id(account_bytes: &[u8]) -> crate::types::ValidatorId {
+    let hash = hash_with_domain(DOMAIN_VALIDATOR_ID, account_bytes);
+    crate::types::ValidatorId::from(H256(hash.0))
+}
+
 pub const DOMAIN_SHARE: &[u8] = b"7ay:share:v1";
 pub const DOMAIN_VSS: &[u8] = b"7ay:vss:v1";
 pub const DOMAIN_VAULT_FEK: &[u8] = b"7ay:vault:fek:v1";
