@@ -284,6 +284,8 @@ pub mod pallet {
         TooManyDevices,
         InvalidInherentData,
         ScanDataAlreadyReceived,
+        /// scan_timestamp must be >= previous scan_timestamp
+        InvalidTimestamp,
     }
 
     #[pallet::call]
@@ -299,6 +301,13 @@ pub mod pallet {
             ensure!(
                 data.devices.len() <= MAX_DEVICES_PER_INHERENT as usize,
                 Error::<T>::TooManyDevices
+            );
+
+            // Validate scan_timestamp is monotonically increasing (M03)
+            let last_timestamp = LastScanTimestamp::<T>::get();
+            ensure!(
+                data.scan_timestamp >= last_timestamp,
+                Error::<T>::InvalidTimestamp
             );
 
             let block_number = frame_system::Pallet::<T>::block_number();

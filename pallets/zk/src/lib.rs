@@ -243,8 +243,9 @@ pub struct CircuitData<BlockNumber> {
 /// Maximum size of verification key data
 pub type MaxVkSize = ConstU32<4096>;
 
-/// Minimum size of verification key data (prevents empty/trivial VKs)
-pub const MIN_VK_SIZE: u32 = 32;
+/// Minimum size of verification key data.
+/// A valid Groth16 compressed VK is ~256+ bytes; 96 is the hard floor.
+pub const MIN_VK_SIZE: u32 = 96;
 
 /// Maximum number of public inputs
 pub type MaxPublicInputs = ConstU32<16>;
@@ -443,6 +444,10 @@ pub mod pallet {
         CircuitRegistryFull,
         /// This proof has already been verified (replay protection)
         ProofAlreadyVerified,
+        /// Circuit proof type not supported by current verifier
+        UnsupportedProofType,
+        /// Cannot transition to SnarkOnly without active circuits
+        NoActiveCircuits,
     }
 
     #[pallet::call]
@@ -742,16 +747,29 @@ pub mod pallet {
 
             Self::check_verification_limit()?;
 
-            // Replay protection: reject already-verified proofs
-            let proof_hash = H256(blake2_256(&proof));
+            let circuit =
+                CircuitRegistry::<T>::get(circuit_id).ok_or(Error::<T>::CircuitNotFound)?;
+            ensure!(circuit.active, Error::<T>::CircuitNotActive);
+
+            // Only Groth16 is currently supported (M22)
+            ensure!(
+                circuit.proof_type == SnarkProofType::Groth16,
+                Error::<T>::UnsupportedProofType
+            );
+
+            // Replay protection: hash circuit_id + public inputs (H05)
+            // Proof bytes are malleable in Groth16 (negation of A,B),
+            // so we hash the semantic content instead.
+            let mut replay_data = Vec::with_capacity(32 + inputs.len() * 32);
+            replay_data.extend_from_slice(circuit_id.as_bytes());
+            for input in inputs.iter() {
+                replay_data.extend_from_slice(input);
+            }
+            let proof_hash = H256(blake2_256(&replay_data));
             ensure!(
                 !VerifiedProofHashes::<T>::contains_key(proof_hash),
                 Error::<T>::ProofAlreadyVerified
             );
-
-            let circuit =
-                CircuitRegistry::<T>::get(circuit_id).ok_or(Error::<T>::CircuitNotFound)?;
-            ensure!(circuit.active, Error::<T>::CircuitNotActive);
 
             let vk = VerificationKeys::<T>::get(circuit_id).ok_or(Error::<T>::CircuitNotFound)?;
 
@@ -810,6 +828,11 @@ pub mod pallet {
                 current.can_transition_to(new_mode),
                 Error::<T>::InvalidModeTransition
             );
+
+            // SnarkOnly requires at least 1 active circuit (H19)
+            if new_mode == migration::ProofSystemMode::SnarkOnly {
+                ensure!(CircuitCount::<T>::get() > 0, Error::<T>::NoActiveCircuits);
+            }
 
             CurrentProofSystemMode::<T>::put(new_mode);
 
@@ -909,9 +932,7 @@ pub mod pallet {
         }
 
         fn account_to_actor(account: T::AccountId) -> ActorId {
-            let encoded = account.encode();
-            let hash = sp_core::blake2_256(&encoded);
-            ActorId::from_raw(hash)
+            seveny_primitives::crypto::derive_actor_id(&account.encode())
         }
 
         pub fn is_nullifier_used(nullifier: &Nullifier) -> bool {
@@ -957,7 +978,9 @@ pub mod pallet {
             epoch_id: u64,
             state_root: StateRoot,
         ) -> (PresenceStatement, Vec<u8>) {
-            let nullifier = Nullifier::derive(secret, epoch_id);
+            let genesis_hash = frame_system::Pallet::<T>::block_hash(BlockNumberFor::<T>::zero());
+            let genesis_bytes: [u8; 32] = genesis_hash.as_ref().try_into().unwrap_or([0u8; 32]);
+            let nullifier = Nullifier::derive(secret, epoch_id, &genesis_bytes);
 
             let statement = PresenceStatement {
                 epoch_id,

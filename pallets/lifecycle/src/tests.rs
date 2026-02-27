@@ -77,9 +77,7 @@ fn create_key_hash(seed: u8) -> H256 {
 
 fn account_to_actor(account: u64) -> ActorId {
     use parity_scale_codec::Encode;
-    let encoded = account.encode();
-    let hash = sp_core::blake2_256(&encoded);
-    ActorId::from_raw(hash)
+    seveny_primitives::crypto::derive_actor_id(&account.encode())
 }
 
 fn register_and_activate(account: u64, key_hash: H256) {
@@ -277,6 +275,9 @@ fn cancel_destruction_success() {
             DestructionReason::OwnerRequest
         ));
 
+        // H12: advance past minimum wait (timeout=50, min_wait=25)
+        System::set_block_number(26);
+
         assert_ok!(Lifecycle::cancel_destruction(RuntimeOrigin::signed(1)));
 
         let actor = account_to_actor(1);
@@ -452,5 +453,176 @@ fn suspended_actor_cannot_initiate_destruction() {
         );
 
         assert!(!Lifecycle::is_destruction_pending(actor));
+    });
+}
+
+// --- H12: cancel_destruction minimum wait ---
+
+#[test]
+fn cancel_destruction_too_early_fails() {
+    new_test_ext().execute_with(|| {
+        let key_hash = create_key_hash(1);
+        register_and_activate(1, key_hash);
+
+        assert_ok!(Lifecycle::initiate_destruction(
+            RuntimeOrigin::signed(1),
+            DestructionReason::OwnerRequest
+        ));
+
+        // Still at block 1, min_wait = 25, so cancellation should fail
+        assert_noop!(
+            Lifecycle::cancel_destruction(RuntimeOrigin::signed(1)),
+            Error::<Test>::CancellationTooEarly
+        );
+
+        // Advance to block 25 (exactly at min_wait boundary)
+        System::set_block_number(26);
+        assert_ok!(Lifecycle::cancel_destruction(RuntimeOrigin::signed(1)));
+    });
+}
+
+// --- H13: timed-out destruction with insufficient attestations reverts ---
+
+#[test]
+fn destruction_timeout_insufficient_attestations_reverts() {
+    new_test_ext().execute_with(|| {
+        let key_hash = create_key_hash(1);
+        register_and_activate(1, key_hash);
+        register_and_activate(2, create_key_hash(2));
+
+        assert_ok!(Lifecycle::initiate_destruction(
+            RuntimeOrigin::signed(1),
+            DestructionReason::OwnerRequest
+        ));
+
+        let actor = account_to_actor(1);
+
+        // Only 1 attestation (need 3)
+        assert_ok!(Lifecycle::attest_destruction(
+            RuntimeOrigin::signed(2),
+            actor,
+            create_key_hash(99)
+        ));
+        assert_eq!(Lifecycle::get_attestation_count(actor), 1);
+
+        // Advance past timeout (50 blocks)
+        System::set_block_number(52);
+        Lifecycle::on_initialize(52);
+
+        // Actor should be reverted to Active (prior_status)
+        let lifecycle = Lifecycle::actors(actor).expect("actor should exist");
+        assert_eq!(lifecycle.status, ActorStatus::Active);
+        assert_eq!(lifecycle.key_status, KeyStatus::Active);
+
+        // Destruction request should be removed
+        assert!(!Lifecycle::is_destruction_pending(actor));
+    });
+}
+
+// --- H14: rotation cooldown enforcement ---
+
+#[test]
+fn rotation_cooldown_enforced() {
+    new_test_ext().execute_with(|| {
+        let key1 = create_key_hash(1);
+        let key2 = create_key_hash(2);
+        let key3 = create_key_hash(3);
+        register_and_activate(1, key1);
+
+        // First rotation
+        assert_ok!(Lifecycle::initiate_rotation(RuntimeOrigin::signed(1), key2));
+        assert_ok!(Lifecycle::complete_rotation(RuntimeOrigin::signed(1)));
+
+        // Immediately try second rotation — should fail (cooldown=10)
+        assert_noop!(
+            Lifecycle::initiate_rotation(RuntimeOrigin::signed(1), key3),
+            Error::<Test>::RotationCooldownActive
+        );
+
+        // Advance past cooldown
+        System::set_block_number(12);
+        assert_ok!(Lifecycle::initiate_rotation(RuntimeOrigin::signed(1), key3));
+    });
+}
+
+// --- H15: complete_rotation removes entry ---
+
+#[test]
+fn complete_rotation_removes_entry() {
+    new_test_ext().execute_with(|| {
+        let old_key = create_key_hash(1);
+        let new_key = create_key_hash(2);
+        register_and_activate(1, old_key);
+
+        assert_ok!(Lifecycle::initiate_rotation(
+            RuntimeOrigin::signed(1),
+            new_key
+        ));
+
+        let actor = account_to_actor(1);
+        assert!(Lifecycle::key_rotations(actor).is_some());
+
+        assert_ok!(Lifecycle::complete_rotation(RuntimeOrigin::signed(1)));
+
+        // H15: entry should be fully removed, not just marked completed
+        assert!(Lifecycle::key_rotations(actor).is_none());
+
+        // Key should be updated
+        let lifecycle = Lifecycle::actors(actor).expect("actor should exist");
+        assert_eq!(lifecycle.key_hash, new_key);
+    });
+}
+
+// --- M10: cancel_destruction restores prior_status ---
+
+#[test]
+fn cancel_destruction_restores_prior_status() {
+    new_test_ext().execute_with(|| {
+        let key_hash = create_key_hash(1);
+        register_and_activate(1, key_hash);
+
+        let actor = account_to_actor(1);
+        let lifecycle = Lifecycle::actors(actor).expect("actor should exist");
+        assert_eq!(lifecycle.status, ActorStatus::Active);
+
+        assert_ok!(Lifecycle::initiate_destruction(
+            RuntimeOrigin::signed(1),
+            DestructionReason::OwnerRequest
+        ));
+
+        // Advance past min wait
+        System::set_block_number(26);
+        assert_ok!(Lifecycle::cancel_destruction(RuntimeOrigin::signed(1)));
+
+        // Should restore to Active (the prior_status)
+        let lifecycle = Lifecycle::actors(actor).expect("actor should exist");
+        assert_eq!(lifecycle.status, ActorStatus::Active);
+    });
+}
+
+// --- Rotation timeout cleans up ---
+
+#[test]
+fn rotation_timeout_reverts_key_status() {
+    new_test_ext().execute_with(|| {
+        let key1 = create_key_hash(1);
+        let key2 = create_key_hash(2);
+        register_and_activate(1, key1);
+
+        assert_ok!(Lifecycle::initiate_rotation(RuntimeOrigin::signed(1), key2));
+
+        let actor = account_to_actor(1);
+        let lifecycle = Lifecycle::actors(actor).expect("actor should exist");
+        assert_eq!(lifecycle.key_status, KeyStatus::Rotating);
+
+        // Advance past rotation timeout (100 blocks)
+        System::set_block_number(102);
+        Lifecycle::on_initialize(102);
+
+        // Key status should revert to Active, rotation entry removed
+        let lifecycle = Lifecycle::actors(actor).expect("actor should exist");
+        assert_eq!(lifecycle.key_status, KeyStatus::Active);
+        assert_eq!(lifecycle.key_hash, key1); // old key preserved
+        assert!(Lifecycle::key_rotations(actor).is_none());
     });
 }

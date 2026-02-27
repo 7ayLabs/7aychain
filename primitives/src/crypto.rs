@@ -14,6 +14,9 @@ pub const DOMAIN_EPOCH: &[u8] = b"7ay:epoch:v1";
 pub const DOMAIN_COMMITMENT: &[u8] = b"7ay:commit:v1";
 pub const DOMAIN_MERKLE: &[u8] = b"7ay:merkle:v1";
 pub const DOMAIN_NULLIFIER: &[u8] = b"7ay:nullifier:v1";
+pub const DOMAIN_BOOMERANG: &[u8] = b"7ay:boomerang:v1";
+pub const DOMAIN_STORAGE_KEY: &[u8] = b"7ay:storage:key:v1";
+pub const DOMAIN_ENTROPY_MIX: &[u8] = b"7ay:entropy:mix:v1";
 
 /// Hash with domain separation.
 ///
@@ -146,12 +149,26 @@ impl MerkleProof {
 pub struct Nullifier(pub H256);
 
 impl Nullifier {
-    /// Derive a nullifier from a secret and epoch.
+    /// Derive a nullifier from a secret, epoch, and chain context.
     ///
-    /// INV1: One nullifier per (secret, epoch) pair — no nonce parameter,
-    /// ensuring the same actor cannot produce different nullifiers for the
-    /// same epoch, which would defeat double-presence prevention.
-    pub fn derive(secret: &[u8; 32], epoch_id: u64) -> Self {
+    /// INV1: One nullifier per (secret, epoch, chain) tuple — no nonce
+    /// parameter, ensuring the same actor cannot produce different nullifiers
+    /// for the same epoch, which would defeat double-presence prevention.
+    ///
+    /// M12: Including `genesis_hash` prevents cross-chain replay of
+    /// nullifiers. A nullifier valid on one chain is invalid on any other
+    /// chain with a different genesis block.
+    pub fn derive(secret: &[u8; 32], epoch_id: u64, genesis_hash: &[u8; 32]) -> Self {
+        let mut data = Vec::with_capacity(32 + 8 + 32);
+        data.extend_from_slice(secret);
+        data.extend_from_slice(&epoch_id.to_le_bytes());
+        data.extend_from_slice(genesis_hash);
+        Self(hash_with_domain(DOMAIN_NULLIFIER, &data))
+    }
+
+    /// Legacy derivation without chain binding (for migration/testing).
+    #[cfg(test)]
+    pub fn derive_legacy(secret: &[u8; 32], epoch_id: u64) -> Self {
         let mut data = Vec::with_capacity(32 + 8);
         data.extend_from_slice(secret);
         data.extend_from_slice(&epoch_id.to_le_bytes());
@@ -414,9 +431,10 @@ pub struct ShamirScheme;
 impl ShamirScheme {
     /// Split a secret into shares using (threshold, total) Shamir scheme.
     ///
-    /// `entropy` provides randomness for polynomial coefficients. Different
-    /// entropy values produce different share sets for the same secret,
-    /// preventing predictable share generation.
+    /// `entropy` provides randomness for polynomial coefficients. The raw
+    /// entropy is mixed with the secret and scheme parameters via
+    /// domain-separated hashing (H06) so that an attacker who controls
+    /// `entropy` alone cannot predict the resulting polynomial coefficients.
     pub fn split(
         secret: &[u8; 32],
         threshold: u8,
@@ -427,12 +445,21 @@ impl ShamirScheme {
             return None;
         }
 
+        // H06: mix caller-provided entropy with secret and scheme parameters
+        // so that controlling entropy alone is insufficient to predict shares
+        let mut mix_input = Vec::with_capacity(32 + 32 + 2);
+        mix_input.extend_from_slice(entropy);
+        mix_input.extend_from_slice(secret);
+        mix_input.push(threshold);
+        mix_input.push(total);
+        let mixed_entropy = hash_with_domain(DOMAIN_ENTROPY_MIX, &mix_input);
+
         let mut shares = Vec::with_capacity(total as usize);
         let mut coefficients = Vec::with_capacity(threshold as usize);
         coefficients.push(*secret);
 
         for i in 1..threshold {
-            let seed_input = [&entropy[..], &[i][..]].concat();
+            let seed_input = [mixed_entropy.as_bytes(), &[i][..]].concat();
             let coeff = hash_with_domain(b"7ay:shamir:coeff:v1", &seed_input).0;
             coefficients.push(coeff);
         }
@@ -760,11 +787,12 @@ mod tests {
     #[test]
     fn nullifier_uniqueness() {
         let secret = [42u8; 32];
-        let n1 = Nullifier::derive(&secret, 1);
-        let n2 = Nullifier::derive(&secret, 2);
+        let genesis = [0xAA; 32];
+        let n1 = Nullifier::derive(&secret, 1, &genesis);
+        let n2 = Nullifier::derive(&secret, 2, &genesis);
 
-        // Same secret + same epoch = same nullifier (INV1)
-        let n1_dup = Nullifier::derive(&secret, 1);
+        // Same secret + same epoch + same chain = same nullifier (INV1)
+        let n1_dup = Nullifier::derive(&secret, 1, &genesis);
         assert_eq!(n1, n1_dup);
 
         // Different epochs = different nullifiers
@@ -772,8 +800,13 @@ mod tests {
 
         // Different secrets = different nullifiers
         let other_secret = [99u8; 32];
-        let n3 = Nullifier::derive(&other_secret, 1);
+        let n3 = Nullifier::derive(&other_secret, 1, &genesis);
         assert_ne!(n1, n3);
+
+        // M12: Different chains = different nullifiers (cross-chain replay prevention)
+        let other_genesis = [0xBB; 32];
+        let n4 = Nullifier::derive(&secret, 1, &other_genesis);
+        assert_ne!(n1, n4);
     }
 
     #[test]

@@ -363,6 +363,8 @@ pub mod pallet {
         BlockRefConversionFailed,
         // Position-Based Triangulation Errors
         PositionAlreadyClaimed,
+        /// H17: position already verified, cannot re-verify
+        PositionAlreadyVerified,
         PositionNotClaimed,
         DuplicateAttestation,
         InvalidLatencyMeasurement,
@@ -374,6 +376,8 @@ pub mod pallet {
         MaxVotesExceeded,
         /// M14: Commitment exists but has not been revealed before finalization.
         CommitmentNotRevealed,
+        /// Actor must have a presence declaration before claiming position
+        PresenceDeclarationRequired,
     }
 
     #[pallet::genesis_config]
@@ -752,6 +756,13 @@ pub mod pallet {
             let block_number = frame_system::Pallet::<T>::block_number();
 
             Self::ensure_epoch_active(&epoch)?;
+
+            // Require presence declaration before position claim (M25)
+            ensure!(
+                Presences::<T>::contains_key(epoch, actor),
+                Error::<T>::PresenceDeclarationRequired
+            );
+
             ensure!(
                 !PositionClaims::<T>::contains_key(epoch, actor),
                 Error::<T>::PositionAlreadyClaimed
@@ -856,6 +867,9 @@ pub mod pallet {
             let mut claim =
                 PositionClaims::<T>::get(epoch, target).ok_or(Error::<T>::PositionNotClaimed)?;
 
+            // H17: reject re-verification of already verified claims
+            ensure!(!claim.verified, Error::<T>::PositionAlreadyVerified);
+
             let attestation_count = AttestationCount::<T>::get(epoch, target);
             let min_witnesses = T::MinWitnessesForVerification::get();
             ensure!(
@@ -863,10 +877,12 @@ pub mod pallet {
                 Error::<T>::InsufficientWitnesses
             );
 
-            // Collect all attestations for this target
+            // Collect attestations for this target, bounded to prevent DoS (M01)
+            let max_attestations = (min_witnesses as usize).saturating_mul(3).max(10);
             let attestations: Vec<WitnessAttestation<BlockNumberFor<T>>> =
                 WitnessAttestations::<T>::iter_prefix((epoch, target))
                     .map(|(_, attestation)| attestation)
+                    .take(max_attestations)
                     .collect();
 
             // Triangulate position from witnesses

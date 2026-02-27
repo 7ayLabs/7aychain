@@ -24,7 +24,7 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 use ark_bn254::{Bn254, Fr};
-use ark_ff::PrimeField;
+use ark_ff::{BigInteger, PrimeField};
 use ark_groth16::{PreparedVerifyingKey, Proof, VerifyingKey};
 use ark_serialize::CanonicalDeserialize;
 use ark_snark::SNARK;
@@ -43,6 +43,8 @@ pub enum Groth16Error {
     InvalidVerificationKey,
     /// Pairing check failed or verification returned an error.
     VerificationFailed,
+    /// A public input is not a canonical field element (>= modulus).
+    NonCanonicalInput,
 }
 
 /// Groth16 BN254 verifier for production SNARK proof verification.
@@ -71,11 +73,21 @@ impl Groth16Verifier {
     }
 
     /// Convert `[u8; 32]` public inputs to BN254 Fr field elements.
-    /// Each input is interpreted as big-endian and reduced mod p.
-    fn convert_public_inputs(inputs: &[[u8; 32]]) -> Vec<Fr> {
+    /// Rejects non-canonical inputs (values >= field modulus) to prevent
+    /// silent reduction that could alter proof semantics (M13).
+    fn convert_public_inputs(inputs: &[[u8; 32]]) -> Result<Vec<Fr>, Groth16Error> {
         inputs
             .iter()
-            .map(|bytes| Fr::from_be_bytes_mod_order(bytes))
+            .map(|bytes| {
+                let fr = Fr::from_be_bytes_mod_order(bytes);
+                // Roundtrip canonicality: if the input was >= modulus,
+                // the serialized form will differ from the original.
+                let canonical = fr.into_bigint().to_bytes_be();
+                if canonical.as_slice() != bytes.as_slice() {
+                    return Err(Groth16Error::NonCanonicalInput);
+                }
+                Ok(fr)
+            })
             .collect()
     }
 
@@ -87,7 +99,7 @@ impl Groth16Verifier {
     ) -> Result<bool, Groth16Error> {
         let proof = Self::deserialize_proof(proof_bytes)?;
         let vk = Self::deserialize_vk(vk_bytes)?;
-        let inputs = Self::convert_public_inputs(input_bytes);
+        let inputs = Self::convert_public_inputs(input_bytes)?;
 
         let pvk = PreparedVerifyingKey::from(vk);
 
