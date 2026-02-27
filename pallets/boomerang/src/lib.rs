@@ -19,7 +19,10 @@ pub mod pallet {
         BoundedVec,
     };
     use frame_system::pallet_prelude::*;
-    use seveny_primitives::types::ActorId;
+    use seveny_primitives::{
+        crypto::{derive_actor_id, hash_with_domain, DOMAIN_BOOMERANG},
+        types::ActorId,
+    };
     use sp_runtime::Saturating;
 
     use crate::WeightInfo;
@@ -285,6 +288,8 @@ pub mod pallet {
         VerificationFailed,
         InvalidTarget,
         SelfPath,
+        /// Hop from_actor does not match previous hop's to_actor
+        InvalidHopChain,
     }
 
     #[pallet::genesis_config]
@@ -431,13 +436,23 @@ pub mod pallet {
                 Error::<T>::MaxHopsReached
             );
 
+            // Validate hop chain continuity (H18)
+            let hop_count = HopCount::<T>::get(path_id);
+            if hop_count == 0 {
+                ensure!(from_actor == path.initiator, Error::<T>::InvalidHopChain);
+            } else {
+                let prev_hop_id = HopId::new(hop_count.saturating_sub(1));
+                let prev_hop =
+                    PathHops::<T>::get(path_id, prev_hop_id).ok_or(Error::<T>::PathNotFound)?;
+                ensure!(from_actor == prev_hop.to_actor, Error::<T>::InvalidHopChain);
+            }
+
             let direction = if path.status == PathStatus::AwaitingReturn {
                 HopDirection::Return
             } else {
                 HopDirection::Outbound
             };
 
-            let hop_count = HopCount::<T>::get(path_id);
             let hop_id = HopId::new(hop_count);
             HopCount::<T>::insert(path_id, hop_count.saturating_add(1));
 
@@ -620,8 +635,6 @@ pub mod pallet {
         }
 
         fn compute_verification_hash(path_id: PathId) -> sp_core::H256 {
-            use sp_runtime::traits::Hash;
-
             let hops = Self::get_path_hops(path_id);
             let mut data = Vec::new();
 
@@ -631,15 +644,11 @@ pub mod pallet {
                 data.extend_from_slice(hop.signature_hash.as_bytes());
             }
 
-            let hash = <T as frame_system::Config>::Hashing::hash(&data);
-            let hash_bytes: [u8; 32] = hash.as_ref().try_into().unwrap_or([0u8; 32]);
-            sp_core::H256(hash_bytes)
+            hash_with_domain(DOMAIN_BOOMERANG, &data)
         }
 
         fn account_to_actor(account: &T::AccountId) -> ActorId {
-            let encoded = account.encode();
-            let hash = sp_core::blake2_256(&encoded);
-            ActorId::from_raw(hash)
+            derive_actor_id(&account.encode())
         }
     }
 }

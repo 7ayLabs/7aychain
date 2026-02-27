@@ -83,9 +83,7 @@ fn new_test_ext() -> sp_io::TestExternalities {
 
 fn account_to_actor(account: u64) -> ActorId {
     use parity_scale_codec::Encode;
-    let encoded = account.encode();
-    let hash = sp_core::blake2_256(&encoded);
-    ActorId::from_raw(hash)
+    seveny_primitives::crypto::derive_actor_id(&account.encode())
 }
 
 #[test]

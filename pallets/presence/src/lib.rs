@@ -372,6 +372,8 @@ pub mod pallet {
         SelfAttestation,
         InvalidBlockNumber,
         MaxVotesExceeded,
+        /// Actor must have a presence declaration before claiming position
+        PresenceDeclarationRequired,
     }
 
     #[pallet::genesis_config]
@@ -737,6 +739,13 @@ pub mod pallet {
             let block_number = frame_system::Pallet::<T>::block_number();
 
             Self::ensure_epoch_active(&epoch)?;
+
+            // Require presence declaration before position claim (M25)
+            ensure!(
+                Presences::<T>::contains_key(epoch, actor),
+                Error::<T>::PresenceDeclarationRequired
+            );
+
             ensure!(
                 !PositionClaims::<T>::contains_key(epoch, actor),
                 Error::<T>::PositionAlreadyClaimed
@@ -848,10 +857,12 @@ pub mod pallet {
                 Error::<T>::InsufficientWitnesses
             );
 
-            // Collect all attestations for this target
+            // Collect attestations for this target, bounded to prevent DoS (M01)
+            let max_attestations = (min_witnesses as usize).saturating_mul(3).max(10);
             let attestations: Vec<WitnessAttestation<BlockNumberFor<T>>> =
                 WitnessAttestations::<T>::iter_prefix((epoch, target))
                     .map(|(_, attestation)| attestation)
+                    .take(max_attestations)
                     .collect();
 
             // Triangulate position from witnesses

@@ -630,9 +630,7 @@ pub mod pallet {
 
     impl<T: Config> Pallet<T> {
         fn account_to_actor(account: T::AccountId) -> ActorId {
-            let encoded = account.encode();
-            let hash = sp_core::blake2_256(&encoded);
-            ActorId::from_raw(hash)
+            seveny_primitives::crypto::derive_actor_id(&account.encode())
         }
 
         fn finalize_destruction(actor: ActorId) -> DispatchResult {
