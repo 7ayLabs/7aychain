@@ -345,7 +345,6 @@ pub mod pallet {
         #[pallet::weight(T::WeightInfo::register_device())]
         pub fn register_device(
             origin: OriginFor<T>,
-            _owner: ActorId,
             device_type: DeviceType,
             public_key_hash: H256,
             attestation_type: AttestationType,
@@ -591,6 +590,11 @@ pub mod pallet {
                     Error::<T>::CannotReactivateRevokedDevice
                 );
 
+                // C11: decrement OfflineDeviceCount when reactivating Offline device
+                if d.status == DeviceStatus::Offline {
+                    OfflineDeviceCount::<T>::mutate(|c| *c = c.saturating_sub(1));
+                }
+
                 d.status = DeviceStatus::Active;
 
                 ActiveDeviceCount::<T>::mutate(|count| *count = count.saturating_add(1));
@@ -746,6 +750,9 @@ pub mod pallet {
                 if blocks_since < timeout {
                     continue;
                 }
+                // M18: only penalize once per timeout period by advancing
+                // last_heartbeat so decay doesn't re-trigger every block
+                heartbeat.last_heartbeat = current_block;
                 heartbeat.consecutive_misses = heartbeat.consecutive_misses.saturating_add(1);
                 heartbeat.health_score = heartbeat.health_score.saturating_sub(decay);
 
@@ -758,17 +765,20 @@ pub mod pallet {
             processed
         }
 
+        /// C12: counter mutations inside if-let to prevent orphaned updates
         fn set_device_offline(device_id: DeviceId, consecutive_misses: u32) {
             if let Some(mut dev) = Devices::<T>::get(device_id) {
-                dev.status = DeviceStatus::Offline;
-                Devices::<T>::insert(device_id, dev);
+                if dev.status == DeviceStatus::Active {
+                    dev.status = DeviceStatus::Offline;
+                    Devices::<T>::insert(device_id, dev);
+                    ActiveDeviceCount::<T>::mutate(|c| *c = c.saturating_sub(1));
+                    OfflineDeviceCount::<T>::mutate(|c| *c = c.saturating_add(1));
+                    Self::deposit_event(Event::DeviceWentOffline {
+                        device_id,
+                        consecutive_misses,
+                    });
+                }
             }
-            ActiveDeviceCount::<T>::mutate(|c| *c = c.saturating_sub(1));
-            OfflineDeviceCount::<T>::mutate(|c| *c = c.saturating_add(1));
-            Self::deposit_event(Event::DeviceWentOffline {
-                device_id,
-                consecutive_misses,
-            });
         }
     }
 }

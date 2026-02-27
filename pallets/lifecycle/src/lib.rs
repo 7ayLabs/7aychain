@@ -11,6 +11,7 @@ use frame_support::pallet_prelude::*;
 use frame_system::pallet_prelude::*;
 use parity_scale_codec::{Decode, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
+use seveny_primitives::traits::ConstantTimeEq;
 use seveny_primitives::types::ActorId;
 use sp_core::H256;
 use sp_runtime::Saturating;
@@ -121,6 +122,8 @@ pub struct KeyDestructionRequest<T: Config> {
     pub timeout_at: BlockNumberFor<T>,
     pub attestations: u32,
     pub finalized: bool,
+    /// M10: status before destruction, for correct restoration on cancel
+    pub prior_status: ActorStatus,
 }
 
 #[derive(
@@ -218,6 +221,11 @@ pub mod pallet {
     #[pallet::getter(fn destroyed_keys)]
     pub type DestroyedKeys<T: Config> = StorageMap<_, Blake2_128Concat, H256, BlockNumberFor<T>>;
 
+    /// H14: block number of last completed rotation per actor (for cooldown enforcement)
+    #[pallet::storage]
+    pub type LastRotationAt<T: Config> =
+        StorageMap<_, Blake2_128Concat, ActorId, BlockNumberFor<T>>;
+
     #[pallet::storage]
     #[pallet::getter(fn active_actors)]
     pub type ActiveActors<T> = StorageValue<_, u64, ValueQuery>;
@@ -307,6 +315,8 @@ pub mod pallet {
         InvalidKeyHash,
         NotAuthorized,
         CannotSelfAttest,
+        /// H12: cancellation attempted before minimum wait period
+        CancellationTooEarly,
     }
 
     #[pallet::call]
@@ -438,6 +448,7 @@ pub mod pallet {
                 timeout_at,
                 attestations: 0,
                 finalized: false,
+                prior_status: lifecycle.status,
             };
 
             DestructionRequests::<T>::insert(actor, request);
@@ -529,13 +540,20 @@ pub mod pallet {
 
             ensure!(!request.finalized, Error::<T>::ActorDestroyed);
 
+            // H12: enforce minimum wait before cancellation (half the timeout)
+            let current_block = frame_system::Pallet::<T>::block_number();
+            let min_wait = T::KeyDestructionTimeoutBlocks::get() / 2u32.into();
+            let elapsed = current_block.saturating_sub(request.initiated_at);
+            ensure!(elapsed >= min_wait, Error::<T>::CancellationTooEarly);
+
             DestructionRequests::<T>::remove(actor);
 
             let _ = DestructionAttestations::<T>::clear_prefix(actor, u32::MAX, None);
 
+            // M10: restore prior_status instead of always Active
             Actors::<T>::mutate(actor, |l| {
                 if let Some(ref mut lifecycle) = l {
-                    lifecycle.status = ActorStatus::Active;
+                    lifecycle.status = request.prior_status;
                     lifecycle.key_status = KeyStatus::Active;
                 }
             });
@@ -567,6 +585,15 @@ pub mod pallet {
             );
 
             let block_number = frame_system::Pallet::<T>::block_number();
+
+            // H14: enforce rotation cooldown
+            if let Some(last_rotation) = LastRotationAt::<T>::get(actor) {
+                let elapsed = block_number.saturating_sub(last_rotation);
+                ensure!(
+                    elapsed >= T::RotationCooldownBlocks::get(),
+                    Error::<T>::RotationCooldownActive
+                );
+            }
 
             let rotation = KeyRotation {
                 actor,
@@ -605,11 +632,11 @@ pub mod pallet {
 
             let block_number = frame_system::Pallet::<T>::block_number();
 
-            KeyRotations::<T>::mutate(actor, |r| {
-                if let Some(ref mut rot) = r {
-                    rot.completed = true;
-                }
-            });
+            // H15: remove entry entirely instead of marking completed=true
+            KeyRotations::<T>::remove(actor);
+
+            // H14: record last rotation time for cooldown enforcement
+            LastRotationAt::<T>::insert(actor, block_number);
 
             Actors::<T>::mutate(actor, |l| {
                 if let Some(ref mut lifecycle) = l {
@@ -670,6 +697,9 @@ pub mod pallet {
                     break;
                 }
                 if rotation.completed {
+                    // H15: clean up stale completed entries from pre-migration
+                    KeyRotations::<T>::remove(actor);
+                    cancelled = cancelled.saturating_add(1);
                     continue;
                 }
                 let elapsed = current_block.saturating_sub(rotation.initiated_at);
@@ -687,6 +717,7 @@ pub mod pallet {
             Weight::from_parts(cancelled as u64 * 10_000, 0)
         }
 
+        #[allow(clippy::excessive_nesting)]
         fn process_destruction_timeouts(current_block: BlockNumberFor<T>) -> Weight {
             let mut processed = 0u32;
             let max_process = 5u32;
@@ -699,8 +730,21 @@ pub mod pallet {
                 if current_block < request.timeout_at || request.finalized {
                     continue;
                 }
+
                 if request.attestations >= T::MinDestructionAttestations::get() {
                     let _ = Self::finalize_destruction(actor);
+                } else {
+                    // H13: insufficient attestations at timeout — revert actor
+                    // to prior status instead of leaving stuck in Destroying
+                    DestructionRequests::<T>::remove(actor);
+                    let _ = DestructionAttestations::<T>::clear_prefix(actor, u32::MAX, None);
+                    Actors::<T>::mutate(actor, |l| {
+                        if let Some(ref mut lifecycle) = l {
+                            lifecycle.status = request.prior_status;
+                            lifecycle.key_status = KeyStatus::Active;
+                        }
+                    });
+                    Self::deposit_event(Event::DestructionCancelled { actor });
                 }
                 processed = processed.saturating_add(1);
             }
@@ -714,9 +758,10 @@ pub mod pallet {
                 .unwrap_or(false)
         }
 
+        /// M02: constant-time comparison for key_hash to prevent timing attacks
         pub fn is_key_valid(actor: ActorId, key_hash: &H256) -> bool {
             Actors::<T>::get(actor)
-                .map(|l| l.key_hash == *key_hash && l.key_status == KeyStatus::Active)
+                .map(|l| l.key_hash.ct_eq(key_hash) && l.key_status == KeyStatus::Active)
                 .unwrap_or(false)
         }
 

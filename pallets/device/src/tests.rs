@@ -97,7 +97,6 @@ fn register_device_success() {
 
         assert_ok!(Device::register_device(
             RuntimeOrigin::signed(1),
-            owner,
             DeviceType::Mobile,
             public_key,
             AttestationType::SelfSigned
@@ -116,12 +115,11 @@ fn register_device_success() {
 #[test]
 fn public_key_uniqueness_enforced() {
     new_test_ext().execute_with(|| {
-        let owner = account_to_actor(1);
+        let _owner = account_to_actor(1);
         let public_key = H256([1u8; 32]);
 
         assert_ok!(Device::register_device(
             RuntimeOrigin::signed(1),
-            owner,
             DeviceType::Mobile,
             public_key,
             AttestationType::SelfSigned
@@ -130,7 +128,6 @@ fn public_key_uniqueness_enforced() {
         assert_noop!(
             Device::register_device(
                 RuntimeOrigin::signed(1),
-                owner,
                 DeviceType::Desktop,
                 public_key,
                 AttestationType::SelfSigned
@@ -143,12 +140,11 @@ fn public_key_uniqueness_enforced() {
 #[test]
 fn max_devices_enforced() {
     new_test_ext().execute_with(|| {
-        let owner = account_to_actor(1);
+        let _owner = account_to_actor(1);
 
         for i in 0..10 {
             assert_ok!(Device::register_device(
                 RuntimeOrigin::signed(1),
-                owner,
                 DeviceType::Mobile,
                 H256([i as u8; 32]),
                 AttestationType::SelfSigned
@@ -158,7 +154,6 @@ fn max_devices_enforced() {
         assert_noop!(
             Device::register_device(
                 RuntimeOrigin::signed(1),
-                owner,
                 DeviceType::Mobile,
                 H256([100u8; 32]),
                 AttestationType::SelfSigned
@@ -171,11 +166,10 @@ fn max_devices_enforced() {
 #[test]
 fn activate_device_success() {
     new_test_ext().execute_with(|| {
-        let owner = account_to_actor(1);
+        let _owner = account_to_actor(1);
 
         assert_ok!(Device::register_device(
             RuntimeOrigin::signed(1),
-            owner,
             DeviceType::Mobile,
             H256([1u8; 32]),
             AttestationType::SelfSigned
@@ -193,11 +187,10 @@ fn activate_device_success() {
 #[test]
 fn cannot_activate_already_active() {
     new_test_ext().execute_with(|| {
-        let owner = account_to_actor(1);
+        let _owner = account_to_actor(1);
 
         assert_ok!(Device::register_device(
             RuntimeOrigin::signed(1),
-            owner,
             DeviceType::Mobile,
             H256([1u8; 32]),
             AttestationType::SelfSigned
@@ -216,11 +209,10 @@ fn cannot_activate_already_active() {
 #[test]
 fn suspend_device_success() {
     new_test_ext().execute_with(|| {
-        let owner = account_to_actor(1);
+        let _owner = account_to_actor(1);
 
         assert_ok!(Device::register_device(
             RuntimeOrigin::signed(1),
-            owner,
             DeviceType::Mobile,
             H256([1u8; 32]),
             AttestationType::SelfSigned
@@ -243,11 +235,10 @@ fn suspend_device_success() {
 #[test]
 fn revoke_device_success() {
     new_test_ext().execute_with(|| {
-        let owner = account_to_actor(1);
+        let _owner = account_to_actor(1);
 
         assert_ok!(Device::register_device(
             RuntimeOrigin::signed(1),
-            owner,
             DeviceType::Mobile,
             H256([1u8; 32]),
             AttestationType::SelfSigned
@@ -264,11 +255,10 @@ fn revoke_device_success() {
 #[test]
 fn mark_compromised_success() {
     new_test_ext().execute_with(|| {
-        let owner = account_to_actor(1);
+        let _owner = account_to_actor(1);
 
         assert_ok!(Device::register_device(
             RuntimeOrigin::signed(1),
-            owner,
             DeviceType::Mobile,
             H256([1u8; 32]),
             AttestationType::SelfSigned
@@ -287,11 +277,10 @@ fn mark_compromised_success() {
 #[test]
 fn submit_attestation_success() {
     new_test_ext().execute_with(|| {
-        let owner = account_to_actor(1);
+        let _owner = account_to_actor(1);
 
         assert_ok!(Device::register_device(
             RuntimeOrigin::signed(1),
-            owner,
             DeviceType::Mobile,
             H256([1u8; 32]),
             AttestationType::SelfSigned
@@ -316,11 +305,10 @@ fn submit_attestation_success() {
 #[test]
 fn update_trust_score_success() {
     new_test_ext().execute_with(|| {
-        let owner = account_to_actor(1);
+        let _owner = account_to_actor(1);
 
         assert_ok!(Device::register_device(
             RuntimeOrigin::signed(1),
-            owner,
             DeviceType::Mobile,
             H256([1u8; 32]),
             AttestationType::SelfSigned
@@ -341,11 +329,10 @@ fn update_trust_score_success() {
 #[test]
 fn invalid_trust_score_rejected() {
     new_test_ext().execute_with(|| {
-        let owner = account_to_actor(1);
+        let _owner = account_to_actor(1);
 
         assert_ok!(Device::register_device(
             RuntimeOrigin::signed(1),
-            owner,
             DeviceType::Mobile,
             H256([1u8; 32]),
             AttestationType::SelfSigned
@@ -361,11 +348,10 @@ fn invalid_trust_score_rejected() {
 #[test]
 fn record_activity_success() {
     new_test_ext().execute_with(|| {
-        let owner = account_to_actor(1);
+        let _owner = account_to_actor(1);
 
         assert_ok!(Device::register_device(
             RuntimeOrigin::signed(1),
-            owner,
             DeviceType::Mobile,
             H256([1u8; 32]),
             AttestationType::SelfSigned
@@ -385,11 +371,10 @@ fn record_activity_success() {
 #[test]
 fn reactivate_suspended_device() {
     new_test_ext().execute_with(|| {
-        let owner = account_to_actor(1);
+        let _owner = account_to_actor(1);
 
         assert_ok!(Device::register_device(
             RuntimeOrigin::signed(1),
-            owner,
             DeviceType::Mobile,
             H256([1u8; 32]),
             AttestationType::SelfSigned
@@ -417,11 +402,10 @@ fn reactivate_suspended_device() {
 #[test]
 fn cannot_reactivate_revoked_device() {
     new_test_ext().execute_with(|| {
-        let owner = account_to_actor(1);
+        let _owner = account_to_actor(1);
 
         assert_ok!(Device::register_device(
             RuntimeOrigin::signed(1),
-            owner,
             DeviceType::Mobile,
             H256([1u8; 32]),
             AttestationType::SelfSigned
@@ -445,7 +429,6 @@ fn get_actor_devices_helper() {
         for i in 0..3 {
             assert_ok!(Device::register_device(
                 RuntimeOrigin::signed(1),
-                owner,
                 DeviceType::Mobile,
                 H256([i as u8; 32]),
                 AttestationType::SelfSigned
@@ -465,7 +448,6 @@ fn get_active_devices_helper() {
         for i in 0..3 {
             assert_ok!(Device::register_device(
                 RuntimeOrigin::signed(1),
-                owner,
                 DeviceType::Mobile,
                 H256([i as u8; 32]),
                 AttestationType::SelfSigned
@@ -489,11 +471,10 @@ fn get_active_devices_helper() {
 #[test]
 fn is_attestation_valid_helper() {
     new_test_ext().execute_with(|| {
-        let owner = account_to_actor(1);
+        let _owner = account_to_actor(1);
 
         assert_ok!(Device::register_device(
             RuntimeOrigin::signed(1),
-            owner,
             DeviceType::Mobile,
             H256([1u8; 32]),
             AttestationType::SelfSigned
@@ -520,7 +501,6 @@ fn events_emitted_correctly() {
 
         assert_ok!(Device::register_device(
             RuntimeOrigin::signed(1),
-            owner,
             DeviceType::Mobile,
             H256([1u8; 32]),
             AttestationType::SelfSigned
@@ -545,11 +525,10 @@ fn genesis_initializes_counts() {
 #[test]
 fn register_desktop_device() {
     new_test_ext().execute_with(|| {
-        let owner = account_to_actor(1);
+        let _owner = account_to_actor(1);
 
         assert_ok!(Device::register_device(
             RuntimeOrigin::signed(1),
-            owner,
             DeviceType::Desktop,
             H256([1u8; 32]),
             AttestationType::TrustedParty
@@ -564,11 +543,10 @@ fn register_desktop_device() {
 #[test]
 fn register_server_device() {
     new_test_ext().execute_with(|| {
-        let owner = account_to_actor(1);
+        let _owner = account_to_actor(1);
 
         assert_ok!(Device::register_device(
             RuntimeOrigin::signed(1),
-            owner,
             DeviceType::Server,
             H256([1u8; 32]),
             AttestationType::HardwareBacked
@@ -583,11 +561,10 @@ fn register_server_device() {
 #[test]
 fn register_iot_device() {
     new_test_ext().execute_with(|| {
-        let owner = account_to_actor(1);
+        let _owner = account_to_actor(1);
 
         assert_ok!(Device::register_device(
             RuntimeOrigin::signed(1),
-            owner,
             DeviceType::IoT,
             H256([1u8; 32]),
             AttestationType::Tpm
@@ -602,11 +579,10 @@ fn register_iot_device() {
 #[test]
 fn register_hardware_device() {
     new_test_ext().execute_with(|| {
-        let owner = account_to_actor(1);
+        let _owner = account_to_actor(1);
 
         assert_ok!(Device::register_device(
             RuntimeOrigin::signed(1),
-            owner,
             DeviceType::Hardware,
             H256([1u8; 32]),
             AttestationType::SecureEnclave
@@ -621,11 +597,10 @@ fn register_hardware_device() {
 #[test]
 fn register_virtual_device() {
     new_test_ext().execute_with(|| {
-        let owner = account_to_actor(1);
+        let _owner = account_to_actor(1);
 
         assert_ok!(Device::register_device(
             RuntimeOrigin::signed(1),
-            owner,
             DeviceType::Virtual,
             H256([1u8; 32]),
             AttestationType::SelfSigned
@@ -639,7 +614,7 @@ fn register_virtual_device() {
 #[test]
 fn register_all_device_types() {
     new_test_ext().execute_with(|| {
-        let owner = account_to_actor(1);
+        let _owner = account_to_actor(1);
         let device_types = [
             DeviceType::Mobile,
             DeviceType::Desktop,
@@ -652,7 +627,6 @@ fn register_all_device_types() {
         for (i, device_type) in device_types.iter().enumerate() {
             assert_ok!(Device::register_device(
                 RuntimeOrigin::signed(1),
-                owner,
                 *device_type,
                 H256([i as u8; 32]),
                 AttestationType::SelfSigned
@@ -669,7 +643,7 @@ fn register_all_device_types() {
 #[test]
 fn all_attestation_types() {
     new_test_ext().execute_with(|| {
-        let owner = account_to_actor(1);
+        let _owner = account_to_actor(1);
         let attestation_types = [
             AttestationType::SelfSigned,
             AttestationType::TrustedParty,
@@ -681,7 +655,6 @@ fn all_attestation_types() {
         for (i, attestation_type) in attestation_types.iter().enumerate() {
             assert_ok!(Device::register_device(
                 RuntimeOrigin::signed(1),
-                owner,
                 DeviceType::Mobile,
                 H256([i as u8; 32]),
                 *attestation_type
@@ -696,11 +669,10 @@ fn all_attestation_types() {
 #[test]
 fn device_lifecycle_server() {
     new_test_ext().execute_with(|| {
-        let owner = account_to_actor(1);
+        let _owner = account_to_actor(1);
 
         assert_ok!(Device::register_device(
             RuntimeOrigin::signed(1),
-            owner,
             DeviceType::Server,
             H256([1u8; 32]),
             AttestationType::HardwareBacked
@@ -732,11 +704,10 @@ fn device_lifecycle_server() {
 #[test]
 fn device_lifecycle_iot() {
     new_test_ext().execute_with(|| {
-        let owner = account_to_actor(1);
+        let _owner = account_to_actor(1);
 
         assert_ok!(Device::register_device(
             RuntimeOrigin::signed(1),
-            owner,
             DeviceType::IoT,
             H256([1u8; 32]),
             AttestationType::Tpm
@@ -757,12 +728,11 @@ fn device_lifecycle_iot() {
 #[test]
 fn attestation_with_attester() {
     new_test_ext().execute_with(|| {
-        let owner = account_to_actor(1);
+        let _owner = account_to_actor(1);
         let attester = account_to_actor(2);
 
         assert_ok!(Device::register_device(
             RuntimeOrigin::signed(1),
-            owner,
             DeviceType::Hardware,
             H256([1u8; 32]),
             AttestationType::TrustedParty

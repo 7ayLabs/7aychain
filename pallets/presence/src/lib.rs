@@ -363,6 +363,8 @@ pub mod pallet {
         BlockRefConversionFailed,
         // Position-Based Triangulation Errors
         PositionAlreadyClaimed,
+        /// H17: position already verified, cannot re-verify
+        PositionAlreadyVerified,
         PositionNotClaimed,
         DuplicateAttestation,
         InvalidLatencyMeasurement,
@@ -849,6 +851,9 @@ pub mod pallet {
 
             let mut claim =
                 PositionClaims::<T>::get(epoch, target).ok_or(Error::<T>::PositionNotClaimed)?;
+
+            // H17: reject re-verification of already verified claims
+            ensure!(!claim.verified, Error::<T>::PositionAlreadyVerified);
 
             let attestation_count = AttestationCount::<T>::get(epoch, target);
             let min_witnesses = T::MinWitnessesForVerification::get();
