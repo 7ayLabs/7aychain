@@ -249,9 +249,8 @@ pub mod pallet {
                     if Self::schedule_next_epoch(n).is_some() {
                         return T::DbWeight::get().reads_writes(3, 3);
                     }
-                }
-
-                if metadata.state == EpochState::Closed {
+                // H02: use else-if to prevent same-block double transition
+                } else if metadata.state == EpochState::Closed {
                     let grace_end = metadata.end_block.saturating_add(schedule.grace_period);
                     if n >= grace_end && Self::try_start_next_epoch(n).is_ok() {
                         return T::DbWeight::get().reads_writes(4, 2);
@@ -602,6 +601,16 @@ pub mod pallet {
         pub fn get_current_epoch_metadata() -> Option<EpochMetadata<BlockNumberFor<T>>> {
             let current = CurrentEpoch::<T>::get();
             EpochInfo::<T>::get(current)
+        }
+    }
+
+    impl<T: Config> seveny_primitives::traits::EpochProvider for Pallet<T> {
+        fn is_epoch_active(epoch_id: EpochId) -> bool {
+            Self::is_epoch_active(epoch_id)
+        }
+
+        fn current_epoch() -> EpochId {
+            CurrentEpoch::<T>::get()
         }
     }
 }

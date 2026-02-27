@@ -274,7 +274,7 @@ fn resolve_dispute_already_resolved() {
                 dispute_id,
                 DisputeOutcome::InsufficientEvidence
             ),
-            Error::<Test>::DisputeNotOpen
+            Error::<Test>::DisputeAlreadyResolved
         );
     });
 }

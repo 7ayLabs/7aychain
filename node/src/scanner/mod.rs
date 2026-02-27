@@ -82,8 +82,6 @@ pub async fn run_scanner(config: ScannerConfig, scan_results: ScanResultsHandle)
 }
 
 async fn run_latency_scanner(config: ScannerConfig, scan_results: ScanResultsHandle) {
-    use latency::MockLatencyScanner;
-
     let scan_interval = Duration::from_secs(config.scan_interval_secs);
 
     log::info!(
@@ -94,38 +92,14 @@ async fn run_latency_scanner(config: ScannerConfig, scan_results: ScanResultsHan
         config.reporter_position.z
     );
 
-    let mut latency_scanner = MockLatencyScanner::new(50, 20, 42);
-
     loop {
-        let measurements = latency_scanner.generate_measurements(5);
-
-        let devices: Vec<ScannedDevice> = measurements
-            .into_iter()
-            .map(|(_, peer)| ScannedDevice {
-                mac_hash: sp_core::H256::from_low_u64_be(peer.rtt_ms as u64),
-                rssi: -(peer.rtt_ms as i8).max(30),
-                signal_type: ScanSignalType::Wifi,
-                device_type: DetectedDeviceType::Unknown,
-                vendor: None,
-                device_name: None,
-                frequency: None,
-                detected_at: std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_secs())
-                    .unwrap_or(0),
-            })
-            .collect();
-
         {
-            let mut guard = scan_results.write().await;
-            guard.devices = devices.clone();
-            guard.last_scan = Some(std::time::SystemTime::now());
+            let guard = scan_results.read().await;
+            log::debug!(
+                "Latency scanner active - {} measurements",
+                guard.devices.len()
+            );
         }
-
-        log::debug!(
-            "Latency scanner active - {} measurements",
-            devices.len()
-        );
 
         tokio::time::sleep(scan_interval).await;
     }

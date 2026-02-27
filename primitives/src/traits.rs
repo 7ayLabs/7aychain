@@ -4,6 +4,8 @@ use alloc::vec::Vec;
 use parity_scale_codec::{Decode, Encode};
 use sp_core::H256;
 
+use crate::types::{EpochId, ValidatorId};
+
 /// Cryptographic hash computation.
 pub trait CryptoHash {
     fn crypto_hash(&self) -> H256;
@@ -126,6 +128,23 @@ pub trait Invariant {
     fn is_valid(&self) -> bool {
         self.check().is_none()
     }
+}
+
+/// Cross-pallet epoch state provider.
+///
+/// Allows pallets to query epoch state from the canonical epoch pallet
+/// without maintaining shadow storage.
+pub trait EpochProvider {
+    fn is_epoch_active(epoch_id: EpochId) -> bool;
+    fn current_epoch() -> EpochId;
+}
+
+/// Cross-pallet validator set provider.
+///
+/// Allows pallets to query validator status from the canonical validator
+/// pallet without maintaining shadow storage.
+pub trait ValidatorProvider {
+    fn is_validator_active(validator_id: ValidatorId) -> bool;
 }
 
 /// Constant-time equality to prevent timing attacks.

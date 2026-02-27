@@ -66,11 +66,7 @@ impl MockScanner {
                 rng.fill(&mut mac_bytes);
                 let mac_hash = H256(blake2_256(&mac_bytes));
 
-                let device_type = if config.device_types.is_empty() {
-                    DetectedDeviceType::Unknown
-                } else {
-                    config.device_types[i as usize % config.device_types.len()]
-                };
+                let device_type = config.device_types[i as usize % config.device_types.len()];
                 let base_rssi = rng.gen_range(config.rssi_range.0..config.rssi_range.1);
                 let visibility = rng.gen_range(0.3..1.0);
 
