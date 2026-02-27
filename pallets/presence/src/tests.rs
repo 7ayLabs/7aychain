@@ -1,4 +1,5 @@
-#![allow(clippy::disallowed_macros, clippy::missing_const_for_thread_local)]
+#![allow(clippy::disallowed_macros)]
+#![allow(clippy::missing_const_for_thread_local)]
 
 use crate::{self as pallet_presence, Error, Event};
 use frame_support::{assert_noop, assert_ok, derive_impl, parameter_types, traits::ConstU32};
