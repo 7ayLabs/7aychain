@@ -33,6 +33,7 @@ class Command:
     custom_handler: str = ""
     fixed_params: dict = field(default_factory=dict)
     mode: str = "both"    # "normal"|"dev"|"both"
+    normal_label: str = ""    # user-friendly label for normal mode
 
 
 @dataclass
@@ -90,20 +91,20 @@ DOMAINS = [
     Domain(
         name="presence", title="PRESENCE PROTOCOL",
         number="2", shortcut="p", group="core", check_epoch=True,
-        mode="both", normal_title="PRESENCE", normal_group="core",
+        mode="both", normal_title="CHECK-IN", normal_group="core",
         help_summary="Declare, vote on, and finalize proof-of-presence claims",
         instructions="""
   The Presence Protocol lets participants prove they are active on the
-  network during a given time period.
+  network during a given session.
 
   TYPICAL FLOW:
-    1. Make sure a time period is active (use "bootstrap" to set up)
+    1. Make sure a session is active (use "bootstrap" to set up)
     2. Declare your presence (option 1)
-    3. Validators vote to confirm (option 4)
+    3. Verifiers vote to confirm (option 4)
     4. After enough votes, finalize (option 5)
 
   PREREQUISITES:
-    - An active time period (type "bootstrap" if first time)
+    - An active session (type "bootstrap" if first time)
     - A funded account (all test accounts are pre-funded)
 """,
         commands=[
@@ -112,6 +113,7 @@ DOMAINS = [
                     params=[Param("epoch", "Time period", "epoch")],
                     aliases=["declare", "d"],
                     help_text="Tell the network you are present in this time period",
+                    normal_label="Check In Now",
                     instructions="""
   DECLARE PRESENCE
 
@@ -123,13 +125,14 @@ DOMAINS = [
     - A funded account
 
   What happens next:
-    - Validators can now vote on your claim
+    - Verifiers can now vote on your claim
     - Once enough votes arrive, you can finalize
 """),
             Command("2", "Declare with Commitment", "custom",
                     custom_handler="_presence_commit",
                     aliases=["commit", "cm"],
-                    help_text="Declare presence using a secret (commit-reveal scheme)"),
+                    help_text="Declare presence using a secret (commit-reveal scheme)",
+                    normal_label="Private Check-In"),
             Command("3", "Reveal Commitment", "submit",
                     pallet="Presence", function="reveal_commitment",
                     params=[
@@ -148,20 +151,21 @@ DOMAINS = [
                     ],
                     aliases=["vote", "v"],
                     help_text="Cast your vote on someone's presence claim",
+                    normal_label="Approve Someone",
                     instructions="""
   VOTE ON PRESENCE
 
   What this does:
-    As a validator, cast your vote approving or rejecting
+    As a verifier, cast your vote approving or rejecting
     someone's presence claim.
 
   What you need:
-    - You must be an active validator
-    - The target identity must have declared presence
-    - You haven't already voted for this identity this period
+    - You must be an active verifier
+    - The target participant must have declared presence
+    - You haven't already voted for this participant this session
 
   What happens next:
-    - Once enough validators vote, the presence can be finalized
+    - Once enough verifiers vote, the presence can be finalized
 """),
             Command("5", "Finalize Presence", "submit",
                     pallet="Presence", function="finalize_presence",
@@ -171,6 +175,7 @@ DOMAINS = [
                     ],
                     aliases=["finalize", "f"],
                     help_text="Lock in a presence claim after enough votes",
+                    normal_label="Confirm Check-In",
                     instructions="""
   FINALIZE PRESENCE
 
@@ -178,7 +183,7 @@ DOMAINS = [
     Locks in a presence claim permanently after enough votes.
 
   What you need:
-    - Enough validator votes (check with option c)
+    - Enough verifier votes (check with option c)
     - The presence must be in "Validated" state
 
   After this:
@@ -256,16 +261,16 @@ DOMAINS = [
         mode="both", normal_title="SESSIONS", normal_group="core",
         help_summary="Schedule, start, close, and finalize time periods",
         instructions="""
-  Time Periods (Epochs) are windows during which presence proofs
-  happen. Each period moves through: Scheduled -> Active -> Closed -> Finalized.
+  Sessions are windows during which presence proofs happen.
+  Each session moves through: Scheduled -> Active -> Closed -> Finalized.
 
   TYPICAL FLOW:
-    1. Schedule a new time period (option 1)
+    1. Schedule a new session (option 1)
     2. Start it when the block arrives (option 2)
     3. Let participants declare and vote
     4. Close and finalize when done (options 3-4)
 
-  TIP: Use "bootstrap" to automatically set up time period 1.
+  TIP: Use "bootstrap" to automatically set up session 1.
 """,
         commands=[
             Command("1", "Schedule Time Period [admin]", "submit",
@@ -319,11 +324,13 @@ DOMAINS = [
             Command("---", "Lookups", "separator"),
             Command("a", "Current Time Period", "query",
                     pallet="Epoch", function="CurrentEpoch",
-                    help_text="See which time period is active right now"),
+                    help_text="See which time period is active right now",
+                    normal_label="Current Session"),
             Command("b", "Time Period Info", "query",
                     pallet="Epoch", function="EpochInfo",
                     params=[Param("epoch", "Time period", "epoch")],
-                    help_text="View details about a specific time period"),
+                    help_text="View details about a specific time period",
+                    normal_label="Session Details"),
             Command("c", "Total Time Periods", "query",
                     pallet="Epoch", function="EpochCount",
                     help_text="How many time periods have been created"),
@@ -336,30 +343,33 @@ DOMAINS = [
     Domain(
         name="validator", title="VALIDATORS",
         number="4", shortcut="val", group="core",
-        mode="both", normal_title="STAKING", normal_group="core",
+        mode="both", normal_title="NETWORK GUARDIANS", normal_group="core",
         help_summary="Register, stake, activate, and manage network validators",
         instructions="""
-  Validators are network participants who vote on presence claims.
-  They must stake tokens to participate and can be penalized for misbehavior.
+  Verifiers are network participants who vote on presence claims.
+  They must stake tokens to participate and can receive a penalty
+  for misbehavior.
 
   TYPICAL FLOW:
     1. Register with a stake (option 1)
-    2. Activate your validator (option 2)
+    2. Activate your verifier (option 2)
     3. Vote on presence claims (via Presence menu)
     4. Withdraw stake when done (option 4)
 
-  TIP: "bootstrap" registers 6 test validators automatically.
+  TIP: "bootstrap" registers 6 test verifiers automatically.
 """,
         commands=[
             Command("1", "Register as Validator", "submit",
                     pallet="Validator", function="register_validator",
                     params=[Param("stake", "Amount to stake", "int", 1000000)],
                     aliases=["register"],
-                    help_text="Join the network as a validator with an initial stake"),
+                    help_text="Join the network as a validator with an initial stake",
+                    normal_label="Become a Verifier"),
             Command("2", "Activate Validator", "submit",
                     pallet="Validator", function="activate_validator",
                     aliases=["activate"],
-                    help_text="Start participating in validation"),
+                    help_text="Start participating in validation",
+                    normal_label="Go Active"),
             Command("3", "Deactivate Validator", "submit",
                     pallet="Validator", function="deactivate_validator",
                     aliases=["deactivate"],
@@ -561,16 +571,16 @@ DOMAINS = [
     Domain(
         name="dispute", title="DISPUTE RESOLUTION",
         number="7", shortcut="dis", group="security",
-        mode="both", normal_title="DISPUTES", normal_group="security",
+        mode="both", normal_title="CHALLENGES", normal_group="security",
         help_summary="Open disputes, submit evidence, resolve cases",
         instructions="""
-  Dispute Resolution handles disagreements about validator behavior.
-  Anyone can open a dispute and submit evidence for review.
+  Challenges handle disagreements about verifier behavior.
+  Anyone can open a challenge and submit evidence for review.
 
   TYPICAL FLOW:
-    1. Open a dispute against a validator (option 1)
+    1. Open a challenge against a verifier (option 1)
     2. Submit supporting evidence (option 2)
-    3. An admin resolves the dispute (option 3)
+    3. An admin resolves the challenge (option 3)
 """,
         commands=[
             Command("1", "Open Dispute", "submit",
@@ -670,20 +680,20 @@ DOMAINS = [
     Domain(
         name="vault", title="SECURE VAULT (Shared Keys)",
         number="9", shortcut="", group="security",
-        mode="both", normal_title="VAULT", normal_group="security",
+        mode="both", normal_title="DOCUMENT SAFE", normal_group="security",
         help_summary="Secure shared key management with split secrets",
         instructions="""
-  The Secure Vault uses threshold cryptography (t-of-n) so that
+  The Document Safe uses threshold cryptography (t-of-n) so that
   a secret is split among multiple members and can only be
   reconstructed when enough members cooperate.
 
   TYPICAL FLOW:
-    1. Create a vault with a threshold (option 1)
+    1. Create a safe with a threshold (option 1)
     2. Add members (option 2)
-    3. Activate the vault (option 3)
+    3. Activate the safe (option 3)
     4. Members commit and reveal their shares (options 4-5)
 
-  EXAMPLE: A 2-of-3 vault needs any 2 of 3 members to reconstruct.
+  EXAMPLE: A 2-of-3 safe needs any 2 of 3 members to reconstruct.
 """,
         commands=[
             Command("1", "Create Vault", "submit",
@@ -740,15 +750,18 @@ DOMAINS = [
             Command("9", "Secure a Document", "custom",
                     custom_handler="_vault_secure_file",
                     aliases=["secure", "up"],
-                    help_text="Encrypt a file with threshold protection"),
+                    help_text="Encrypt a file with threshold protection",
+                    normal_label="Protect a Document"),
             Command("10", "Unlock Document", "custom",
                     custom_handler="_vault_unlock_file",
                     aliases=["unlock"],
-                    help_text="Reconstruct key and decrypt a vault file"),
+                    help_text="Reconstruct key and decrypt a vault file",
+                    normal_label="Unlock a Document"),
             Command("11", "Vault Files", "custom",
                     custom_handler="_vault_list_files",
                     aliases=["files", "ls"],
-                    help_text="List encrypted files in a vault"),
+                    help_text="List encrypted files in a vault",
+                    normal_label="My Protected Documents"),
             Command("12", "Verify File Integrity", "custom",
                     custom_handler="_vault_verify_file",
                     aliases=["verify"],
@@ -778,6 +791,10 @@ DOMAINS = [
                     custom_handler="_vault_dev_decrypt",
                     mode="dev",
                     help_text="Decrypt a .enc file with a raw FEK"),
+            Command("z", "Anonymize File Index", "custom",
+                    custom_handler="_vault_anonymize_index",
+                    help_text="Hash all plaintext filenames in vault index",
+                    mode="dev"),
         ],
     ),
 
@@ -803,13 +820,13 @@ DOMAINS = [
             Command("1", "Register Device", "submit",
                     pallet="Device", function="register_device",
                     params=[
-                        Param("owner", "Owner identity", "actor"),
                         Param("device_type", "Type", "enum",
                               options=["Mobile", "Desktop", "Server",
                                        "IoT", "Hardware", "Virtual"]),
                         Param("public_key_hash", "Public key ID (32-byte hex)", "h256"),
-                        Param("attestation_type", "Attestation type", "str",
-                              "SelfSigned"),
+                        Param("attestation_type", "Attestation type", "enum",
+                              options=["SelfSigned", "ThirdParty",
+                                       "Hardware", "Remote"]),
                     ],
                     help_text="Register a new device on the network"),
             Command("2", "Activate / Reactivate Device", "custom",
