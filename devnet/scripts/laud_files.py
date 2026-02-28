@@ -306,17 +306,30 @@ def save_index(index):
         json.dump(index, f, indent=2)
 
 
+def _hash_filename(name):
+    """Compute Blake2b-256 hash of a filename for privacy mode."""
+    return hashlib.blake2b(name.encode('utf-8'), digest_size=32).hexdigest()
+
+
 def add_to_index(vault_id, enc_hash, plaintext_hash, original_name,
                  size_bytes, uploader, epoch, key_fingerprint_hex,
-                 threshold, ring_size):
+                 threshold, ring_size, privacy_mode=False):
     """Add an encrypted file entry to the index."""
     index = load_index()
     key = f"{vault_id}:{enc_hash}"
+
+    if privacy_mode:
+        display_label = _hash_filename(original_name)
+    else:
+        display_label = original_name
+
     index[key] = {
         "vault_id": vault_id,
         "enc_hash": enc_hash,
         "plaintext_hash": plaintext_hash,
         "original_name": original_name,
+        "display_label": display_label,
+        "name_redacted": privacy_mode,
         "size_bytes": size_bytes,
         "uploaded_at": datetime.now().isoformat(),
         "uploader": uploader,
@@ -329,6 +342,27 @@ def add_to_index(vault_id, enc_hash, plaintext_hash, original_name,
     }
     save_index(index)
     return key
+
+
+def anonymize_existing_index():
+    """Retroactively hash all plaintext filenames in the vault index.
+
+    Replaces display_label with a Blake2b hash and sets name_redacted=True
+    for every entry that has an original_name.
+
+    Returns:
+        Number of entries anonymized.
+    """
+    index = load_index()
+    count = 0
+    for entry in index.values():
+        name = entry.get('original_name', '')
+        if name:
+            entry['display_label'] = _hash_filename(name)
+            entry['name_redacted'] = True
+            count += 1
+    save_index(index)
+    return count
 
 
 def get_vault_files(vault_id):
