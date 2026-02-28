@@ -34,6 +34,8 @@ ark-ff = { workspace = true, optional = true }
 ark-ec = { workspace = true, optional = true }
 ark-std = { workspace = true, optional = true }
 ark-snark = { workspace = true, optional = true }
+ark-relations = { workspace = true, optional = true }
+ark-r1cs-std = { workspace = true, optional = true }
 
 [dev-dependencies]
 sp-io = { workspace = true, features = ["std"] }
@@ -67,6 +69,8 @@ std = [
     "ark-ff?/std",
     "ark-ec?/std",
     "ark-std?/std",
+    "ark-relations?/std",
+    "ark-r1cs-std?/std",
 ]
 groth16 = [
     "ark-groth16",
@@ -76,6 +80,11 @@ groth16 = [
     "ark-ec",
     "ark-std",
     "ark-snark",
+]
+circuits = [
+    "groth16",
+    "ark-relations",
+    "ark-r1cs-std",
 ]
 runtime-benchmarks = [
     "frame-benchmarking/runtime-benchmarks",
