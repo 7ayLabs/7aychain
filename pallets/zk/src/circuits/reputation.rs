@@ -52,31 +52,19 @@ impl ReputationCircuit {
     /// Create a circuit instance.
     ///
     /// `score` must be >= `threshold` (both as u64).
-    pub fn new(
-        actor_id: Fr,
-        score: u64,
-        threshold: u64,
-        randomness: Fr,
-    ) -> Option<Self> {
+    pub fn new(actor_id: Fr, score: u64, threshold: u64, randomness: Fr) -> Option<Self> {
         if score < threshold {
             return None;
         }
 
         let diff = score - threshold;
         let diff_bits: Vec<bool> = (0..REPUTATION_RANGE_BITS)
-            .map(|i| {
-                if i < 64 {
-                    (diff >> i) & 1 == 1
-                } else {
-                    false
-                }
-            })
+            .map(|i| if i < 64 { (diff >> i) & 1 == 1 } else { false })
             .collect();
 
         let score_fr = Fr::from(score);
         let threshold_fr = Fr::from(threshold);
-        let score_commitment =
-            mimc_hash(&[actor_id, score_fr, randomness]);
+        let score_commitment = mimc_hash(&[actor_id, score_fr, randomness]);
 
         Some(Self {
             score_commitment: Some(score_commitment),
@@ -110,10 +98,7 @@ impl ReputationCircuit {
 }
 
 impl ConstraintSynthesizer<Fr> for ReputationCircuit {
-    fn generate_constraints(
-        self,
-        cs: ConstraintSystemRef<Fr>,
-    ) -> Result<(), SynthesisError> {
+    fn generate_constraints(self, cs: ConstraintSystemRef<Fr>) -> Result<(), SynthesisError> {
         let constants = mimc_constants();
 
         // Public inputs
@@ -175,9 +160,8 @@ mod tests {
 
     #[test]
     fn reputation_circuit_satisfied() {
-        let circuit =
-            ReputationCircuit::new(Fr::from(1u64), 85, 50, Fr::from(0xABu64))
-                .expect("score >= threshold");
+        let circuit = ReputationCircuit::new(Fr::from(1u64), 85, 50, Fr::from(0xABu64))
+            .expect("score >= threshold");
 
         let cs = ConstraintSystem::<Fr>::new_ref();
         circuit
@@ -189,9 +173,8 @@ mod tests {
 
     #[test]
     fn reputation_circuit_satisfied_at_exact_threshold() {
-        let circuit =
-            ReputationCircuit::new(Fr::from(1u64), 50, 50, Fr::from(0xCDu64))
-                .expect("score == threshold");
+        let circuit = ReputationCircuit::new(Fr::from(1u64), 50, 50, Fr::from(0xCDu64))
+            .expect("score == threshold");
 
         let cs = ConstraintSystem::<Fr>::new_ref();
         circuit
@@ -203,16 +186,14 @@ mod tests {
 
     #[test]
     fn reputation_circuit_rejects_below_threshold() {
-        let result =
-            ReputationCircuit::new(Fr::from(1u64), 30, 50, Fr::from(0xEFu64));
+        let result = ReputationCircuit::new(Fr::from(1u64), 30, 50, Fr::from(0xEFu64));
         assert!(result.is_none());
     }
 
     #[test]
     fn reputation_circuit_rejects_wrong_commitment() {
-        let mut circuit =
-            ReputationCircuit::new(Fr::from(1u64), 85, 50, Fr::from(0xABu64))
-                .expect("score >= threshold");
+        let mut circuit = ReputationCircuit::new(Fr::from(1u64), 85, 50, Fr::from(0xABu64))
+            .expect("score >= threshold");
         circuit.score_commitment = Some(Fr::from(999u64));
 
         let cs = ConstraintSystem::<Fr>::new_ref();

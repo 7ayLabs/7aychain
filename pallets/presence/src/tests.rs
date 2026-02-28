@@ -54,7 +54,6 @@ impl seveny_primitives::traits::ValidatorProvider for MockValidatorProvider {
 // Test Config
 // =========================================================================
 
-
 #[derive_impl(frame_system::config_preludes::TestDefaultConfig)]
 impl system::Config for Test {
     type BaseCallFilter = frame_support::traits::Everything;
@@ -113,7 +112,6 @@ fn new_test_ext() -> sp_io::TestExternalities {
     ACTIVE_EPOCHS.with(|e| *e.borrow_mut() = vec![1]);
     ACTIVE_VALIDATORS.with(|v| v.borrow_mut().clear());
 
-
     let mut t = system::GenesisConfig::<Test>::default()
         .build_storage()
         .expect("storage build failed");
@@ -170,7 +168,6 @@ fn compute_test_commitment(
 // =========================================================================
 // Invariant Tests
 // =========================================================================
-
 
 #[test]
 fn invariant_inv1_uniqueness_no_duplicate_presence() {
@@ -369,7 +366,6 @@ fn invariant_inv13_vote_timing_only_during_active_epoch() {
 // =========================================================================
 // Functional Tests
 // =========================================================================
-
 
 #[test]
 fn declare_presence_success() {
@@ -995,7 +991,6 @@ fn is_in_reveal_phase_helper() {
 // =========================================================================
 // MaxVotes Tests
 // =========================================================================
-
 
 #[test]
 fn max_votes_per_presence_enforced() {

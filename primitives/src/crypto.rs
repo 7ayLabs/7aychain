@@ -414,7 +414,6 @@ pub fn derive_validator_id(account_bytes: &[u8]) -> crate::types::ValidatorId {
     crate::types::ValidatorId::from(H256(hash.0))
 }
 
-
 pub const DOMAIN_SHARE: &[u8] = b"7ay:share:v1";
 pub const DOMAIN_VSS: &[u8] = b"7ay:vss:v1";
 pub const DOMAIN_VAULT_FEK: &[u8] = b"7ay:vault:fek:v1";

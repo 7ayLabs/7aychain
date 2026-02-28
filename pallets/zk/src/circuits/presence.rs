@@ -25,8 +25,8 @@ use ark_r1cs_std::prelude::*;
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
 
 use super::{
-    merkle_root_native, merkle_verify_gadget, mimc_constants, mimc_hash,
-    mimc_hash_gadget, u64_to_fr, DEFAULT_MERKLE_DEPTH,
+    merkle_root_native, merkle_verify_gadget, mimc_constants, mimc_hash, mimc_hash_gadget,
+    u64_to_fr, DEFAULT_MERKLE_DEPTH,
 };
 
 /// R1CS circuit for presence proof verification (INV74).
@@ -69,8 +69,7 @@ impl PresenceCircuit {
         let leaf = mimc_hash(&[secret, randomness]);
 
         // Compute Merkle root
-        let state_root =
-            merkle_root_native(leaf, &merkle_siblings, &path_bits);
+        let state_root = merkle_root_native(leaf, &merkle_siblings, &path_bits);
 
         Self {
             nullifier: Some(nullifier),
@@ -115,10 +114,7 @@ impl PresenceCircuit {
 }
 
 impl ConstraintSynthesizer<Fr> for PresenceCircuit {
-    fn generate_constraints(
-        self,
-        cs: ConstraintSystemRef<Fr>,
-    ) -> Result<(), SynthesisError> {
+    fn generate_constraints(self, cs: ConstraintSystemRef<Fr>) -> Result<(), SynthesisError> {
         let constants = mimc_constants();
 
         // Public inputs
@@ -161,17 +157,14 @@ impl ConstraintSynthesizer<Fr> for PresenceCircuit {
         }
 
         // Constraint 1: nullifier = MiMC(secret, epoch_id)
-        let computed_nullifier =
-            mimc_hash_gadget(&[secret_var.clone(), epoch_id_var], &constants)?;
+        let computed_nullifier = mimc_hash_gadget(&[secret_var.clone(), epoch_id_var], &constants)?;
         computed_nullifier.enforce_equal(&nullifier_var)?;
 
         // Constraint 2: leaf = MiMC(secret, randomness)
-        let leaf =
-            mimc_hash_gadget(&[secret_var, randomness_var], &constants)?;
+        let leaf = mimc_hash_gadget(&[secret_var, randomness_var], &constants)?;
 
         // Constraint 3: Merkle path from leaf to state_root
-        let computed_root =
-            merkle_verify_gadget(&leaf, &siblings, &path_bits, &constants)?;
+        let computed_root = merkle_verify_gadget(&leaf, &siblings, &path_bits, &constants)?;
         computed_root.enforce_equal(&state_root_var)?;
 
         Ok(())
@@ -188,10 +181,8 @@ mod tests {
         let epoch_id = 1u64;
         let randomness = Fr::from(0xCAFEu64);
 
-        let siblings: Vec<Fr> =
-            (0..depth).map(|i| Fr::from((i + 100) as u64)).collect();
-        let path_bits: Vec<bool> =
-            (0..depth).map(|i| i % 2 == 0).collect();
+        let siblings: Vec<Fr> = (0..depth).map(|i| Fr::from((i + 100) as u64)).collect();
+        let path_bits: Vec<bool> = (0..depth).map(|i| i % 2 == 0).collect();
 
         PresenceCircuit::new(secret, epoch_id, randomness, siblings, path_bits)
     }

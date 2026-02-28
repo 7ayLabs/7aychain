@@ -25,8 +25,7 @@ use ark_r1cs_std::prelude::*;
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
 
 use super::{
-    merkle_root_native, merkle_verify_gadget, mimc_constants, mimc_hash,
-    mimc_hash_gadget,
+    merkle_root_native, merkle_verify_gadget, mimc_constants, mimc_hash, mimc_hash_gadget,
 };
 
 /// Number of bits for the stake range check.
@@ -87,13 +86,11 @@ impl StakeCircuit {
         let min_stake_fr = Fr::from(min_stake);
 
         // Stake commitment = MiMC(validator_id, stake_amount, randomness)
-        let stake_commitment =
-            mimc_hash(&[validator_id, stake_fr, randomness]);
+        let stake_commitment = mimc_hash(&[validator_id, stake_fr, randomness]);
 
         // Validator leaf = MiMC(validator_id)
         let leaf = mimc_hash(&[validator_id]);
-        let validator_root =
-            merkle_root_native(leaf, &merkle_siblings, &path_bits);
+        let validator_root = merkle_root_native(leaf, &merkle_siblings, &path_bits);
 
         Some(Self {
             stake_commitment: Some(stake_commitment),
@@ -136,10 +133,7 @@ impl StakeCircuit {
 }
 
 impl ConstraintSynthesizer<Fr> for StakeCircuit {
-    fn generate_constraints(
-        self,
-        cs: ConstraintSystemRef<Fr>,
-    ) -> Result<(), SynthesisError> {
+    fn generate_constraints(self, cs: ConstraintSystemRef<Fr>) -> Result<(), SynthesisError> {
         let constants = mimc_constants();
 
         // Public inputs
@@ -151,18 +145,15 @@ impl ConstraintSynthesizer<Fr> for StakeCircuit {
             self.min_stake.ok_or(SynthesisError::AssignmentMissing)
         })?;
         let validator_root_var = FpVar::new_input(cs.clone(), || {
-            self.validator_root
-                .ok_or(SynthesisError::AssignmentMissing)
+            self.validator_root.ok_or(SynthesisError::AssignmentMissing)
         })?;
 
         // Private witnesses
         let validator_id_var = FpVar::new_witness(cs.clone(), || {
-            self.validator_id
-                .ok_or(SynthesisError::AssignmentMissing)
+            self.validator_id.ok_or(SynthesisError::AssignmentMissing)
         })?;
         let stake_amount_var = FpVar::new_witness(cs.clone(), || {
-            self.stake_amount
-                .ok_or(SynthesisError::AssignmentMissing)
+            self.stake_amount.ok_or(SynthesisError::AssignmentMissing)
         })?;
         let randomness_var = FpVar::new_witness(cs.clone(), || {
             self.randomness.ok_or(SynthesisError::AssignmentMissing)
@@ -198,14 +189,8 @@ impl ConstraintSynthesizer<Fr> for StakeCircuit {
         computed_commitment.enforce_equal(&commitment_var)?;
 
         // Constraint 2: validator Merkle membership
-        let leaf =
-            mimc_hash_gadget(&[validator_id_var], &constants)?;
-        let computed_root = merkle_verify_gadget(
-            &leaf,
-            &siblings,
-            &path_bits_var,
-            &constants,
-        )?;
+        let leaf = mimc_hash_gadget(&[validator_id_var], &constants)?;
+        let computed_root = merkle_verify_gadget(&leaf, &siblings, &path_bits_var, &constants)?;
         computed_root.enforce_equal(&validator_root_var)?;
 
         // Constraint 3: range check — prove stake >= min_stake

@@ -96,8 +96,7 @@ impl PositionProximityCircuit {
         let rsq_fr = Fr::from(radius_sq);
         let eid_fr = Fr::from(epoch_id);
 
-        let region_commitment =
-            mimc_hash(&[cx_fr, cy_fr, rsq_fr, eid_fr]);
+        let region_commitment = mimc_hash(&[cx_fr, cy_fr, rsq_fr, eid_fr]);
 
         Some(Self {
             region_commitment: Some(region_commitment),
@@ -136,10 +135,7 @@ impl PositionProximityCircuit {
 }
 
 impl ConstraintSynthesizer<Fr> for PositionProximityCircuit {
-    fn generate_constraints(
-        self,
-        cs: ConstraintSystemRef<Fr>,
-    ) -> Result<(), SynthesisError> {
+    fn generate_constraints(self, cs: ConstraintSystemRef<Fr>) -> Result<(), SynthesisError> {
         let constants = mimc_constants();
 
         // Public inputs
@@ -224,9 +220,8 @@ mod tests {
 
     #[test]
     fn position_circuit_satisfied_at_center() {
-        let circuit =
-            PositionProximityCircuit::new(100, 100, 100, 100, 2500, 1)
-                .expect("position within radius");
+        let circuit = PositionProximityCircuit::new(100, 100, 100, 100, 2500, 1)
+            .expect("position within radius");
 
         let cs = ConstraintSystem::<Fr>::new_ref();
         circuit
@@ -240,8 +235,7 @@ mod tests {
     fn position_circuit_satisfied_at_boundary() {
         // Distance = sqrt(9+16) = 5, radius_sq = 25
         let circuit =
-            PositionProximityCircuit::new(103, 104, 100, 100, 25, 1)
-                .expect("position at boundary");
+            PositionProximityCircuit::new(103, 104, 100, 100, 25, 1).expect("position at boundary");
 
         let cs = ConstraintSystem::<Fr>::new_ref();
         circuit
@@ -254,16 +248,14 @@ mod tests {
     #[test]
     fn position_circuit_rejects_outside_radius() {
         // Distance = sqrt(100+100) > sqrt(25)
-        let result =
-            PositionProximityCircuit::new(110, 110, 100, 100, 25, 1);
+        let result = PositionProximityCircuit::new(110, 110, 100, 100, 25, 1);
         assert!(result.is_none());
     }
 
     #[test]
     fn position_circuit_rejects_wrong_commitment() {
-        let mut circuit =
-            PositionProximityCircuit::new(101, 101, 100, 100, 2500, 1)
-                .expect("position within radius");
+        let mut circuit = PositionProximityCircuit::new(101, 101, 100, 100, 2500, 1)
+            .expect("position within radius");
         circuit.region_commitment = Some(Fr::from(999u64));
 
         let cs = ConstraintSystem::<Fr>::new_ref();

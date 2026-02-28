@@ -65,35 +65,27 @@ impl ShareCircuit {
 }
 
 impl ConstraintSynthesizer<Fr> for ShareCircuit {
-    fn generate_constraints(
-        self,
-        cs: ConstraintSystemRef<Fr>,
-    ) -> Result<(), SynthesisError> {
+    fn generate_constraints(self, cs: ConstraintSystemRef<Fr>) -> Result<(), SynthesisError> {
         let constants = mimc_constants();
 
         // Public input: commitment
-        let commitment_var =
-            FpVar::new_input(cs.clone(), || {
-                self.commitment.ok_or(SynthesisError::AssignmentMissing)
-            })?;
+        let commitment_var = FpVar::new_input(cs.clone(), || {
+            self.commitment.ok_or(SynthesisError::AssignmentMissing)
+        })?;
 
         // Private witnesses
-        let value_var =
-            FpVar::new_witness(cs.clone(), || {
-                self.value.ok_or(SynthesisError::AssignmentMissing)
-            })?;
-        let index_var =
-            FpVar::new_witness(cs.clone(), || {
-                self.index.ok_or(SynthesisError::AssignmentMissing)
-            })?;
-        let randomness_var =
-            FpVar::new_witness(cs, || {
-                self.randomness.ok_or(SynthesisError::AssignmentMissing)
-            })?;
+        let value_var = FpVar::new_witness(cs.clone(), || {
+            self.value.ok_or(SynthesisError::AssignmentMissing)
+        })?;
+        let index_var = FpVar::new_witness(cs.clone(), || {
+            self.index.ok_or(SynthesisError::AssignmentMissing)
+        })?;
+        let randomness_var = FpVar::new_witness(cs, || {
+            self.randomness.ok_or(SynthesisError::AssignmentMissing)
+        })?;
 
         // Compute MiMC hash in-circuit
-        let computed =
-            mimc_hash_gadget(&[value_var, index_var, randomness_var], &constants)?;
+        let computed = mimc_hash_gadget(&[value_var, index_var, randomness_var], &constants)?;
 
         // Enforce equality with public commitment
         computed.enforce_equal(&commitment_var)?;

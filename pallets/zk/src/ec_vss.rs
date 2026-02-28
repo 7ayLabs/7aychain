@@ -87,8 +87,7 @@ impl EcFeldmanVSS {
         coefficients.push(secret);
 
         for i in 1..threshold {
-            let seed_input =
-                [&entropy[..], &[i][..], b"7ay:ec-vss:coeff:v1"].concat();
+            let seed_input = [&entropy[..], &[i][..], b"7ay:ec-vss:coeff:v1"].concat();
             let hash = blake2_256(&seed_input);
             coefficients.push(Fr::from_be_bytes_mod_order(&hash));
         }
@@ -104,10 +103,7 @@ impl EcFeldmanVSS {
             .map(|j| {
                 let x = Fr::from(j as u64);
                 let value = eval_polynomial_fr(&coefficients, x);
-                EcVssShare {
-                    index: j,
-                    value,
-                }
+                EcVssShare { index: j, value }
             })
             .collect();
 
@@ -119,10 +115,7 @@ impl EcFeldmanVSS {
     /// Checks: `s_j * G == C_0 + j*C_1 + j^2*C_2 + ... + j^{t-1}*C_{t-1}`
     ///
     /// This verifies polynomial consistency, detecting a malicious dealer.
-    pub fn verify_share(
-        share: &EcVssShare,
-        commitment: &EcVssCommitment,
-    ) -> bool {
+    pub fn verify_share(share: &EcVssShare, commitment: &EcVssCommitment) -> bool {
         if share.index == 0 || commitment.points.is_empty() {
             return false;
         }
@@ -149,10 +142,7 @@ impl EcFeldmanVSS {
     /// Reconstruct the secret from `threshold` shares using Lagrange interpolation.
     ///
     /// Operates in BN254 Fr (scalar field), not GF(2^8).
-    pub fn reconstruct(
-        shares: &[EcVssShare],
-        threshold: u8,
-    ) -> Option<Fr> {
+    pub fn reconstruct(shares: &[EcVssShare], threshold: u8) -> Option<Fr> {
         if shares.len() < threshold as usize {
             return None;
         }
@@ -184,10 +174,7 @@ impl EcFeldmanVSS {
     }
 
     /// Check that a set of shares has enough for reconstruction.
-    pub fn verify_share_count(
-        shares: &[EcVssShare],
-        threshold: u8,
-    ) -> bool {
+    pub fn verify_share_count(shares: &[EcVssShare], threshold: u8) -> bool {
         shares.len() >= threshold as usize
     }
 }
@@ -266,13 +253,9 @@ mod tests {
                 .expect("share creation failed");
 
         // Dealer creates a different polynomial (different entropy)
-        let (_, commitment2) = EcFeldmanVSS::share_with_commitments(
-            &test_secret(),
-            2,
-            3,
-            &[0xBBu8; 32],
-        )
-        .expect("share creation failed");
+        let (_, commitment2) =
+            EcFeldmanVSS::share_with_commitments(&test_secret(), 2, 3, &[0xBBu8; 32])
+                .expect("share creation failed");
 
         // Shares from polynomial 1 should NOT verify against commitments from polynomial 2
         for share in &shares1 {
@@ -294,19 +277,12 @@ mod tests {
 
         // Reconstruct from threshold shares
         let reconstructed =
-            EcFeldmanVSS::reconstruct(&shares[0..3], 3)
-                .expect("reconstruction failed");
+            EcFeldmanVSS::reconstruct(&shares[0..3], 3).expect("reconstruction failed");
         assert_eq!(reconstructed, secret_fr);
 
         // Reconstruct from different subset
-        let subset = vec![
-            shares[0].clone(),
-            shares[2].clone(),
-            shares[4].clone(),
-        ];
-        let reconstructed2 =
-            EcFeldmanVSS::reconstruct(&subset, 3)
-                .expect("reconstruction failed");
+        let subset = vec![shares[0].clone(), shares[2].clone(), shares[4].clone()];
+        let reconstructed2 = EcFeldmanVSS::reconstruct(&subset, 3).expect("reconstruction failed");
         assert_eq!(reconstructed2, secret_fr);
     }
 
@@ -370,22 +346,18 @@ mod tests {
         assert_eq!(commitment1.points[0], commitment2.points[0]);
 
         // Both should reconstruct to the same secret
-        let r1 =
-            EcFeldmanVSS::reconstruct(&shares1[0..2], 2).expect("reconstruct");
-        let r2 =
-            EcFeldmanVSS::reconstruct(&shares2[0..2], 2).expect("reconstruct");
+        let r1 = EcFeldmanVSS::reconstruct(&shares1[0..2], 2).expect("reconstruct");
+        let r2 = EcFeldmanVSS::reconstruct(&shares2[0..2], 2).expect("reconstruct");
         assert_eq!(r1, r2);
     }
 
     #[test]
     fn ec_vss_commitment_binding_same_secret() {
         let secret = test_secret();
-        let (_, c1) =
-            EcFeldmanVSS::share_with_commitments(&secret, 2, 3, &[0x01; 32])
-                .expect("share creation failed");
-        let (_, c2) =
-            EcFeldmanVSS::share_with_commitments(&secret, 2, 3, &[0x02; 32])
-                .expect("share creation failed");
+        let (_, c1) = EcFeldmanVSS::share_with_commitments(&secret, 2, 3, &[0x01; 32])
+            .expect("share creation failed");
+        let (_, c2) = EcFeldmanVSS::share_with_commitments(&secret, 2, 3, &[0x02; 32])
+            .expect("share creation failed");
 
         // C_0 = secret * G is identical for the same secret
         assert_eq!(c1.points[0], c2.points[0]);

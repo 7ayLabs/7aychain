@@ -26,8 +26,7 @@ use ark_r1cs_std::prelude::*;
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
 
 use super::{
-    merkle_root_native, merkle_verify_gadget, mimc_constants, mimc_hash,
-    mimc_hash_gadget,
+    merkle_root_native, merkle_verify_gadget, mimc_constants, mimc_hash, mimc_hash_gadget,
 };
 
 /// Default validator set Merkle depth (supports up to 4096 validators).
@@ -72,8 +71,7 @@ impl VoteCircuit {
 
         // Validator leaf = MiMC(validator_id)
         let leaf = mimc_hash(&[validator_id]);
-        let validator_root =
-            merkle_root_native(leaf, &merkle_siblings, &path_bits);
+        let validator_root = merkle_root_native(leaf, &merkle_siblings, &path_bits);
 
         // Vote commitment = MiMC(vote_value, randomness)
         let vote_commitment = mimc_hash(&[vote_value, randomness]);
@@ -122,30 +120,24 @@ impl VoteCircuit {
 }
 
 impl ConstraintSynthesizer<Fr> for VoteCircuit {
-    fn generate_constraints(
-        self,
-        cs: ConstraintSystemRef<Fr>,
-    ) -> Result<(), SynthesisError> {
+    fn generate_constraints(self, cs: ConstraintSystemRef<Fr>) -> Result<(), SynthesisError> {
         let constants = mimc_constants();
 
         // Public inputs
         let validator_root_var = FpVar::new_input(cs.clone(), || {
-            self.validator_root
-                .ok_or(SynthesisError::AssignmentMissing)
+            self.validator_root.ok_or(SynthesisError::AssignmentMissing)
         })?;
         let vote_commitment_var = FpVar::new_input(cs.clone(), || {
             self.vote_commitment
                 .ok_or(SynthesisError::AssignmentMissing)
         })?;
         let vote_nullifier_var = FpVar::new_input(cs.clone(), || {
-            self.vote_nullifier
-                .ok_or(SynthesisError::AssignmentMissing)
+            self.vote_nullifier.ok_or(SynthesisError::AssignmentMissing)
         })?;
 
         // Private witnesses
         let validator_id_var = FpVar::new_witness(cs.clone(), || {
-            self.validator_id
-                .ok_or(SynthesisError::AssignmentMissing)
+            self.validator_id.ok_or(SynthesisError::AssignmentMissing)
         })?;
         let vote_value_var = FpVar::new_witness(cs.clone(), || {
             self.vote_value.ok_or(SynthesisError::AssignmentMissing)
@@ -176,22 +168,16 @@ impl ConstraintSynthesizer<Fr> for VoteCircuit {
         }
 
         // Constraint 1: leaf = MiMC(validator_id), verify Merkle membership
-        let leaf =
-            mimc_hash_gadget(&[validator_id_var.clone()], &constants)?;
-        let computed_root =
-            merkle_verify_gadget(&leaf, &siblings, &path_bits, &constants)?;
+        let leaf = mimc_hash_gadget(&[validator_id_var.clone()], &constants)?;
+        let computed_root = merkle_verify_gadget(&leaf, &siblings, &path_bits, &constants)?;
         computed_root.enforce_equal(&validator_root_var)?;
 
         // Constraint 2: vote_commitment = MiMC(vote_value, randomness)
-        let computed_commitment =
-            mimc_hash_gadget(&[vote_value_var, randomness_var], &constants)?;
+        let computed_commitment = mimc_hash_gadget(&[vote_value_var, randomness_var], &constants)?;
         computed_commitment.enforce_equal(&vote_commitment_var)?;
 
         // Constraint 3: vote_nullifier = MiMC(validator_id, vote_topic)
-        let computed_nullifier = mimc_hash_gadget(
-            &[validator_id_var, vote_topic_var],
-            &constants,
-        )?;
+        let computed_nullifier = mimc_hash_gadget(&[validator_id_var, vote_topic_var], &constants)?;
         computed_nullifier.enforce_equal(&vote_nullifier_var)?;
 
         Ok(())

@@ -27,8 +27,8 @@ use ark_r1cs_std::prelude::*;
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
 
 use super::{
-    merkle_root_native, merkle_verify_gadget, mimc_constants, mimc_hash,
-    mimc_hash_gadget, u64_to_fr,
+    merkle_root_native, merkle_verify_gadget, mimc_constants, mimc_hash, mimc_hash_gadget,
+    u64_to_fr,
 };
 
 /// Default ring Merkle depth (supports up to 1024 members).
@@ -71,8 +71,7 @@ impl AccessCircuit {
         let leaf = mimc_hash(&[actor_id, ring_position]);
 
         // Ring root from Merkle path
-        let ring_root =
-            merkle_root_native(leaf, &merkle_siblings, &path_bits);
+        let ring_root = merkle_root_native(leaf, &merkle_siblings, &path_bits);
 
         // Access nullifier = MiMC(actor_id, vault_id)
         let access_nullifier = mimc_hash(&[actor_id, vault_id_fr]);
@@ -120,10 +119,7 @@ impl AccessCircuit {
 }
 
 impl ConstraintSynthesizer<Fr> for AccessCircuit {
-    fn generate_constraints(
-        self,
-        cs: ConstraintSystemRef<Fr>,
-    ) -> Result<(), SynthesisError> {
+    fn generate_constraints(self, cs: ConstraintSystemRef<Fr>) -> Result<(), SynthesisError> {
         let constants = mimc_constants();
 
         // Public inputs
@@ -143,8 +139,7 @@ impl ConstraintSynthesizer<Fr> for AccessCircuit {
             self.actor_id.ok_or(SynthesisError::AssignmentMissing)
         })?;
         let ring_position_var = FpVar::new_witness(cs.clone(), || {
-            self.ring_position
-                .ok_or(SynthesisError::AssignmentMissing)
+            self.ring_position.ok_or(SynthesisError::AssignmentMissing)
         })?;
 
         // Allocate Merkle path
@@ -168,19 +163,14 @@ impl ConstraintSynthesizer<Fr> for AccessCircuit {
         }
 
         // Constraint 1: leaf = MiMC(actor_id, ring_position)
-        let leaf = mimc_hash_gadget(
-            &[actor_id_var.clone(), ring_position_var],
-            &constants,
-        )?;
+        let leaf = mimc_hash_gadget(&[actor_id_var.clone(), ring_position_var], &constants)?;
 
         // Constraint 2: Merkle path from leaf to ring_root
-        let computed_root =
-            merkle_verify_gadget(&leaf, &siblings, &path_bits, &constants)?;
+        let computed_root = merkle_verify_gadget(&leaf, &siblings, &path_bits, &constants)?;
         computed_root.enforce_equal(&ring_root_var)?;
 
         // Constraint 3: access_nullifier = MiMC(actor_id, vault_id)
-        let computed_nullifier =
-            mimc_hash_gadget(&[actor_id_var, vault_id_var], &constants)?;
+        let computed_nullifier = mimc_hash_gadget(&[actor_id_var, vault_id_var], &constants)?;
         computed_nullifier.enforce_equal(&access_nullifier_var)?;
 
         Ok(())
@@ -197,18 +187,10 @@ mod tests {
         let vault_id = 7u64;
         let ring_position = Fr::from(3u64);
 
-        let siblings: Vec<Fr> =
-            (0..depth).map(|i| Fr::from((i + 200) as u64)).collect();
-        let path_bits: Vec<bool> =
-            (0..depth).map(|i| i % 3 == 0).collect();
+        let siblings: Vec<Fr> = (0..depth).map(|i| Fr::from((i + 200) as u64)).collect();
+        let path_bits: Vec<bool> = (0..depth).map(|i| i % 3 == 0).collect();
 
-        AccessCircuit::new(
-            actor_id,
-            vault_id,
-            ring_position,
-            siblings,
-            path_bits,
-        )
+        AccessCircuit::new(actor_id, vault_id, ring_position, siblings, path_bits)
     }
 
     #[test]

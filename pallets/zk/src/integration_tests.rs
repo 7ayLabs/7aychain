@@ -13,11 +13,10 @@ use ark_snark::SNARK;
 use ark_std::rand::{rngs::StdRng, SeedableRng};
 
 use crate::circuits::{
-    access::AccessCircuit, attestation::AttestationCircuit, mimc_constants,
-    mimc_hash, merkle_root_native, position::PositionProximityCircuit,
-    presence::PresenceCircuit, reputation::ReputationCircuit,
-    share::ShareCircuit, stake::StakeCircuit, vote::VoteCircuit,
-    bytes_to_fr, u64_to_fr,
+    access::AccessCircuit, attestation::AttestationCircuit, bytes_to_fr, merkle_root_native,
+    mimc_constants, mimc_hash, position::PositionProximityCircuit, presence::PresenceCircuit,
+    reputation::ReputationCircuit, share::ShareCircuit, stake::StakeCircuit, u64_to_fr,
+    vote::VoteCircuit,
 };
 
 fn test_rng() -> StdRng {
@@ -86,20 +85,14 @@ fn mimc_hash_avalanche_property() {
 
 #[test]
 fn merkle_root_different_leaves_different_roots() {
-    let siblings: Vec<Fr> =
-        (0..5).map(|i| Fr::from((i + 100) as u64)).collect();
+    let siblings: Vec<Fr> = (0..5).map(|i| Fr::from((i + 100) as u64)).collect();
     let path_bits: Vec<bool> = vec![false, true, false, true, false];
 
     for i in 0u64..20 {
         for j in (i + 1)..20 {
-            let r1 =
-                merkle_root_native(Fr::from(i), &siblings, &path_bits);
-            let r2 =
-                merkle_root_native(Fr::from(j), &siblings, &path_bits);
-            assert_ne!(
-                r1, r2,
-                "different leaves must give different roots"
-            );
+            let r1 = merkle_root_native(Fr::from(i), &siblings, &path_bits);
+            let r2 = merkle_root_native(Fr::from(j), &siblings, &path_bits);
+            assert_ne!(r1, r2, "different leaves must give different roots");
         }
     }
 }
@@ -107,16 +100,13 @@ fn merkle_root_different_leaves_different_roots() {
 #[test]
 fn merkle_root_different_paths_different_roots() {
     let leaf = Fr::from(42u64);
-    let siblings: Vec<Fr> =
-        (0..3).map(|i| Fr::from((i + 100) as u64)).collect();
+    let siblings: Vec<Fr> = (0..3).map(|i| Fr::from((i + 100) as u64)).collect();
 
     // All possible 3-bit paths
     let mut roots = Vec::new();
     for bits in 0u8..8 {
-        let path_bits: Vec<bool> =
-            (0..3).map(|i| (bits >> i) & 1 == 1).collect();
-        let root =
-            merkle_root_native(leaf, &siblings, &path_bits);
+        let path_bits: Vec<bool> = (0..3).map(|i| (bits >> i) & 1 == 1).collect();
+        let root = merkle_root_native(leaf, &siblings, &path_bits);
         roots.push(root);
     }
 
@@ -140,8 +130,7 @@ fn merkle_root_depth_independence() {
     let sib2 = Fr::from(200u64);
 
     let root_d1 = merkle_root_native(leaf, &[sib1], &[false]);
-    let root_d2 =
-        merkle_root_native(leaf, &[sib1, sib2], &[false, false]);
+    let root_d2 = merkle_root_native(leaf, &[sib1, sib2], &[false, false]);
 
     assert_ne!(root_d1, root_d2);
 }
@@ -155,8 +144,7 @@ fn share_and_presence_use_same_mimc() {
     let secret = Fr::from(42u64);
 
     // ShareCircuit: commitment = MiMC(value, index, randomness)
-    let share_commitment =
-        mimc_hash(&[Fr::from(42u64), Fr::from(1u64), Fr::from(99u64)]);
+    let share_commitment = mimc_hash(&[Fr::from(42u64), Fr::from(1u64), Fr::from(99u64)]);
 
     // PresenceCircuit: nullifier = MiMC(secret, epoch_id)
     let nullifier = mimc_hash(&[secret, Fr::from(1u64)]);
@@ -164,11 +152,13 @@ fn share_and_presence_use_same_mimc() {
     // Both should be non-zero and deterministic
     assert_ne!(share_commitment, Fr::zero());
     assert_ne!(nullifier, Fr::zero());
-    assert_ne!(share_commitment, nullifier, "different domains should differ");
+    assert_ne!(
+        share_commitment, nullifier,
+        "different domains should differ"
+    );
 
     // Verify determinism
-    let share2 =
-        mimc_hash(&[Fr::from(42u64), Fr::from(1u64), Fr::from(99u64)]);
+    let share2 = mimc_hash(&[Fr::from(42u64), Fr::from(1u64), Fr::from(99u64)]);
     assert_eq!(share_commitment, share2);
 }
 
@@ -200,51 +190,35 @@ fn all_circuits_blank_setup_succeeds() {
 
     // Share
     let blank = ShareCircuit::blank();
-    assert!(
-        Groth16::<Bn254>::circuit_specific_setup(blank, &mut rng).is_ok()
-    );
+    assert!(Groth16::<Bn254>::circuit_specific_setup(blank, &mut rng).is_ok());
 
     // Presence
     let blank = PresenceCircuit::blank(5);
-    assert!(
-        Groth16::<Bn254>::circuit_specific_setup(blank, &mut rng).is_ok()
-    );
+    assert!(Groth16::<Bn254>::circuit_specific_setup(blank, &mut rng).is_ok());
 
     // Access
     let blank = AccessCircuit::blank(5);
-    assert!(
-        Groth16::<Bn254>::circuit_specific_setup(blank, &mut rng).is_ok()
-    );
+    assert!(Groth16::<Bn254>::circuit_specific_setup(blank, &mut rng).is_ok());
 
     // Position
     let blank = PositionProximityCircuit::blank();
-    assert!(
-        Groth16::<Bn254>::circuit_specific_setup(blank, &mut rng).is_ok()
-    );
+    assert!(Groth16::<Bn254>::circuit_specific_setup(blank, &mut rng).is_ok());
 
     // Vote
     let blank = VoteCircuit::blank(5);
-    assert!(
-        Groth16::<Bn254>::circuit_specific_setup(blank, &mut rng).is_ok()
-    );
+    assert!(Groth16::<Bn254>::circuit_specific_setup(blank, &mut rng).is_ok());
 
     // Attestation
     let blank = AttestationCircuit::blank(5);
-    assert!(
-        Groth16::<Bn254>::circuit_specific_setup(blank, &mut rng).is_ok()
-    );
+    assert!(Groth16::<Bn254>::circuit_specific_setup(blank, &mut rng).is_ok());
 
     // Reputation
     let blank = ReputationCircuit::blank();
-    assert!(
-        Groth16::<Bn254>::circuit_specific_setup(blank, &mut rng).is_ok()
-    );
+    assert!(Groth16::<Bn254>::circuit_specific_setup(blank, &mut rng).is_ok());
 
     // Stake
     let blank = StakeCircuit::blank(5);
-    assert!(
-        Groth16::<Bn254>::circuit_specific_setup(blank, &mut rng).is_ok()
-    );
+    assert!(Groth16::<Bn254>::circuit_specific_setup(blank, &mut rng).is_ok());
 }
 
 #[test]
@@ -254,52 +228,36 @@ fn proofs_from_different_circuits_not_interchangeable() {
     // Setup share circuit
     let share_blank = ShareCircuit::blank();
     let (share_pk, share_vk) =
-        Groth16::<Bn254>::circuit_specific_setup(share_blank, &mut rng)
-            .expect("share setup");
+        Groth16::<Bn254>::circuit_specific_setup(share_blank, &mut rng).expect("share setup");
 
     // Setup reputation circuit
     let rep_blank = ReputationCircuit::blank();
     let (rep_pk, rep_vk) =
-        Groth16::<Bn254>::circuit_specific_setup(rep_blank, &mut rng)
-            .expect("reputation setup");
+        Groth16::<Bn254>::circuit_specific_setup(rep_blank, &mut rng).expect("reputation setup");
 
     // Create valid share proof
-    let share_circuit =
-        ShareCircuit::new(Fr::from(42u64), Fr::from(1u64), Fr::from(99u64));
+    let share_circuit = ShareCircuit::new(Fr::from(42u64), Fr::from(1u64), Fr::from(99u64));
     let share_inputs = share_circuit.public_inputs();
     let share_proof =
-        Groth16::<Bn254>::prove(&share_pk, share_circuit, &mut rng)
-            .expect("share prove");
+        Groth16::<Bn254>::prove(&share_pk, share_circuit, &mut rng).expect("share prove");
 
     // Create valid reputation proof
     let rep_circuit =
-        ReputationCircuit::new(Fr::from(1u64), 85, 50, Fr::from(0xABu64))
-            .expect("rep create");
+        ReputationCircuit::new(Fr::from(1u64), 85, 50, Fr::from(0xABu64)).expect("rep create");
     let rep_inputs = rep_circuit.public_inputs();
-    let rep_proof =
-        Groth16::<Bn254>::prove(&rep_pk, rep_circuit, &mut rng)
-            .expect("rep prove");
+    let rep_proof = Groth16::<Bn254>::prove(&rep_pk, rep_circuit, &mut rng).expect("rep prove");
 
     // Valid: share proof with share VK
-    assert!(
-        Groth16::<Bn254>::verify(&share_vk, &share_inputs, &share_proof)
-            .unwrap()
-    );
+    assert!(Groth16::<Bn254>::verify(&share_vk, &share_inputs, &share_proof).unwrap());
 
     // Valid: reputation proof with reputation VK
-    assert!(
-        Groth16::<Bn254>::verify(&rep_vk, &rep_inputs, &rep_proof).unwrap()
-    );
+    assert!(Groth16::<Bn254>::verify(&rep_vk, &rep_inputs, &rep_proof).unwrap());
 
     // Invalid: share proof with reputation VK (cross-circuit)
     // Note: this may error or return false depending on input count mismatch
-    let cross_result =
-        Groth16::<Bn254>::verify(&rep_vk, &rep_inputs, &share_proof);
+    let cross_result = Groth16::<Bn254>::verify(&rep_vk, &rep_inputs, &share_proof);
     match cross_result {
-        Ok(valid) => assert!(
-            !valid,
-            "cross-circuit proof should not verify"
-        ),
+        Ok(valid) => assert!(!valid, "cross-circuit proof should not verify"),
         Err(_) => {} // Error is also acceptable — different VK structure
     }
 }
@@ -316,16 +274,13 @@ fn validator_lifecycle_vote_stake_integration() {
     let randomness = Fr::from(0xCAFEu64);
 
     // Both circuits use the same validator Merkle tree
-    let merkle_siblings: Vec<Fr> =
-        (0..depth).map(|i| Fr::from((i + 500) as u64)).collect();
-    let path_bits: Vec<bool> =
-        (0..depth).map(|i| i % 2 == 0).collect();
+    let merkle_siblings: Vec<Fr> = (0..depth).map(|i| Fr::from((i + 500) as u64)).collect();
+    let path_bits: Vec<bool> = (0..depth).map(|i| i % 2 == 0).collect();
 
     // --- Stake proof: prove stake >= 5000 ---
     let stake_blank = StakeCircuit::blank(depth);
     let (stake_pk, stake_vk) =
-        Groth16::<Bn254>::circuit_specific_setup(stake_blank, &mut rng)
-            .expect("stake setup");
+        Groth16::<Bn254>::circuit_specific_setup(stake_blank, &mut rng).expect("stake setup");
 
     let stake_circuit = StakeCircuit::new(
         validator_id,
@@ -338,20 +293,17 @@ fn validator_lifecycle_vote_stake_integration() {
     .expect("stake circuit");
     let stake_inputs = stake_circuit.public_inputs();
     let stake_proof =
-        Groth16::<Bn254>::prove(&stake_pk, stake_circuit, &mut rng)
-            .expect("stake prove");
+        Groth16::<Bn254>::prove(&stake_pk, stake_circuit, &mut rng).expect("stake prove");
 
     assert!(
-        Groth16::<Bn254>::verify(&stake_vk, &stake_inputs, &stake_proof)
-            .unwrap(),
+        Groth16::<Bn254>::verify(&stake_vk, &stake_inputs, &stake_proof).unwrap(),
         "stake proof should verify"
     );
 
     // --- Vote proof: cast anonymous vote on topic 42 ---
     let vote_blank = VoteCircuit::blank(depth);
     let (vote_pk, vote_vk) =
-        Groth16::<Bn254>::circuit_specific_setup(vote_blank, &mut rng)
-            .expect("vote setup");
+        Groth16::<Bn254>::circuit_specific_setup(vote_blank, &mut rng).expect("vote setup");
 
     let vote_circuit = VoteCircuit::new(
         validator_id,
@@ -362,13 +314,10 @@ fn validator_lifecycle_vote_stake_integration() {
         path_bits,
     );
     let vote_inputs = vote_circuit.public_inputs();
-    let vote_proof =
-        Groth16::<Bn254>::prove(&vote_pk, vote_circuit, &mut rng)
-            .expect("vote prove");
+    let vote_proof = Groth16::<Bn254>::prove(&vote_pk, vote_circuit, &mut rng).expect("vote prove");
 
     assert!(
-        Groth16::<Bn254>::verify(&vote_vk, &vote_inputs, &vote_proof)
-            .unwrap(),
+        Groth16::<Bn254>::verify(&vote_vk, &vote_inputs, &vote_proof).unwrap(),
         "vote proof should verify"
     );
 
@@ -389,8 +338,7 @@ fn device_attestation_and_presence_integration() {
     let att_depth = 7;
     let att_blank = AttestationCircuit::blank(att_depth);
     let (att_pk, att_vk) =
-        Groth16::<Bn254>::circuit_specific_setup(att_blank, &mut rng)
-            .expect("attestation setup");
+        Groth16::<Bn254>::circuit_specific_setup(att_blank, &mut rng).expect("attestation setup");
 
     let device_id = Fr::from(0xDE01u64);
     let challenge = Fr::from(0xC0A1u64);
@@ -402,15 +350,12 @@ fn device_attestation_and_presence_integration() {
         challenge,
         response,
         epoch_id_fr,
-        (0..att_depth)
-            .map(|i| Fr::from((i + 300) as u64))
-            .collect(),
+        (0..att_depth).map(|i| Fr::from((i + 300) as u64)).collect(),
         (0..att_depth).map(|i| i % 2 == 1).collect(),
     );
     let att_inputs = att_circuit.public_inputs();
     let att_proof =
-        Groth16::<Bn254>::prove(&att_pk, att_circuit, &mut rng)
-            .expect("attestation prove");
+        Groth16::<Bn254>::prove(&att_pk, att_circuit, &mut rng).expect("attestation prove");
 
     assert!(
         Groth16::<Bn254>::verify(&att_vk, &att_inputs, &att_proof).unwrap(),
@@ -421,8 +366,7 @@ fn device_attestation_and_presence_integration() {
     let pres_depth = 5;
     let pres_blank = PresenceCircuit::blank(pres_depth);
     let (pres_pk, pres_vk) =
-        Groth16::<Bn254>::circuit_specific_setup(pres_blank, &mut rng)
-            .expect("presence setup");
+        Groth16::<Bn254>::circuit_specific_setup(pres_blank, &mut rng).expect("presence setup");
 
     let pres_circuit = PresenceCircuit::new(
         Fr::from(12345u64),
@@ -435,21 +379,15 @@ fn device_attestation_and_presence_integration() {
     );
     let pres_inputs = pres_circuit.public_inputs();
     let pres_proof =
-        Groth16::<Bn254>::prove(&pres_pk, pres_circuit, &mut rng)
-            .expect("presence prove");
+        Groth16::<Bn254>::prove(&pres_pk, pres_circuit, &mut rng).expect("presence prove");
 
     assert!(
-        Groth16::<Bn254>::verify(&pres_vk, &pres_inputs, &pres_proof)
-            .unwrap(),
+        Groth16::<Bn254>::verify(&pres_vk, &pres_inputs, &pres_proof).unwrap(),
         "presence proof should verify"
     );
 
     // Both are in the same epoch
-    assert_eq!(
-        pres_inputs[2],
-        Fr::from(1u64),
-        "presence epoch must match"
-    );
+    assert_eq!(pres_inputs[2], Fr::from(1u64), "presence epoch must match");
 }
 
 // ─── Conversion Utility Tests ───────────────────────────────────────────
@@ -500,16 +438,13 @@ fn ec_vss_shares_verify_in_share_circuit() {
     let entropy = [0xABu8; 32];
     let threshold: u8 = 3;
     let num_shares: u8 = 5;
-    let (shares, commitments) = EcFeldmanVSS::share_with_commitments(
-        &secret_bytes, threshold, num_shares, &entropy,
-    )
-    .expect("EC-VSS share distribution");
+    let (shares, commitments) =
+        EcFeldmanVSS::share_with_commitments(&secret_bytes, threshold, num_shares, &entropy)
+            .expect("EC-VSS share distribution");
 
     // Setup share circuit
     let blank = ShareCircuit::blank();
-    let (pk, vk) =
-        Groth16::<Bn254>::circuit_specific_setup(blank, &mut rng)
-            .expect("setup");
+    let (pk, vk) = Groth16::<Bn254>::circuit_specific_setup(blank, &mut rng).expect("setup");
 
     // Each share can be proven with the share circuit
     for (idx, share) in shares.iter().enumerate() {
@@ -522,14 +457,9 @@ fn ec_vss_shares_verify_in_share_circuit() {
 
         // Create ZK proof that we know the share
         let randomness = Fr::from((idx as u64 + 1000) * 7);
-        let circuit = ShareCircuit::new(
-            share.value,
-            Fr::from(share.index as u64),
-            randomness,
-        );
+        let circuit = ShareCircuit::new(share.value, Fr::from(share.index as u64), randomness);
         let public_inputs = circuit.public_inputs();
-        let proof = Groth16::<Bn254>::prove(&pk, circuit, &mut rng)
-            .expect("share prove");
+        let proof = Groth16::<Bn254>::prove(&pk, circuit, &mut rng).expect("share prove");
 
         assert!(
             Groth16::<Bn254>::verify(&vk, &public_inputs, &proof).unwrap(),
@@ -539,9 +469,8 @@ fn ec_vss_shares_verify_in_share_circuit() {
     }
 
     // Verify reconstruction works
-    let reconstructed =
-        EcFeldmanVSS::reconstruct(&shares[..threshold as usize], threshold)
-            .expect("reconstruction");
+    let reconstructed = EcFeldmanVSS::reconstruct(&shares[..threshold as usize], threshold)
+        .expect("reconstruction");
     let expected = Fr::from_be_bytes_mod_order(&secret_bytes);
     assert_eq!(
         reconstructed, expected,
@@ -556,32 +485,23 @@ fn reputation_range_proof_boundary_values() {
     let mut rng = test_rng();
 
     let blank = ReputationCircuit::blank();
-    let (pk, vk) =
-        Groth16::<Bn254>::circuit_specific_setup(blank, &mut rng)
-            .expect("setup");
+    let (pk, vk) = Groth16::<Bn254>::circuit_specific_setup(blank, &mut rng).expect("setup");
 
     // Test various score/threshold combinations
     let test_cases = [
-        (0u64, 0u64),    // zero == zero
-        (1, 0),          // barely above
-        (100, 100),      // exact match
-        (100, 1),        // well above
-        (1000, 999),     // one above
+        (0u64, 0u64), // zero == zero
+        (1, 0),       // barely above
+        (100, 100),   // exact match
+        (100, 1),     // well above
+        (1000, 999),  // one above
     ];
 
     for (score, threshold) in test_cases {
-        let circuit =
-            ReputationCircuit::new(
-                Fr::from(1u64),
-                score,
-                threshold,
-                Fr::from(0xABu64),
-            )
+        let circuit = ReputationCircuit::new(Fr::from(1u64), score, threshold, Fr::from(0xABu64))
             .expect(&format!("score {} >= threshold {}", score, threshold));
 
         let inputs = circuit.public_inputs();
-        let proof = Groth16::<Bn254>::prove(&pk, circuit, &mut rng)
-            .expect("prove");
+        let proof = Groth16::<Bn254>::prove(&pk, circuit, &mut rng).expect("prove");
         assert!(
             Groth16::<Bn254>::verify(&vk, &inputs, &proof).unwrap(),
             "score={} threshold={} should verify",
@@ -597,21 +517,17 @@ fn stake_range_proof_boundary_values() {
     let depth = 3;
 
     let blank = StakeCircuit::blank(depth);
-    let (pk, vk) =
-        Groth16::<Bn254>::circuit_specific_setup(blank, &mut rng)
-            .expect("setup");
+    let (pk, vk) = Groth16::<Bn254>::circuit_specific_setup(blank, &mut rng).expect("setup");
 
     let test_cases: [(u128, u128); 4] = [
-        (0, 0),              // zero == zero
-        (1, 0),              // barely above
-        (10_000, 10_000),    // exact match
+        (0, 0),               // zero == zero
+        (1, 0),               // barely above
+        (10_000, 10_000),     // exact match
         (1_000_000, 999_999), // one above
     ];
 
-    let siblings: Vec<Fr> =
-        (0..depth).map(|i| Fr::from((i + 400) as u64)).collect();
-    let path_bits: Vec<bool> =
-        (0..depth).map(|i| i % 2 == 0).collect();
+    let siblings: Vec<Fr> = (0..depth).map(|i| Fr::from((i + 400) as u64)).collect();
+    let path_bits: Vec<bool> = (0..depth).map(|i| i % 2 == 0).collect();
 
     for (stake, min) in test_cases {
         let circuit = StakeCircuit::new(
@@ -625,8 +541,7 @@ fn stake_range_proof_boundary_values() {
         .expect(&format!("stake {} >= min {}", stake, min));
 
         let inputs = circuit.public_inputs();
-        let proof = Groth16::<Bn254>::prove(&pk, circuit, &mut rng)
-            .expect("prove");
+        let proof = Groth16::<Bn254>::prove(&pk, circuit, &mut rng).expect("prove");
         assert!(
             Groth16::<Bn254>::verify(&vk, &inputs, &proof).unwrap(),
             "stake={} min={} should verify",
@@ -643,9 +558,7 @@ fn position_proximity_various_positions_within_radius() {
     let mut rng = test_rng();
 
     let blank = PositionProximityCircuit::blank();
-    let (pk, vk) =
-        Groth16::<Bn254>::circuit_specific_setup(blank, &mut rng)
-            .expect("setup");
+    let (pk, vk) = Groth16::<Bn254>::circuit_specific_setup(blank, &mut rng).expect("setup");
 
     // Center (1000, 1000), radius_sq = 10000 (radius ≈ 100)
     let center_x = 1000u64;
@@ -661,14 +574,11 @@ fn position_proximity_various_positions_within_radius() {
     ];
 
     for (x, y) in positions {
-        let circuit = PositionProximityCircuit::new(
-            x, y, center_x, center_y, radius_sq, 1,
-        )
-        .expect(&format!("position ({}, {}) within radius", x, y));
+        let circuit = PositionProximityCircuit::new(x, y, center_x, center_y, radius_sq, 1)
+            .expect(&format!("position ({}, {}) within radius", x, y));
 
         let inputs = circuit.public_inputs();
-        let proof = Groth16::<Bn254>::prove(&pk, circuit, &mut rng)
-            .expect("prove");
+        let proof = Groth16::<Bn254>::prove(&pk, circuit, &mut rng).expect("prove");
         assert!(
             Groth16::<Bn254>::verify(&vk, &inputs, &proof).unwrap(),
             "position ({}, {}) should verify",
@@ -691,9 +601,7 @@ fn position_proximity_rejects_outside_radius() {
     ];
 
     for (x, y) in outside_positions {
-        let result = PositionProximityCircuit::new(
-            x, y, center_x, center_y, radius_sq, 1,
-        );
+        let result = PositionProximityCircuit::new(x, y, center_x, center_y, radius_sq, 1);
         assert!(
             result.is_none(),
             "position ({}, {}) outside radius should be rejected",

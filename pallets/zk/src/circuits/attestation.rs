@@ -26,8 +26,7 @@ use ark_r1cs_std::prelude::*;
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
 
 use super::{
-    merkle_root_native, merkle_verify_gadget, mimc_constants, mimc_hash,
-    mimc_hash_gadget,
+    merkle_root_native, merkle_verify_gadget, mimc_constants, mimc_hash, mimc_hash_gadget,
 };
 
 /// Default device set Merkle depth (supports up to 16384 devices).
@@ -72,12 +71,10 @@ impl AttestationCircuit {
 
         // Device leaf = MiMC(device_id)
         let leaf = mimc_hash(&[device_id]);
-        let device_root =
-            merkle_root_native(leaf, &merkle_siblings, &path_bits);
+        let device_root = merkle_root_native(leaf, &merkle_siblings, &path_bits);
 
         // Attestation commitment = MiMC(device_id, challenge, response)
-        let attestation_commitment =
-            mimc_hash(&[device_id, challenge, response]);
+        let attestation_commitment = mimc_hash(&[device_id, challenge, response]);
 
         // Device nullifier = MiMC(device_id, epoch_id)
         let device_nullifier = mimc_hash(&[device_id, epoch_id]);
@@ -123,16 +120,12 @@ impl AttestationCircuit {
 }
 
 impl ConstraintSynthesizer<Fr> for AttestationCircuit {
-    fn generate_constraints(
-        self,
-        cs: ConstraintSystemRef<Fr>,
-    ) -> Result<(), SynthesisError> {
+    fn generate_constraints(self, cs: ConstraintSystemRef<Fr>) -> Result<(), SynthesisError> {
         let constants = mimc_constants();
 
         // Public inputs
         let device_root_var = FpVar::new_input(cs.clone(), || {
-            self.device_root
-                .ok_or(SynthesisError::AssignmentMissing)
+            self.device_root.ok_or(SynthesisError::AssignmentMissing)
         })?;
         let attestation_commitment_var = FpVar::new_input(cs.clone(), || {
             self.attestation_commitment
@@ -176,10 +169,8 @@ impl ConstraintSynthesizer<Fr> for AttestationCircuit {
         }
 
         // Constraint 1: device leaf + Merkle membership
-        let leaf =
-            mimc_hash_gadget(&[device_id_var.clone()], &constants)?;
-        let computed_root =
-            merkle_verify_gadget(&leaf, &siblings, &path_bits, &constants)?;
+        let leaf = mimc_hash_gadget(&[device_id_var.clone()], &constants)?;
+        let computed_root = merkle_verify_gadget(&leaf, &siblings, &path_bits, &constants)?;
         computed_root.enforce_equal(&device_root_var)?;
 
         // Constraint 2: attestation_commitment = MiMC(device_id, challenge, response)
@@ -190,8 +181,7 @@ impl ConstraintSynthesizer<Fr> for AttestationCircuit {
         computed_att.enforce_equal(&attestation_commitment_var)?;
 
         // Constraint 3: device_nullifier = MiMC(device_id, epoch_id)
-        let computed_null =
-            mimc_hash_gadget(&[device_id_var, epoch_id_var], &constants)?;
+        let computed_null = mimc_hash_gadget(&[device_id_var, epoch_id_var], &constants)?;
         computed_null.enforce_equal(&device_nullifier_var)?;
 
         Ok(())

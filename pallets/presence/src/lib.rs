@@ -49,7 +49,6 @@ pub mod pallet {
         /// Validator set provider -- reads from canonical validator pallet.
         type ValidatorProvider: seveny_primitives::traits::ValidatorProvider;
 
-
         #[pallet::constant]
         type MaxVotesPerPresence: Get<u32>;
 
@@ -605,7 +604,6 @@ pub mod pallet {
                     || T::ValidatorProvider::is_validator_active(caller_validator),
                 Error::<T>::UnauthorizedDeclaration
             );
-
 
             let mut record =
                 Presences::<T>::get(epoch, actor).ok_or(Error::<T>::PresenceNotFound)?;

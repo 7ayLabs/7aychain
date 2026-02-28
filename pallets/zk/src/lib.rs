@@ -16,7 +16,6 @@ pub mod ec_vss;
 #[cfg(any(test, feature = "circuits"))]
 pub mod circuits;
 
-
 #[cfg(test)]
 mod tests;
 
@@ -28,7 +27,6 @@ mod circuit_tests;
 
 #[cfg(test)]
 mod integration_tests;
-
 
 use alloc::vec::Vec;
 use frame_support::pallet_prelude::*;
