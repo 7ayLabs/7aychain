@@ -10,7 +10,7 @@ Requirements:
     pip install substrate-interface
 """
 
-import sys, os, time, json, hashlib, secrets, argparse, pathlib, re
+import sys, os, time, json, hashlib, secrets, argparse, pathlib, re, shutil
 from datetime import datetime
 
 _ANSI_RE = re.compile(r'\033\[[0-9;]*m')
@@ -46,16 +46,33 @@ from laud_crypto import (
 )
 
 
+def _term_width():
+    try:
+        return shutil.get_terminal_size((80, 24)).columns
+    except Exception:
+        return 80
+
+
 class C:
-    B   = "\033[94m"
-    BB  = "\033[1;94m"
-    G   = "\033[92m"
-    Y   = "\033[93m"
-    RED = "\033[91m"
-    CY  = "\033[96m"
-    W   = "\033[1;97m"
-    DIM = "\033[2m"
-    R   = "\033[0m"
+    R     = "\033[0m"
+    B     = "\033[1m"
+    DIM   = "\033[2m"
+    IT    = "\033[3m"
+    UL    = "\033[4m"
+    WHITE = "\033[97m"
+    GRAY  = "\033[90m"
+    CYAN  = "\033[96m"
+    GREEN = "\033[92m"
+    AMBER = "\033[93m"
+    RED   = "\033[91m"
+    BLUE  = "\033[94m"
+    BW    = "\033[1;97m"
+    BC    = "\033[1;96m"
+    BG    = "\033[1;92m"
+    BA    = "\033[1;93m"
+    BR    = "\033[1;91m"
+    # Backward-compatible aliases
+    BB = BC; G = GREEN; Y = AMBER; CY = CYAN; W = BW
 
 
 class LaudCLI:
@@ -116,7 +133,7 @@ class LaudCLI:
         url = url or self.url
         if not SUBSTRATE_OK:
             self._err("substrate-interface not installed")
-            print(f"  Run: {C.Y}pip install substrate-interface{C.R}")
+            print(f"    {C.AMBER}pip install substrate-interface{C.R}")
             return False
         try:
             self._info(f"Connecting to {url}...")
@@ -417,18 +434,14 @@ class LaudCLI:
             print(f"    {C.W}{val}{C.R}")
 
     def _ok(self, msg):
-        if self._mode == 'normal':
-            print(f"  {C.G}[Done]{C.R} {msg}")
-        else:
-            print(f"  {C.G}[OK]{C.R} {msg}")
+        print(f"  {C.BG}\u2713{C.R} {msg}")
 
     def _err(self, msg):
         if self._mode == 'normal':
-            # Strip technical details for normal users
             friendly = self._friendly_error(msg)
-            print(f"  {C.RED}[!]{C.R} {friendly}")
+            print(f"  {C.BR}\u2717{C.R} {friendly}")
         else:
-            print(f"  {C.RED}[ERR]{C.R} {msg}")
+            print(f"  {C.BR}\u2717{C.R} {msg}")
 
     def _friendly_error(self, msg):
         """Convert technical error to user-friendly message."""
@@ -446,13 +459,13 @@ class LaudCLI:
         return cleaned
 
     def _info(self, msg):
-        print(f"  {C.CY}[..]{C.R} {msg}")
+        print(f"  {C.DIM}\u00b7{C.R} {msg}")
 
     def _progress(self, step, total, msg):
-        bar_len = 20
-        filled = int(bar_len * step / total)
-        bar = f"{C.G}{'█' * filled}{C.DIM}{'░' * (bar_len - filled)}{C.R}"
-        print(f"  {bar} {C.DIM}[{step}/{total}]{C.R} {msg}")
+        bar_len = 24
+        filled = int(bar_len * step / total) if total else 0
+        bar = f"{C.BC}{'━' * filled}{C.DIM}{'━' * (bar_len - filled)}{C.R}"
+        print(f"  {C.BC}▸{C.R} {bar} {C.DIM}{step}/{total}{C.R} {msg}")
 
     _STATE_COLORS = {
         'Finalized': C.G, 'Validated': C.G,
@@ -469,22 +482,25 @@ class LaudCLI:
             return f"{color}{s}{C.R}"
         return f"{C.W}{s}{C.R}"
 
-    def _val(self, key, val):
+    def _kv(self, key, val):
         v = val.value if hasattr(val, 'value') else val
         if isinstance(v, dict):
-            print(f"  {C.CY}{key}{C.R}:")
+            print(f"  {C.W}{key}{C.R}")
             for k2, v2 in v.items():
                 display = (self._colorize_state(v2)
                            if k2 in ('state', 'status')
                            else f"{C.W}{v2}{C.R}")
-                print(f"    {C.DIM}{k2:>22}:{C.R} {display}")
+                print(f"    {C.DIM}{k2:>20}{C.R}  {display}")
         else:
             display = (self._colorize_state(v)
                        if key.lower() in ('state', 'status', 'final state')
                        else f"{C.W}{v}{C.R}")
-            print(f"  {C.CY}{key}:{C.R} {display}")
+            print(f"  {C.DIM}{key:>20}{C.R}  {display}")
 
-    def _table(self, headers, rows):
+    # Backward compat alias
+    _val = _kv
+
+    def _grid(self, headers, rows):
         if not rows:
             print(f"  {C.DIM}(no data){C.R}")
             return
@@ -495,103 +511,128 @@ class LaudCLI:
                     widths[i] = max(widths[i], len(str(cell)))
         widths = [min(w, 32) for w in widths]
         hdr = "  "
-        sep = "  "
         for i, h in enumerate(headers):
             w = widths[i] if i < len(widths) else 10
-            hdr += f"{C.BB}{str(h):<{w}}{C.R}  "
-            sep += f"{C.DIM}{'─' * w}{C.R}  "
+            hdr += f"{C.DIM}{C.UL}{str(h):<{w}}{C.R}  "
         print(hdr)
-        print(sep)
         for row in rows:
             line = "  "
             for i, cell in enumerate(row):
                 w = widths[i] if i < len(widths) else 10
                 s = str(cell)
                 if len(s) > w:
-                    s = s[:w-1] + '…'
+                    s = s[:w-1] + '\u2026'
                 if i == 0:
-                    line += f"{C.CY}{s:<{w}}{C.R}  "
-                else:
                     line += f"{C.W}{s:<{w}}{C.R}  "
+                else:
+                    line += f"{s:<{w}}  "
             print(line)
         print()
 
+    # Backward compat alias
+    _table = _grid
+
+    def _panel(self, title, subtitle="", detail=""):
+        print(f"  {C.BC}\u25cf{C.R} {C.BW}{title}{C.R}")
+        if subtitle:
+            print(f"    {C.DIM}{subtitle}{C.R}")
+        if detail:
+            print(f"    {detail}")
+
+    # Backward compat alias
     def _box(self, lines, color=None, width=53):
-        c = color or C.BB
-        top = f"  {c}\u256d\u2500{'\u2500' * width}\u2500\u256e{C.R}"
-        bot = f"  {c}\u2570\u2500{'\u2500' * width}\u2500\u256f{C.R}"
-        print(top)
-        for ln in lines:
-            vis = len(_ANSI_RE.sub('', ln))
-            pad = max(0, width - vis)
-            print(f"  {c}\u2502{C.R} {ln}{' ' * pad} {c}\u2502{C.R}")
-        print(bot)
+        if lines:
+            self._panel(
+                _ANSI_RE.sub('', lines[0]).strip(),
+                _ANSI_RE.sub('', lines[1]).strip() if len(lines) > 1 else "",
+            )
+            for ln in lines[2:]:
+                text = ln.strip()
+                if text:
+                    print(f"    {text}")
 
-    def _separator_line(self, label="", width=53):
-        total = width + 4
+    def _section(self, label=""):
         if label:
-            dash_len = max(0, total - len(label) - 4)
-            print(f"  {C.DIM}\u2500\u2500 {C.B}{label}{C.DIM} "
-                  f"{'\u2500' * dash_len}{C.R}")
+            print(f"  {C.DIM}{C.B}{label.upper()}{C.R}")
         else:
-            print(f"  {C.DIM}{'\u2500' * total}{C.R}")
+            print()
 
-    def _header(self, title):
+    # Backward compat aliases
+    _separator_line = _section
+
+    def _heading(self, title):
         print()
-        self._separator_line(title)
+        w = min(_term_width() - 4, 60)
+        print(f"  {C.BC}{title}{C.R}")
+        print(f"  {C.DIM}{'━' * w}{C.R}")
+
+    # Backward compat alias
+    _header = _heading
+
+    def _menu_cell(self, key, label, hint=""):
+        if hint:
+            print(f"   {C.BA}{key:>2}{C.R}  {label:<20} {C.DIM}{hint}{C.R}")
+        else:
+            print(f"   {C.BA}{key:>2}{C.R}  {label}")
 
     def _menu_display(self, title, options, domain=None):
-        # Box header with summary
+        print()
         if domain and domain.help_summary:
-            print()
-            self._box([
-                f"{C.BB}{title}{C.R}",
-                f"{C.DIM}{domain.help_summary[:51]}{C.R}",
-            ], color=C.BB)
+            self._panel(title, domain.help_summary)
         else:
-            print()
-            self._separator_line(title)
+            print(f"  {C.BC}{title}{C.R}")
+        print()
 
-        # Build command lookup for help_text
         cmd_info = {}
         if domain:
             for cmd in domain.commands:
                 cmd_info[cmd.key] = cmd
 
+        # Collect items (skip separators, footer keys)
+        items = []
+        current_section = None
         for key, label in options:
             if key == "\u2500" or key == "---":
-                if label:
-                    print()
-                    self._separator_line(label.upper())
-                else:
-                    print()
+                current_section = label
                 continue
             if key in ("?", "i", "0"):
-                continue  # shown in footer
-
-            # Lookup help_text
+                continue
             ci = cmd_info.get(key)
-            ht = ""
-            if ci and ci.help_text:
-                ht = ci.help_text[:30]
+            ht = ci.help_text[:30] if (ci and ci.help_text) else ""
+            items.append((key, label, ht, current_section))
 
-            if ht:
-                lbl = label[:22]
-                dot_n = max(2, 26 - len(lbl))
-                dots = '\u00b7' * dot_n
-                print(f"   {C.Y}{key:>2}{C.R}  "
-                      f"{lbl:<22}"
-                      f"{C.DIM}{dots}{C.R} "
-                      f"{C.DIM}{ht}{C.R}")
-            else:
-                print(f"   {C.Y}{key:>2}{C.R}  {label}")
+        # Render in 2-column grid if terminal is wide enough
+        tw = _term_width()
+        if tw >= 72 and len(items) >= 4:
+            prev_sec = None
+            for idx in range(0, len(items), 2):
+                a = items[idx]
+                b = items[idx + 1] if idx + 1 < len(items) else None
+                sec = a[3]
+                if sec and sec != prev_sec:
+                    print()
+                    self._section(sec)
+                    prev_sec = sec
+                col_w = (tw - 8) // 2
+                left = f" {C.BA}{a[0]:>2}{C.R}  {a[1]:<{col_w - 6}}"
+                if b:
+                    right = f" {C.BA}{b[0]:>2}{C.R}  {b[1]}"
+                    print(f"  {left}{right}")
+                else:
+                    print(f"  {left}")
+        else:
+            prev_sec = None
+            for key, label, ht, sec in items:
+                if sec and sec != prev_sec:
+                    print()
+                    self._section(sec)
+                    prev_sec = sec
+                self._menu_cell(key, label, ht)
 
-        # Footer
         print()
-        self._separator_line()
-        print(f"    {C.DIM}i{C.R}  instructions"
-              f"    {C.DIM}?{C.R}  refresh"
-              f"    {C.DIM}0{C.R}  back")
+        print(f"  {C.DIM}i{C.R} instructions  "
+              f"{C.DIM}?{C.R} refresh  "
+              f"{C.DIM}0{C.R} back")
         print()
 
     # ------------------------------------------------------------------
@@ -599,9 +640,9 @@ class LaudCLI:
     # ------------------------------------------------------------------
 
     def _prompt(self, text, default=None):
-        suffix = f" [{C.DIM}{default}{C.R}]" if default else ""
+        suffix = f" {C.DIM}({default}){C.R}" if default else ""
         try:
-            val = input(f"  {C.CY}>{C.R} {text}{suffix}: ").strip()
+            val = input(f"  {C.BC}▸{C.R} {text}{suffix} ").strip()
             return val if val else (default or "")
         except (EOFError, KeyboardInterrupt):
             print()
@@ -669,7 +710,7 @@ class LaudCLI:
 
     def _prompt_enum(self, label, options):
         for i, opt in enumerate(options, 1):
-            print(f"    {C.Y}{i}{C.R} {opt}")
+            print(f"    {C.BA}{i}{C.R} {opt}")
         idx = self._prompt_int(label, 1) - 1
         return options[max(0, min(idx, len(options) - 1))]
 
@@ -681,8 +722,11 @@ class LaudCLI:
     def _validator_id(self, name):
         return self._actor_id(name)
 
-    def _pause(self):
-        print(f"  {C.DIM}{'\u2500' * 40}{C.R}")
+    def _divider(self):
+        print()
+
+    # Backward compat alias
+    _pause = _divider
 
     # ------------------------------------------------------------------
     # Error hints
@@ -882,38 +926,33 @@ class LaudCLI:
 
     def _show_domain_instructions(self, domain):
         print()
-        self._box([
-            f"{C.BB}About: {domain.title}{C.R}",
-        ], color=C.CY)
+        self._panel(domain.title)
         if domain.instructions:
             print(domain.instructions)
         elif domain.help_summary:
-            print(f"  {domain.help_summary}")
+            print(f"    {C.DIM}{domain.help_summary}{C.R}")
         print()
-        self._separator_line("COMMANDS")
+        self._section("COMMANDS")
         for cmd in domain.commands:
             if cmd.action == "separator":
                 continue
-            print(f"   {C.Y}{cmd.key:>2}{C.R}  "
-                  f"{C.W}{cmd.label}{C.R}")
+            print(f"   {C.BA}{cmd.key:>2}{C.R}  {C.W}{cmd.label}{C.R}")
             if cmd.help_text:
                 print(f"       {C.DIM}{cmd.help_text}{C.R}")
         print()
 
     def _show_command_instructions(self, cmd):
         print()
-        self._box([
-            f"{C.BB}{cmd.label}{C.R}",
-        ], color=C.CY)
+        self._panel(cmd.label)
         if cmd.instructions:
             print(cmd.instructions)
         elif cmd.help_text:
-            print(f"  {cmd.help_text}")
+            print(f"    {C.DIM}{cmd.help_text}{C.R}")
         else:
-            print(f"  {C.DIM}No detailed instructions "
+            print(f"    {C.DIM}No detailed instructions "
                   f"for this command.{C.R}")
         if cmd.aliases:
-            print(f"\n  {C.DIM}Shortcuts: "
+            print(f"\n    {C.DIM}Shortcuts: "
                   f"{', '.join(cmd.aliases)}{C.R}")
         print()
 
@@ -951,29 +990,30 @@ class LaudCLI:
                 "Try: use epoch 5, use bob, use clear")
 
     def _show_status(self):
-        parts = [f"{C.BB}laud{C.R}"]
+        print()
+        # Connection line
         if self.connected:
-            parts.append(f"{C.DIM}{self.url}{C.R}")
+            blk_str = ""
             try:
                 blk = self.substrate.get_block_header(
                 )['header']['number']
-                parts.append(f"{C.G}block #{blk}{C.R}")
+                blk_str = f" {C.DIM}\u00b7{C.R} block {C.W}#{blk}{C.R}"
             except (ConnectionError, BrokenPipeError, OSError):
-                parts.append(f"{C.G}connected{C.R}")
                 if self._mode == 'dev':
                     self._info("Block header fetch failed (connection)")
             except Exception:
-                parts.append(f"{C.G}connected{C.R}")
                 if self._mode == 'dev':
                     self._info("Block header fetch failed")
+            print(f"  {C.BG}\u2713{C.R} {C.DIM}{self.url}{C.R}{blk_str}")
         else:
-            parts.append(f"{C.RED}offline{C.R}")
-        if self._ctx_epoch is not None:
-            parts.append(f"{C.Y}epoch {self._ctx_epoch}{C.R}")
+            print(f"  {C.BR}\u2717{C.R} {C.DIM}offline{C.R}")
+
+        # Context
         acct = self._ctx_account
-        admin_tag = (f" {C.DIM}(admin){C.R}" if acct == 'alice' else "")
-        parts.append(f"account: {C.W}{acct}{C.R}{admin_tag}")
-        print(f"  {'  '.join(parts)}")
+        admin = f" {C.DIM}(admin){C.R}" if acct == 'alice' else ""
+        self._kv("account", f"{acct}{admin}")
+        if self._ctx_epoch is not None:
+            self._kv("epoch", self._ctx_epoch)
 
         # Epoch dashboard
         status = self._fetch_epoch_status()
@@ -986,6 +1026,7 @@ class LaudCLI:
             end_blk = status.get('end_block', 0)
             pc = status.get('participant_count', 0)
 
+            print()
             if self._mode == 'normal':
                 state_labels = {
                     'None': 'No Session', 'Scheduled': 'Upcoming',
@@ -993,13 +1034,12 @@ class LaudCLI:
                     'Finalized': 'Complete',
                 }
                 sl = state_labels.get(state, state)
-                print(f"  Session: {C.W}E{eid}{C.R}  "
-                      f"State: {C.W}{sl}{C.R}  "
-                      f"Participants: {C.W}{pc}{C.R}")
+                self._kv("session", f"E{eid}")
+                self._kv("state", sl)
             else:
-                print(f"  Epoch: {C.W}{eid}{C.R}  "
-                      f"State: {C.W}{state}{C.R}  "
-                      f"Participants: {C.W}{pc}{C.R}")
+                self._kv("epoch", eid)
+                self._kv("state", state)
+            self._kv("participants", pc)
 
             # Progress bar for active epoch
             if state == 'Active' and end_blk > 0:
@@ -1009,31 +1049,33 @@ class LaudCLI:
                         (cur_blk - start) /
                         (end_blk - start) * 100)))
                     remaining = max(0, end_blk - cur_blk)
-                    bar_len = 20
+                    bar_len = 24
                     filled = int(bar_len * pct / 100)
-                    bar = ('█' * filled +
-                           '░' * (bar_len - filled))
-                    print(f"  {C.G}{bar}{C.R} {pct}%  "
-                          f"{C.DIM}~{remaining} blocks left{C.R}")
+                    bar = (f"{C.BC}{'━' * filled}"
+                           f"{C.DIM}{'━' * (bar_len - filled)}{C.R}")
+                    print(f"  {C.BC}▸{C.R} {bar} "
+                          f"{C.DIM}{pct}% \u00b7 "
+                          f"~{remaining} blocks left{C.R}")
 
             # Participation status
             if pres == 'Finalized':
-                print(f"  You: {C.W}Verified{C.R}")
+                print(f"  {C.BG}\u2713{C.R} Verified")
             elif pres == 'Slashed':
-                print(f"  You: {C.RED}Slashed{C.R}")
+                print(f"  {C.BR}\u2717{C.R} Slashed")
             elif pres == 'Validated':
-                print(f"  You: {C.BB}Validated{C.R}")
+                print(f"  {C.BC}\u2713{C.R} Validated")
             elif pres == 'Declared':
                 vc = status.get('vote_count', 0)
                 qt = status.get('quorum_threshold', 2)
-                print(f"  You: {C.CY}Declared "
-                      f"({vc}/{qt} votes){C.R}")
+                print(f"  {C.DIM}\u00b7{C.R} Declared "
+                      f"{C.DIM}({vc}/{qt} votes){C.R}")
             elif is_part:
-                print(f"  You: {C.G}Registered{C.R}")
+                print(f"  {C.BG}\u00b7{C.R} Registered")
             elif state not in ('None', 'Finalized'):
-                print(f"  You: {C.DIM}Not participating{C.R}")
+                print(f"  {C.DIM}\u00b7 Not participating{C.R}")
 
-            print(f"  {C.DIM}Tip: type 'flow' for next steps{C.R}")
+            print(f"\n  {C.DIM}type{C.R} flow "
+                  f"{C.DIM}for next steps{C.R}")
 
     def bootstrap(self):
         self._auto_setup_validators()
@@ -1181,7 +1223,7 @@ class LaudCLI:
             return None
 
     def _epoch_status_tag(self):
-        """Build colorized epoch status tag for the prompt."""
+        """Build compact epoch status tag for the prompt."""
         status = self._fetch_epoch_status()
         if not status:
             return ""
@@ -1190,36 +1232,38 @@ class LaudCLI:
         state = status.get('epoch_state', 'None')
 
         if state == 'None' and eid == 0:
-            return f" {C.DIM}[no epoch]{C.R}"
+            return f" {C.DIM}no epoch{C.R}"
 
         state_map = {
-            'Scheduled': (C.Y, 'SCHED'),
-            'Active': (C.G, 'ACTIVE'),
-            'Closed': (C.DIM, 'CLOSED'),
-            'Finalized': (C.DIM, 'FINAL'),
+            'Scheduled': (C.AMBER, 'sched'),
+            'Active': (C.GREEN, 'active'),
+            'Closed': (C.GRAY, 'closed'),
+            'Finalized': (C.GRAY, 'final'),
         }
-        color, label = state_map.get(state, (C.DIM, state[:6]))
+        color, label = state_map.get(state, (C.GRAY, state[:6].lower()))
 
-        # Participation tag
         pres = status.get('presence_state')
         is_part = status.get('is_participant', False)
 
         if pres == 'Finalized':
-            ptag = f"{C.W}DONE"
+            ptag = f"{C.BG}\u2713"
         elif pres == 'Slashed':
-            ptag = f"{C.RED}SLASHED"
+            ptag = f"{C.BR}\u2717"
         elif pres == 'Validated':
-            ptag = f"{C.BB}VALID"
+            ptag = f"{C.BC}\u2713"
         elif pres == 'Declared':
             vc = status.get('vote_count', 0)
             qt = status.get('quorum_threshold', 2)
-            ptag = f"{C.CY}DECL {vc}/{qt}"
+            ptag = f"{C.CYAN}{vc}/{qt}"
         elif is_part:
-            ptag = f"{C.G}REG"
+            ptag = f"{C.GREEN}\u00b7"
         else:
-            ptag = f"{C.DIM}--"
+            ptag = ""
 
-        return f" [{color}E{eid}:{label}{C.R}|{ptag}{C.R}]"
+        tag = f" {color}E{eid}:{label}{C.R}"
+        if ptag:
+            tag += f" {ptag}{C.R}"
+        return tag
 
     def _show_epoch_flow(self):
         """Show contextual actions based on epoch state and participation."""
@@ -1245,9 +1289,9 @@ class LaudCLI:
                 'Finalized': 'Complete',
             }
             sl = state_labels.get(state, state)
-            self._header(f"SESSION {eid}  [{sl}]")
+            self._heading(f"Session {eid} \u00b7 {sl}")
         else:
-            self._header(f"EPOCH {eid}  [{state}]")
+            self._heading(f"Epoch {eid} \u00b7 {state}")
 
         # Progress
         if state == 'Active' and end_blk > 0:
@@ -1256,43 +1300,37 @@ class LaudCLI:
                 pct = min(100, max(0, int(
                     (cur_blk - start) / (end_blk - start) * 100)))
                 remaining = max(0, end_blk - cur_blk)
-                bar_len = 20
+                bar_len = 24
                 filled = int(bar_len * pct / 100)
-                bar = f"{'█' * filled}{'░' * (bar_len - filled)}"
-                print(f"  {C.G}{bar}{C.R} {pct}%  "
-                      f"{C.DIM}~{remaining} blocks left{C.R}")
+                bar = (f"{C.BC}{'━' * filled}"
+                       f"{C.DIM}{'━' * (bar_len - filled)}{C.R}")
+                print(f"  {C.BC}▸{C.R} {bar} "
+                      f"{C.DIM}{pct}% \u00b7 "
+                      f"~{remaining} blocks left{C.R}")
                 print()
 
         # Participation summary
         pc = status.get('participant_count', 0)
-        if self._mode == 'normal':
-            print(f"  Participants: {C.W}{pc}{C.R}    "
-                  f"Your status: ", end="")
-        else:
-            print(f"  Participants: {C.W}{pc}{C.R}  |  "
-                  f"Presence: ", end="")
+        self._kv("participants", pc)
 
         if pres == 'Finalized':
-            print(f"{C.W}Verified and locked{C.R}")
+            print(f"  {C.BG}\u2713{C.R} Verified and locked")
         elif pres == 'Slashed':
-            print(f"{C.RED}Rejected{C.R}")
+            print(f"  {C.BR}\u2717{C.R} Rejected")
         elif pres == 'Validated':
-            print(f"{C.BB}Confirmed, ready to finalize{C.R}")
+            print(f"  {C.BC}\u2713{C.R} Confirmed, ready to finalize")
         elif pres == 'Declared':
             needed = max(0, qt - vc)
-            print(f"{C.CY}Checked in, need {needed} more "
-                  f"vote(s) ({vc}/{qt}){C.R}")
+            print(f"  {C.DIM}\u00b7{C.R} Checked in, need {needed} more "
+                  f"vote(s) {C.DIM}({vc}/{qt}){C.R}")
         elif is_part:
-            print(f"{C.G}Registered, not yet checked in{C.R}")
+            print(f"  {C.BG}\u00b7{C.R} Registered, not yet checked in")
         else:
-            print(f"{C.DIM}Not participating{C.R}")
+            print(f"  {C.DIM}\u00b7 Not participating{C.R}")
         print()
 
         # Actions
-        if self._mode == 'normal':
-            print(f"  {C.BB}WHAT TO DO NEXT:{C.R}")
-        else:
-            print(f"  {C.BB}AVAILABLE ACTIONS:{C.R}")
+        self._section("NEXT STEPS")
 
         actions = []
 
@@ -1387,13 +1425,13 @@ class LaudCLI:
 
         for actionable, label, shortcut in actions:
             if actionable and shortcut:
-                print(f"    {C.G}>{C.R} {label}")
-                print(f"      {C.DIM}run: {shortcut}{C.R}")
+                print(f"    {C.BC}▸{C.R} {label}")
+                print(f"      {C.DIM}{shortcut}{C.R}")
             elif not actionable and shortcut:
-                print(f"    {C.CY}>{C.R} {label}")
-                print(f"      {C.DIM}run: {shortcut}{C.R}")
+                print(f"    {C.DIM}\u00b7{C.R} {label}")
+                print(f"      {C.DIM}{shortcut}{C.R}")
             else:
-                print(f"    {C.DIM}  {label}{C.R}")
+                print(f"    {C.DIM}\u00b7 {label}{C.R}")
         print()
 
     def _next_test_epoch(self):
@@ -3681,50 +3719,79 @@ class LaudCLI:
 
         print()
         if self._mode == 'dev':
-            print(f"  {C.Y}[DEV]{C.R}  "
-                  f"{C.DIM}mode normal to simplify{C.R}")
+            print(f"  {C.BA}DEV{C.R}  "
+                  f"{C.DIM}\u00b7 type{C.R} mode normal "
+                  f"{C.DIM}to simplify{C.R}")
         else:
-            print(f"  {C.G}[NORMAL]{C.R}  "
-                  f"{C.DIM}mode dev for full access{C.R}")
+            print(f"  {C.BG}NORMAL{C.R}  "
+                  f"{C.DIM}\u00b7 type{C.R} mode dev "
+                  f"{C.DIM}for full access{C.R}")
 
+        tw = _term_width()
         for gkey, gtitle in group_order:
             domains = groups.get(gkey, [])
             if not domains:
                 continue
             print()
-            self._separator_line(gtitle)
-            for d in domains:
-                title = (d.normal_title
-                         if self._mode == 'normal'
-                         and d.normal_title
-                         else d.name.capitalize())
-                desc = (d.help_summary[:32]
-                        if d.help_summary else "")
-                tname = title[:16]
-                dot_n = max(2, 34 - len(tname))
-                dots = '\u00b7' * dot_n
-                print(f"   {C.Y}{d.number:>2}{C.R}  "
-                      f"{tname:<16}"
-                      f"{C.DIM}{dots}{C.R} "
-                      f"{desc}")
+            self._section(gtitle)
+
+            # 2-column grid for wide terminals
+            if tw >= 72 and len(domains) >= 2:
+                col_w = (tw - 8) // 2
+                for idx in range(0, len(domains), 2):
+                    d = domains[idx]
+                    d2 = domains[idx + 1] if idx + 1 < len(domains) else None
+                    t1 = (d.normal_title
+                          if self._mode == 'normal' and d.normal_title
+                          else d.name.capitalize())
+                    left = (f" {C.BA}{d.number:>2}{C.R}  "
+                            f"{t1:<{col_w - 6}}")
+                    if d2:
+                        t2 = (d2.normal_title
+                              if self._mode == 'normal' and d2.normal_title
+                              else d2.name.capitalize())
+                        right = f" {C.BA}{d2.number:>2}{C.R}  {t2}"
+                        print(f"  {left}{right}")
+                    else:
+                        print(f"  {left}")
+            else:
+                for d in domains:
+                    title = (d.normal_title
+                             if self._mode == 'normal'
+                             and d.normal_title
+                             else d.name.capitalize())
+                    desc = (d.help_summary[:32]
+                            if d.help_summary else "")
+                    self._menu_cell(str(d.number), title, desc)
 
         print()
-        self._separator_line("TESTS")
-        for key, name, desc in [
-            ("t1", "test pop", "Full PoP lifecycle"),
-            ("t2", "test pbt", "PBT triangulation"),
-            ("t3", "test commit", "Commit-reveal"),
-        ]:
-            dot_n = max(2, 24 - len(name))
-            dots = '\u00b7' * dot_n
-            print(f"   {C.Y}{key:>2}{C.R}  "
-                  f"{name:<16}"
-                  f"{C.DIM}{dots}{C.R} "
-                  f"{desc}")
+        self._section("TESTS")
+        if tw >= 72:
+            tests = [
+                ("t1", "test pop"), ("t2", "test pbt"),
+                ("t3", "test commit"),
+            ]
+            col_w = (tw - 8) // 2
+            for idx in range(0, len(tests), 2):
+                a = tests[idx]
+                left = f" {C.BA}{a[0]:>2}{C.R}  {a[1]:<{col_w - 6}}"
+                if idx + 1 < len(tests):
+                    b = tests[idx + 1]
+                    right = f" {C.BA}{b[0]:>2}{C.R}  {b[1]}"
+                    print(f"  {left}{right}")
+                else:
+                    print(f"  {left}")
+        else:
+            for key, name, desc in [
+                ("t1", "test pop", "Full PoP lifecycle"),
+                ("t2", "test pbt", "PBT triangulation"),
+                ("t3", "test commit", "Commit-reveal"),
+            ]:
+                self._menu_cell(key, name, desc)
+
         print()
-        self._separator_line()
-        print(f"  {C.DIM}status  bootstrap (b)  "
-              f"flow (f)  connect (1)  help  ?  exit{C.R}")
+        print(f"  {C.DIM}status \u00b7 bootstrap (b) \u00b7 "
+              f"flow (f) \u00b7 connect (1) \u00b7 help \u00b7 ? \u00b7 exit{C.R}")
         print()
 
     # ------------------------------------------------------------------
@@ -3733,38 +3800,37 @@ class LaudCLI:
 
     def _cmd_help(self, args=None):
         if not args:
+            print()
+            self._panel("LAUD NETWORKS", "7ayLabs")
             print(f"""
-  {C.BB}LAUD NETWORKS{C.R}  {C.DIM}7ayLabs{C.R}
-
-  {C.W}Navigation{C.R}
-    menu              Show all commands with numbers
+  {C.BC}Navigation{C.R}
+    menu              Show all commands
     <command>         Enter submenu (e.g. 'presence' or '2')
     <cmd> <action>    Direct action (e.g. 'presence declare')
-    back              Return to parent menu
-    0                 Back / exit current submenu
+    back / 0          Return to parent menu
 
-  {C.W}Context{C.R}
-    use epoch <N>     Set default epoch for all commands
+  {C.BC}Context{C.R}
+    use epoch <N>     Set default epoch
     use <name>        Set default account (alice, bob, ...)
     use clear         Reset to defaults
     status            Show chain / epoch / account status
 
-  {C.W}Quick Actions{C.R}
-    b / bootstrap     Bootstrap devnet (epoch + validators)
-    f / flow          Show what to do next (epoch-aware)
+  {C.BC}Quick Actions{C.R}
+    b / bootstrap     Bootstrap devnet
+    f / flow          Show what to do next
     t1 / test pop     Full PoP lifecycle test
     t2 / test pbt     PBT triangulation test
     t3 / test commit  Commit-reveal test
     1 / connect       Connect to node
 
-  {C.W}Tips{C.R}
+  {C.BC}Tips{C.R}
     Tab               Autocomplete commands
     Up/Down           Command history
     Ctrl+C            Cancel / back to root
     i                 Instructions (inside any submenu)
     ?                 Quick start guide
 
-  {C.DIM}Type 'help <topic>' for details (e.g. 'help presence'){C.R}
+  {C.DIM}type{C.R} help <topic> {C.DIM}for details{C.R}
 """)
             return
         topic = args[0].lower()
@@ -3776,42 +3842,39 @@ class LaudCLI:
                 f"No help for '{topic}'. Type 'help' for general help.")
 
     def show_guide(self):
-        self._header("QUICK START GUIDE")
-        print(f"""  {C.W}KEY CONCEPTS{C.R}
-  {C.DIM}  Time Period = a window during which presence proofs happen
-    Validator   = a node that votes on presence claims
-    Identity    = a participant identified by their public key
-    PBT         = position-based triangulation (location proofs){C.R}
+        self._heading("Quick Start Guide")
+        print(f"""
+  {C.BC}Concepts{C.R}
+  {C.DIM}  Epoch       = time window for presence proofs
+    Validator   = node that votes on presence claims
+    Identity    = participant identified by public key
+    PBT         = position-based triangulation{C.R}
 
-  {C.W}1. Start the devnet{C.R}
-     {C.Y}cd devnet && ./scripts/dev.sh{C.R}
-     {C.DIM}Or multi-node:  docker compose up -d --build{C.R}
+  {C.BC}1. Start the devnet{C.R}
+     {C.AMBER}cd devnet && ./scripts/dev.sh{C.R}
 
-  {C.W}2. Connect + bootstrap{C.R}
-     {C.DIM}CLI auto-connects on start. Type {C.Y}bootstrap{C.DIM} or {C.Y}b{C.DIM}:
-     activates time period 1, registers 6 validators, sets positions.{C.R}
+  {C.BC}2. Connect + bootstrap{C.R}
+     {C.DIM}Auto-connects on start. Type{C.R} bootstrap {C.DIM}or{C.R} b
 
-  {C.W}3. Run automated tests{C.R}
-     {C.Y}t1{C.R}  {C.DIM}Full PoP lifecycle    {C.Y}test pop{C.R}
-     {C.Y}t2{C.R}  {C.DIM}PBT flow             {C.Y}test pbt{C.R}
-     {C.Y}t3{C.R}  {C.DIM}Commit-reveal        {C.Y}test commit{C.R}
+  {C.BC}3. Run tests{C.R}
+     {C.AMBER}t1{C.R}  {C.DIM}Full PoP lifecycle{C.R}
+     {C.AMBER}t2{C.R}  {C.DIM}PBT triangulation{C.R}
+     {C.AMBER}t3{C.R}  {C.DIM}Commit-reveal{C.R}
 
-  {C.W}4. Set context{C.R}
-     {C.Y}use epoch 5{C.R}   {C.DIM}all commands use time period 5{C.R}
-     {C.Y}use bob{C.R}       {C.DIM}all commands sign as bob{C.R}
-     {C.Y}use clear{C.R}     {C.DIM}reset to defaults{C.R}
+  {C.BC}4. Set context{C.R}
+     {C.AMBER}use epoch 5{C.R}   {C.DIM}all commands use epoch 5{C.R}
+     {C.AMBER}use bob{C.R}       {C.DIM}sign as bob{C.R}
+     {C.AMBER}use clear{C.R}     {C.DIM}reset to defaults{C.R}
 
-  {C.W}5. Direct commands{C.R}
-     {C.Y}presence declare{C.R}   {C.DIM}or{C.R}  {C.Y}p d{C.R}
-     {C.Y}presence vote{C.R}      {C.DIM}or{C.R}  {C.Y}p v{C.R}
-     {C.Y}pbt test{C.R}           {C.DIM}full PBT test flow{C.R}
+  {C.BC}5. Direct commands{C.R}
+     {C.AMBER}presence declare{C.R}   {C.DIM}or{C.R}  {C.AMBER}p d{C.R}
+     {C.AMBER}presence vote{C.R}      {C.DIM}or{C.R}  {C.AMBER}p v{C.R}
 
-  {C.W}6. Instructions{C.R}
-     {C.DIM}Type {C.Y}i{C.DIM} inside any submenu to learn how it works.
-     Type {C.Y}i 1{C.DIM} to see details about a specific command.{C.R}
+  {C.BC}6. Instructions{C.R}
+     {C.DIM}Type{C.R} i {C.DIM}inside any submenu to learn how it works.{C.R}
 
-  {C.W}7. Accounts{C.R}
-     {C.DIM}alice {C.Y}(admin){C.DIM}, bob, charlie, dave, eve, ferdie
+  {C.BC}7. Accounts{C.R}
+     {C.DIM}alice{C.R} {C.AMBER}(admin){C.R}{C.DIM}, bob, charlie, dave, eve, ferdie
      All pre-funded with 10M UNIT on devnet{C.R}
 """)
 
@@ -3824,17 +3887,17 @@ class LaudCLI:
         self.connect(url)
 
     def _build_prompt(self):
-        mode_tag = (f"{C.Y}dev{C.R}:" if self._mode == 'dev'
-                    else "")
         path = "/".join(["laud"] + self._nav_stack)
-        extras = []
+        parts = []
+        if self._mode == 'dev':
+            parts.append(f"{C.BA}dev{C.R}")
         if self._ctx_account != 'alice':
-            extras.append(f"{C.Y}{self._ctx_account}{C.R}")
+            parts.append(f"{C.AMBER}{self._ctx_account}{C.R}")
         if self._ctx_epoch is not None:
-            extras.append(f"{C.DIM}epoch:{self._ctx_epoch}{C.R}")
+            parts.append(f"{C.DIM}e{self._ctx_epoch}{C.R}")
         epoch_tag = self._epoch_status_tag()
-        extra = " " + " ".join(extras) if extras else ""
-        return f"  {mode_tag}{C.B}{path}{C.R}{extra}{epoch_tag} > "
+        ctx = (" " + " ".join(parts)) if parts else ""
+        return f"  {C.BC}{path}{C.R}{ctx}{epoch_tag} {C.DIM}>{C.R} "
 
     def _dispatch(self, line):
         parts = line.strip().split()
@@ -3965,15 +4028,12 @@ class LaudCLI:
         if os.path.exists(self.MODE_CONFIG_FILE):
             return  # Not first run
         print()
-        self._box([
-            f"{C.BB}Welcome to LAUD NETWORKS{C.R}  {C.DIM}7ayLabs{C.R}",
-            "",
-            f"  {C.W}What you can do:{C.R}",
-            f"  {C.G}>{C.R} Prove your presence at events and sessions",
-            f"  {C.G}>{C.R} Protect documents with split-key encryption",
-            f"  {C.G}>{C.R} Build verifiable trust relationships",
-            "",
-        ], color=C.BB)
+        self._panel("Welcome to LAUD NETWORKS", "7ayLabs")
+        print()
+        print(f"    {C.BG}\u2713{C.R} Prove your presence at events")
+        print(f"    {C.BG}\u2713{C.R} Protect documents with split-key encryption")
+        print(f"    {C.BG}\u2713{C.R} Build verifiable trust relationships")
+        print()
         choice = self._prompt_int(
             "Choose your mode:\n"
             "  1  Standard  (simple interface)\n"
@@ -3984,20 +4044,18 @@ class LaudCLI:
         self._menu_aliases = build_menu_aliases_for_mode(self._mode)
 
     def _print_welcome(self):
-        mode_str = "DEVELOPER" if self._mode == 'dev' else "NORMAL"
-        mode_color = C.Y if self._mode == 'dev' else C.G
+        mode_str = "DEV" if self._mode == 'dev' else "NORMAL"
+        mode_color = C.BA if self._mode == 'dev' else C.BG
         print()
-        self._box([
-            f"{C.BB}LAUD NETWORKS{C.R}  {C.DIM}7ayLabs{C.R}",
-            f"{C.DIM}Proof of Presence Protocol"
-            f"              v0.8.27{C.R}",
-            "",
-            f"{mode_color}[{mode_str} MODE]{C.R}"
-            f"   {C.DIM}switch: mode dev | mode normal{C.R}",
-        ], color=C.BB)
-        print(f"  {C.DIM}Type{C.R} menu {C.DIM}for commands,"
-              f"{C.R} flow {C.DIM}for next steps,"
-              f"{C.R} ? {C.DIM}for guide{C.R}")
+        self._panel(
+            "LAUD NETWORKS 7ayLabs",
+            "Proof of Presence Protocol",
+            f"{C.DIM}v0.8.27{C.R}",
+        )
+        print()
+        print(f"  {mode_color}{mode_str}{C.R}"
+              f" {C.DIM}\u00b7 type{C.R} menu"
+              f" {C.DIM}\u00b7{C.R} ? {C.DIM}for guide{C.R}")
         print()
 
     def run(self):
@@ -4006,9 +4064,9 @@ class LaudCLI:
         self._setup_readline()
 
         if not SUBSTRATE_OK:
-            print(f"  {C.RED}substrate-interface not found.{C.R}")
-            print(f"  Run: {C.Y}pip install substrate-interface{C.R}")
-            print(f"  Or:  {C.Y}source .venv/bin/activate{C.R}\n")
+            print(f"  {C.BR}\u2717{C.R} substrate-interface not found")
+            print(f"    {C.AMBER}pip install substrate-interface{C.R}")
+            print(f"    {C.DIM}or{C.R}  {C.AMBER}source .venv/bin/activate{C.R}\n")
         else:
             self.connect(self.url)
             if not self.connected:
@@ -4022,17 +4080,17 @@ class LaudCLI:
                     continue
                 self._dispatch(line)
             except SystemExit:
-                print(f"\n  {C.DIM}LAUD NETWORKS 7ayLabs{C.R}\n")
+                print(f"\n  {C.DIM}\u00b7 LAUD NETWORKS 7ayLabs{C.R}\n")
                 break
             except KeyboardInterrupt:
                 print()
                 if self._nav_stack:
                     self._nav_stack.clear()
                     continue
-                print(f"  {C.DIM}(Ctrl+C again or type 'exit' "
-                      f"to quit){C.R}")
+                print(f"  {C.DIM}Ctrl+C again or type{C.R} "
+                      f"exit {C.DIM}to quit{C.R}")
             except EOFError:
-                print(f"\n  {C.DIM}LAUD NETWORKS 7ayLabs{C.R}\n")
+                print(f"\n  {C.DIM}\u00b7 LAUD NETWORKS 7ayLabs{C.R}\n")
                 break
 
 
