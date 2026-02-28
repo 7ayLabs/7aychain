@@ -1,5 +1,5 @@
 """
-LAUD NETWORKS - Command Registry
+LAUD NETWORKS 7ayLabs - Command Registry
 Data-driven domain and command definitions for the LAUD CLI.
 """
 

@@ -1,5 +1,5 @@
 """
-LAUD NETWORKS - Vault File Management
+LAUD NETWORKS 7ayLabs - Vault File Management
 Handles encrypted file storage, share management, and index tracking.
 Files are encrypted with AES-256-GCM; encryption keys are split via Shamir.
 """

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-LAUD NETWORKS - PoP Protocol Testing Suite
-Interactive CLI for testing all 7aychain features.
+LAUD NETWORKS 7ayLabs - Proof of Presence Protocol
+Interactive CLI for the 7aychain network.
 
 Usage:
     python3 laud-cli.py [--url ws://host:port]
@@ -3565,7 +3565,7 @@ class LaudCLI:
     def _cmd_help(self, args=None):
         if not args:
             print(f"""
-  {C.BB}LAUD CLI{C.R}  {C.DIM}PoP Protocol Testing Suite{C.R}
+  {C.BB}LAUD NETWORKS{C.R}  {C.DIM}7ayLabs{C.R}
 
   {C.W}Navigation{C.R}
     menu              Show all commands with numbers
@@ -3789,9 +3789,9 @@ class LaudCLI:
         mode_color = C.Y if self._mode == 'dev' else C.G
         print()
         self._box([
-            f"{C.BB}LAUD NETWORKS{C.R}",
+            f"{C.BB}LAUD NETWORKS{C.R}  {C.DIM}7ayLabs{C.R}",
             f"{C.DIM}Proof of Presence Protocol"
-            f"              v1.2.0{C.R}",
+            f"              v0.8.27{C.R}",
             "",
             f"{mode_color}[{mode_str} MODE]{C.R}"
             f"   {C.DIM}switch: mode dev | mode normal{C.R}",
@@ -3822,7 +3822,7 @@ class LaudCLI:
                     continue
                 self._dispatch(line)
             except SystemExit:
-                print(f"\n  {C.DIM}LAUD NETWORKS{C.R}\n")
+                print(f"\n  {C.DIM}LAUD NETWORKS 7ayLabs{C.R}\n")
                 break
             except KeyboardInterrupt:
                 print()
@@ -3832,13 +3832,13 @@ class LaudCLI:
                 print(f"  {C.DIM}(Ctrl+C again or type 'exit' "
                       f"to quit){C.R}")
             except EOFError:
-                print(f"\n  {C.DIM}LAUD NETWORKS{C.R}\n")
+                print(f"\n  {C.DIM}LAUD NETWORKS 7ayLabs{C.R}\n")
                 break
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
-        description="LAUD NETWORKS - PoP Protocol Testing Suite")
+        description="LAUD NETWORKS 7ayLabs - Proof of Presence Protocol")
     parser.add_argument(
         '--url', default='ws://127.0.0.1:9944',
         help='WebSocket endpoint (default: ws://127.0.0.1:9944)')
