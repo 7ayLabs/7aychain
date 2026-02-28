@@ -19,6 +19,8 @@ pub trait WeightInfo {
     fn verify_snark() -> Weight;
     fn transition_proof_system_mode() -> Weight;
     fn deregister_circuit() -> Weight;
+    fn emergency_revert_mode() -> Weight;
+    fn prune_old_proofs() -> Weight;
 }
 
 pub struct SubstrateWeight<T>(PhantomData<T>);
@@ -84,6 +86,19 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
             .saturating_add(T::DbWeight::get().reads(1))
             .saturating_add(T::DbWeight::get().writes(1))
     }
+
+    fn emergency_revert_mode() -> Weight {
+        Weight::from_parts(10_000_000, 0)
+            .saturating_add(T::DbWeight::get().reads(1))
+            .saturating_add(T::DbWeight::get().writes(1))
+    }
+
+    fn prune_old_proofs() -> Weight {
+        // Bounded by max_entries param; estimate for 100 entries
+        Weight::from_parts(100_000_000, 0)
+            .saturating_add(T::DbWeight::get().reads(100))
+            .saturating_add(T::DbWeight::get().writes(100))
+    }
 }
 
 impl WeightInfo for () {
@@ -146,5 +161,17 @@ impl WeightInfo for () {
         Weight::from_parts(20_000_000, 0)
             .saturating_add(RocksDbWeight::get().reads(1))
             .saturating_add(RocksDbWeight::get().writes(1))
+    }
+
+    fn emergency_revert_mode() -> Weight {
+        Weight::from_parts(10_000_000, 0)
+            .saturating_add(RocksDbWeight::get().reads(1))
+            .saturating_add(RocksDbWeight::get().writes(1))
+    }
+
+    fn prune_old_proofs() -> Weight {
+        Weight::from_parts(100_000_000, 0)
+            .saturating_add(RocksDbWeight::get().reads(100))
+            .saturating_add(RocksDbWeight::get().writes(100))
     }
 }

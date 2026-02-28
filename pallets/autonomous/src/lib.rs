@@ -222,6 +222,10 @@ pub mod pallet {
 
         #[pallet::constant]
         type ScoreIncreasePerMatch: Get<u8>;
+
+        /// Maximum number of distinct actors per pattern (M08).
+        #[pallet::constant]
+        type MaxActorsPerPattern: Get<u32>;
     }
 
     #[pallet::storage]
@@ -258,6 +262,12 @@ pub mod pallet {
     #[pallet::getter(fn behavior_count_per_actor)]
     pub type BehaviorCountPerActor<T: Config> =
         StorageMap<_, Blake2_128Concat, ActorId, u32, ValueQuery>;
+
+    /// Count of distinct actors associated with each pattern (M08).
+    #[pallet::storage]
+    #[pallet::getter(fn pattern_actor_count)]
+    pub type PatternActorCount<T: Config> =
+        StorageMap<_, Blake2_128Concat, PatternId, u32, ValueQuery>;
 
     #[pallet::storage]
     #[pallet::getter(fn active_pattern_count)]
@@ -672,6 +682,16 @@ pub mod pallet {
             });
 
             let actor_count = PatternActors::<T>::get(pattern_id, actor).unwrap_or(0);
+            // M08: enforce per-pattern actor limit for new actors
+            if actor_count == 0 {
+                let current_actor_count = PatternActorCount::<T>::get(pattern_id);
+                if current_actor_count >= T::MaxActorsPerPattern::get() {
+                    return;
+                }
+                PatternActorCount::<T>::mutate(pattern_id, |c| {
+                    *c = c.saturating_add(1);
+                });
+            }
             PatternActors::<T>::insert(pattern_id, actor, actor_count.saturating_add(1));
 
             ActorProfiles::<T>::mutate(actor, |profile| {

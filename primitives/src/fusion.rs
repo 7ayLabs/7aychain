@@ -7,11 +7,9 @@ use sp_core::H256;
 use sp_runtime::Perbill;
 
 #[cfg(feature = "std")]
-use crate::crypto::hash_with_domain;
+use crate::crypto::{hash_pair, hash_with_domain};
 #[cfg(feature = "std")]
 use crate::traits::ConstantTimeEq;
-#[cfg(feature = "std")]
-use sp_core::blake2_256;
 
 pub const DOMAIN_DEVICE_COMMITMENT: &[u8] = b"7ay:device:commit:v1";
 pub const DOMAIN_DEVICE_REVEAL: &[u8] = b"7ay:device:reveal:v1";
@@ -98,8 +96,7 @@ impl DeviceCommitment {
             for chunk in layer.chunks(2) {
                 let left = chunk[0];
                 let right = chunk.get(1).copied().unwrap_or(left);
-                let combined = [left.as_bytes(), right.as_bytes()].concat();
-                next_layer.push(H256(blake2_256(&combined)));
+                next_layer.push(hash_pair(&left, &right));
             }
             layer = next_layer;
         }

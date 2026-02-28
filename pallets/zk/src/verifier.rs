@@ -140,12 +140,12 @@ impl ZkVerifier for StubVerifier {
         computed.ct_eq(&statement.access_hash)
     }
 
-    fn verify_snark(proof: &[u8], inputs: &[[u8; 32]], _vk: &[u8]) -> bool {
+    fn verify_snark(_proof: &[u8], _inputs: &[[u8; 32]], _vk: &[u8]) -> bool {
         log::warn!(
             target: "pallet-zk",
-            "STUB: SNARK verifier — no cryptographic check"
+            "StubVerifier: SNARK verification rejected (no crypto backend)"
         );
-        proof.len() >= 192 && !inputs.is_empty()
+        false
     }
 }
 
@@ -186,6 +186,9 @@ pub type AcceptAllVerifier = ConfigurableVerifier<true>;
 mod verifier_tests {
     use super::*;
     use seveny_primitives::crypto::{hash_with_domain, Nullifier, StateRoot, DOMAIN_NULLIFIER};
+
+    // Fixed test genesis hash for chain-bound nullifier derivation (M12)
+    const TEST_GENESIS_HASH: &[u8; 32] = &[0xAA; 32];
 
     #[test]
     fn stub_verifier_share_proof_roundtrip() {
@@ -228,7 +231,7 @@ mod verifier_tests {
     fn stub_verifier_presence_roundtrip() {
         let secret = [3u8; 32];
         let epoch_id = 1u64;
-        let nullifier = Nullifier::derive(&secret, epoch_id);
+        let nullifier = Nullifier::derive(&secret, epoch_id, TEST_GENESIS_HASH);
 
         let statement = PresenceStatement {
             epoch_id,
@@ -272,7 +275,7 @@ mod verifier_tests {
     fn stub_verifier_rejects_zero_commitment() {
         let secret = [3u8; 32];
         let epoch_id = 1u64;
-        let nullifier = Nullifier::derive(&secret, epoch_id);
+        let nullifier = Nullifier::derive(&secret, epoch_id, TEST_GENESIS_HASH);
 
         let statement = PresenceStatement {
             epoch_id,
@@ -293,7 +296,7 @@ mod verifier_tests {
     fn stub_verifier_proof_does_not_contain_raw_secret() {
         let secret = [42u8; 32];
         let epoch_id = 5u64;
-        let nullifier = Nullifier::derive(&secret, epoch_id);
+        let nullifier = Nullifier::derive(&secret, epoch_id, TEST_GENESIS_HASH);
 
         let statement = PresenceStatement {
             epoch_id,

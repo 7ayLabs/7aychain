@@ -43,10 +43,10 @@ pub mod pallet {
     pub trait Config: frame_system::Config<RuntimeEvent: From<Event<Self>>> {
         type WeightInfo: WeightInfo;
 
-        /// Epoch state provider — reads from canonical epoch pallet.
+        /// Epoch state provider -- reads from canonical epoch pallet.
         type EpochProvider: seveny_primitives::traits::EpochProvider;
 
-        /// Validator set provider — reads from canonical validator pallet.
+        /// Validator set provider -- reads from canonical validator pallet.
         type ValidatorProvider: seveny_primitives::traits::ValidatorProvider;
 
 
@@ -364,6 +364,8 @@ pub mod pallet {
         BlockRefConversionFailed,
         // Position-Based Triangulation Errors
         PositionAlreadyClaimed,
+        /// H17: position already verified, cannot re-verify
+        PositionAlreadyVerified,
         PositionNotClaimed,
         DuplicateAttestation,
         InvalidLatencyMeasurement,
@@ -373,6 +375,10 @@ pub mod pallet {
         SelfAttestation,
         InvalidBlockNumber,
         MaxVotesExceeded,
+        /// M14: Commitment exists but has not been revealed before finalization.
+        CommitmentNotRevealed,
+        /// Actor must have a presence declaration before claiming position
+        PresenceDeclarationRequired,
     }
 
     #[pallet::genesis_config]
@@ -613,6 +619,11 @@ pub mod pallet {
             let quorum = QuorumConfigStorage::<T>::get();
             ensure!(quorum.is_met(record.vote_count), Error::<T>::QuorumNotMet);
 
+            // M14: if a commitment was submitted, it must be revealed before finalization
+            if let Some(declaration) = Declarations::<T>::get(epoch, actor) {
+                ensure!(declaration.revealed, Error::<T>::CommitmentNotRevealed);
+            }
+
             record.state = PresenceState::Finalized;
             record.finalized_at = Some(block_number);
 
@@ -712,6 +723,14 @@ pub mod pallet {
                 *count = count.saturating_add(1);
             });
 
+            // M15: update PresenceRecord to reflect the reveal
+            if let Some(mut record) = Presences::<T>::get(epoch, actor) {
+                if record.state == PresenceState::Declared {
+                    record.validated_at = Some(block_number);
+                }
+                Presences::<T>::insert(epoch, actor, record);
+            }
+
             Self::deposit_event(Event::CommitmentRevealed {
                 actor,
                 epoch,
@@ -728,7 +747,7 @@ pub mod pallet {
         /// Claim a position for the current epoch.
         /// The position will be verified through witness attestations.
         #[pallet::call_index(9)]
-        #[pallet::weight(T::WeightInfo::declare_presence())]
+        #[pallet::weight(T::WeightInfo::claim_position())]
         pub fn claim_position(
             origin: OriginFor<T>,
             epoch: EpochId,
@@ -739,6 +758,13 @@ pub mod pallet {
             let block_number = frame_system::Pallet::<T>::block_number();
 
             Self::ensure_epoch_active(&epoch)?;
+
+            // Require presence declaration before position claim (M25)
+            ensure!(
+                Presences::<T>::contains_key(epoch, actor),
+                Error::<T>::PresenceDeclarationRequired
+            );
+
             ensure!(
                 !PositionClaims::<T>::contains_key(epoch, actor),
                 Error::<T>::PositionAlreadyClaimed
@@ -760,7 +786,7 @@ pub mod pallet {
         /// Submit a witness attestation for another node's presence.
         /// The witness must have a registered position.
         #[pallet::call_index(10)]
-        #[pallet::weight(T::WeightInfo::vote_presence())]
+        #[pallet::weight(T::WeightInfo::submit_witness_attestation())]
         pub fn submit_witness_attestation(
             origin: OriginFor<T>,
             target: ActorId,
@@ -832,7 +858,7 @@ pub mod pallet {
         /// Verify a position claim by triangulating from witness attestations.
         /// Anyone can call this once enough witnesses have attested.
         #[pallet::call_index(11)]
-        #[pallet::weight(T::WeightInfo::finalize_presence())]
+        #[pallet::weight(T::WeightInfo::verify_position())]
         pub fn verify_position(
             origin: OriginFor<T>,
             target: ActorId,
@@ -843,6 +869,9 @@ pub mod pallet {
             let mut claim =
                 PositionClaims::<T>::get(epoch, target).ok_or(Error::<T>::PositionNotClaimed)?;
 
+            // H17: reject re-verification of already verified claims
+            ensure!(!claim.verified, Error::<T>::PositionAlreadyVerified);
+
             let attestation_count = AttestationCount::<T>::get(epoch, target);
             let min_witnesses = T::MinWitnessesForVerification::get();
             ensure!(
@@ -850,10 +879,12 @@ pub mod pallet {
                 Error::<T>::InsufficientWitnesses
             );
 
-            // Collect all attestations for this target
+            // Collect attestations for this target, bounded to prevent DoS (M01)
+            let max_attestations = (min_witnesses as usize).saturating_mul(3).max(10);
             let attestations: Vec<WitnessAttestation<BlockNumberFor<T>>> =
                 WitnessAttestations::<T>::iter_prefix((epoch, target))
                     .map(|(_, attestation)| attestation)
+                    .take(max_attestations)
                     .collect();
 
             // Triangulate position from witnesses

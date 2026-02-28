@@ -56,9 +56,12 @@ pub enum ProofSystemMode {
 
 impl ProofSystemMode {
     /// Check if a transition to the target mode is valid.
-    /// Transitions must be monotonically forward.
+    /// Transitions must be sequential (no skipping modes).
     pub fn can_transition_to(self, target: Self) -> bool {
-        target > self
+        matches!(
+            (self, target),
+            (Self::Legacy, Self::Transitional) | (Self::Transitional, Self::SnarkOnly)
+        )
     }
 
     /// Whether stub/hash-based proofs are accepted in this mode.
@@ -84,10 +87,14 @@ mod tests {
     }
 
     #[test]
-    fn valid_forward_transitions() {
+    fn valid_sequential_transitions() {
         assert!(ProofSystemMode::Legacy.can_transition_to(ProofSystemMode::Transitional));
         assert!(ProofSystemMode::Transitional.can_transition_to(ProofSystemMode::SnarkOnly));
-        assert!(ProofSystemMode::Legacy.can_transition_to(ProofSystemMode::SnarkOnly));
+    }
+
+    #[test]
+    fn skip_transition_rejected() {
+        assert!(!ProofSystemMode::Legacy.can_transition_to(ProofSystemMode::SnarkOnly));
     }
 
     #[test]

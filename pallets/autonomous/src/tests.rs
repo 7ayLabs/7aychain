@@ -54,6 +54,7 @@ parameter_types! {
     pub const MaxPatterns: u32 = 50;
     pub const BehaviorExpiryBlocks: u64 = 1000;
     pub const ScoreIncreasePerMatch: u8 = 10;
+    pub const MaxActorsPerPattern: u32 = 100;
 }
 
 impl pallet_autonomous::Config for Test {
@@ -63,6 +64,7 @@ impl pallet_autonomous::Config for Test {
     type MaxPatterns = MaxPatterns;
     type BehaviorExpiryBlocks = BehaviorExpiryBlocks;
     type ScoreIncreasePerMatch = ScoreIncreasePerMatch;
+    type MaxActorsPerPattern = MaxActorsPerPattern;
 }
 
 fn new_test_ext() -> sp_io::TestExternalities {

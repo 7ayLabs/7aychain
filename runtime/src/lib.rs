@@ -309,8 +309,17 @@ parameter_types! {
     pub const MaxOpenDisputes: u32 = 100;
 }
 
+/// Bridges pallet_validator into the ValidatorChecker trait.
+pub struct RuntimeValidatorChecker;
+impl seveny_primitives::traits::ValidatorChecker for RuntimeValidatorChecker {
+    fn is_validator_registered(validator: seveny_primitives::types::ValidatorId) -> bool {
+        pallet_validator::Pallet::<Runtime>::get_validator(validator).is_some()
+    }
+}
+
 impl pallet_dispute::Config for Runtime {
     type WeightInfo = ();
+    type ValidatorChecker = RuntimeValidatorChecker;
     type MaxEvidencePerDispute = MaxEvidencePerDispute;
     type DisputeResolutionPeriod = DisputeResolutionPeriod;
     type MinEvidenceRequired = MinEvidenceRequired;
@@ -371,6 +380,7 @@ parameter_types! {
     pub const MaxPatterns: u32 = 100;
     pub const BehaviorExpiryBlocks: BlockNumber = 10000;
     pub const ScoreIncreasePerMatch: u8 = 5;
+    pub const MaxActorsPerPattern: u32 = 500;
 }
 
 impl pallet_autonomous::Config for Runtime {
@@ -380,6 +390,7 @@ impl pallet_autonomous::Config for Runtime {
     type MaxPatterns = MaxPatterns;
     type BehaviorExpiryBlocks = BehaviorExpiryBlocks;
     type ScoreIncreasePerMatch = ScoreIncreasePerMatch;
+    type MaxActorsPerPattern = MaxActorsPerPattern;
 }
 
 parameter_types! {
@@ -471,8 +482,17 @@ parameter_types! {
     pub const DefaultRetentionBlocks: BlockNumber = 1000;
 }
 
+/// Bridges pallet_epoch::is_epoch_active into the EpochActiveChecker trait.
+pub struct RuntimeEpochChecker;
+impl seveny_primitives::traits::EpochActiveChecker for RuntimeEpochChecker {
+    fn is_epoch_active(epoch: seveny_primitives::types::EpochId) -> bool {
+        pallet_epoch::Pallet::<Runtime>::is_epoch_active(epoch)
+    }
+}
+
 impl pallet_storage::Config for Runtime {
     type WeightInfo = ();
+    type EpochChecker = RuntimeEpochChecker;
     type MaxDataSize = MaxDataSize;
     type MaxEntriesPerActor = MaxEntriesPerActor;
     type MaxEntriesPerEpoch = MaxEntriesPerEpoch;
