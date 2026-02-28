@@ -854,3 +854,64 @@ fn slash_dedup_cleared_after_apply() {
         ));
     });
 }
+
+#[test]
+fn force_activate_validator_works() {
+    new_test_ext().execute_with(|| {
+        // Register validator (will be in Bonding status)
+        assert_ok!(Validator::register_validator(
+            RuntimeOrigin::signed(1),
+            5000
+        ));
+
+        let validator_id = account_to_validator(1);
+        let info = Validator::validators(validator_id).expect("should exist");
+        assert_eq!(info.status, ValidatorStatus::Bonding);
+
+        // Force activate via root — skips bonding period
+        assert_ok!(Validator::force_activate_validator(
+            RuntimeOrigin::root(),
+            1
+        ));
+
+        let info = Validator::validators(validator_id).expect("should exist");
+        assert_eq!(info.status, ValidatorStatus::Active);
+        assert_eq!(Validator::active_validator_count(), 1);
+    });
+}
+
+#[test]
+fn force_activate_validator_requires_root() {
+    new_test_ext().execute_with(|| {
+        assert_ok!(Validator::register_validator(
+            RuntimeOrigin::signed(1),
+            5000
+        ));
+
+        assert_noop!(
+            Validator::force_activate_validator(RuntimeOrigin::signed(1), 1),
+            sp_runtime::DispatchError::BadOrigin
+        );
+    });
+}
+
+#[test]
+fn force_activate_validator_rejects_already_active() {
+    new_test_ext().execute_with(|| {
+        assert_ok!(Validator::register_validator(
+            RuntimeOrigin::signed(1),
+            5000
+        ));
+
+        assert_ok!(Validator::force_activate_validator(
+            RuntimeOrigin::root(),
+            1
+        ));
+
+        // Second call should fail — already active
+        assert_noop!(
+            Validator::force_activate_validator(RuntimeOrigin::root(), 1),
+            Error::<Test>::AlreadyActive
+        );
+    });
+}

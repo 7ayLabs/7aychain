@@ -1562,29 +1562,32 @@ class LaudCLI:
                      {"threshold": 2, "total": 3},
                      sudo=True, _skip_confirm=True)
 
-        # Step 5: Register, activate, and position each validator
+        # Step 5: Register, force-activate, and position each validator
         for name, pos in positions.items():
             vid = self._validator_id(name)
+            kp = self.keypairs[name]
 
             step += 1
             self._progress(step, total,
                            f"Register {C.W}{name}{C.R}")
             self._submit("Validator", "register_validator",
-                         {"stake": 1000000000000},
+                         {"stake": 1000000},
                          name, _skip_confirm=True)
 
             step += 1
             self._progress(step, total,
                            f"Activate {C.W}{name}{C.R}")
-            self._submit("Validator", "activate_validator",
-                         {}, name, _skip_confirm=True)
+            self._submit("Validator", "force_activate_validator",
+                         {"controller": kp.ss58_address},
+                         sudo=True, _skip_confirm=True)
 
             step += 1
             self._progress(step, total,
                            f"Position {C.W}{name}{C.R} "
                            f"({pos['x']}, {pos['y']}, {pos['z']})")
             self._submit("Presence", "set_validator_position",
-                         {"validator": vid, "position": pos}, name)
+                         {"validator": vid, "position": pos},
+                         sudo=True, _skip_confirm=True)
 
         self._ok("Bootstrap complete — 6 validators in hexagonal"
                  " formation")

@@ -713,6 +713,40 @@ pub mod pallet {
             // Reward is deferred to apply_slash — not paid immediately
             Ok(())
         }
+
+        /// Force-activate a validator, skipping the bonding period check.
+        /// Root-only. Intended for devnet bootstrap and governance overrides.
+        #[pallet::call_index(8)]
+        #[pallet::weight(T::WeightInfo::force_activate_validator())]
+        pub fn force_activate_validator(
+            origin: OriginFor<T>,
+            controller: T::AccountId,
+        ) -> DispatchResult {
+            ensure_root(origin)?;
+
+            let validator_id = ValidatorByController::<T>::get(&controller)
+                .ok_or(Error::<T>::ValidatorNotFound)?;
+            let mut info =
+                Validators::<T>::get(validator_id).ok_or(Error::<T>::ValidatorNotFound)?;
+
+            ensure!(
+                info.status == ValidatorStatus::Bonding,
+                Error::<T>::AlreadyActive
+            );
+
+            info.status = ValidatorStatus::Active;
+            Validators::<T>::insert(validator_id, info);
+
+            ActiveValidatorCount::<T>::mutate(|count| {
+                *count = count.saturating_add(1);
+            });
+
+            Self::deposit_event(Event::ValidatorActivated {
+                validator: validator_id,
+            });
+
+            Ok(())
+        }
     }
 
     impl<T: Config> Pallet<T> {
