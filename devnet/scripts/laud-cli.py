@@ -38,6 +38,7 @@ from laud_files import (
     add_to_index, get_vault_files, verify_file as verify_vault_file,
     store_share, load_share, load_all_shares,
     export_share_hex, import_share_hex, secure_zero,
+    anonymize_existing_index,
 )
 from laud_crypto import (
     ShamirScheme, key_fingerprint, generate_fek,
@@ -133,6 +134,9 @@ class LaudCLI:
             ver = self.substrate.rpc_request("system_version", [])['result']
             self._ok(f"Connected to {C.W}{chain}{C.R} v{ver}")
             return True
+        except (ConnectionError, BrokenPipeError, OSError) as e:
+            self._err(f"Connection failed: {e}")
+            return False
         except Exception as e:
             self._err(f"Connection failed: {e}")
             return False
@@ -141,8 +145,12 @@ class LaudCLI:
         try:
             self.substrate.rpc_request("system_chain", [])
             return True
+        except (ConnectionError, BrokenPipeError, OSError):
+            if self._mode == 'dev':
+                self._info("Connection check failed, attempting reconnect")
         except Exception:
-            pass
+            if self._mode == 'dev':
+                self._info("Connection check failed, attempting reconnect")
         try:
             self._info("Reconnecting...")
             self.substrate = SubstrateInterface(
@@ -152,6 +160,10 @@ class LaudCLI:
             )
             self.connected = True
             return True
+        except (ConnectionError, BrokenPipeError, OSError) as e:
+            self._err(f"Reconnect failed: {e}")
+            self.connected = False
+            return False
         except Exception as e:
             self._err(f"Reconnect failed: {e}")
             self.connected = False
@@ -203,6 +215,8 @@ class LaudCLI:
                 prefix = text.lower()
                 candidates = [s + ' ' for s in subs if s.startswith(prefix)]
             return candidates[state] if state < len(candidates) else None
+        except (IndexError, ValueError, TypeError):
+            return None
         except Exception:
             return None
 
@@ -250,6 +264,10 @@ class LaudCLI:
                         hdr = self.substrate.get_block_header(
                             block_hash=receipt.block_hash)
                         blk_num = f"#{hdr['header']['number']}"
+                    except (ConnectionError, BrokenPipeError, OSError):
+                        blk_num = str(receipt.block_hash)[:16]
+                    except (KeyError, TypeError):
+                        blk_num = str(receipt.block_hash)[:16]
                     except Exception:
                         blk_num = str(receipt.block_hash)[:16]
                     pallet_events = []
@@ -330,6 +348,19 @@ class LaudCLI:
                 self._err(f"{module}.{fn}: {e}")
                 return None
 
+    def _safe_query(self, module, fn, params=None, fallback=None):
+        """Query with graceful error handling."""
+        try:
+            result = self.substrate.query(module, fn, params or [])
+            return result
+        except (ConnectionError, BrokenPipeError, OSError):
+            self._err("Connection lost")
+            return fallback
+        except Exception as e:
+            if self._mode == 'dev':
+                self._info(f"Query {module}.{fn} unavailable: {e}")
+            return fallback
+
     def _query_map(self, module, fn):
         if not self._ensure():
             return []
@@ -386,10 +417,33 @@ class LaudCLI:
             print(f"    {C.W}{val}{C.R}")
 
     def _ok(self, msg):
-        print(f"  {C.G}[OK]{C.R} {msg}")
+        if self._mode == 'normal':
+            print(f"  {C.G}[Done]{C.R} {msg}")
+        else:
+            print(f"  {C.G}[OK]{C.R} {msg}")
 
     def _err(self, msg):
-        print(f"  {C.RED}[ERR]{C.R} {msg}")
+        if self._mode == 'normal':
+            # Strip technical details for normal users
+            friendly = self._friendly_error(msg)
+            print(f"  {C.RED}[!]{C.R} {friendly}")
+        else:
+            print(f"  {C.RED}[ERR]{C.R} {msg}")
+
+    def _friendly_error(self, msg):
+        """Convert technical error to user-friendly message."""
+        msg_lower = str(msg).lower()
+        if 'connection' in msg_lower or 'websocket' in msg_lower:
+            return "Can't reach the network. Make sure the node is running."
+        if 'pool' in msg_lower or 'priority' in msg_lower:
+            return "The network is busy. Please try again in a moment."
+        if 'not found' in msg_lower:
+            return "The requested item was not found."
+        if 'insufficient' in msg_lower:
+            return "Not enough funds or permissions for this action."
+        # Strip hex values and technical identifiers for normal mode
+        cleaned = re.sub(r'0x[0-9a-fA-F]{8,}', '[hash]', str(msg))
+        return cleaned
 
     def _info(self, msg):
         print(f"  {C.CY}[..]{C.R} {msg}")
@@ -657,13 +711,14 @@ class LaudCLI:
             'Already voted this period. '
             'Try "use epoch <N>" to switch periods.',
         'PresenceImmutable':
-            'This presence is already finalized and cannot be changed.',
+            'This check-in is already confirmed. '
+            'Confirmed records cannot be changed.',
         'SelfAttestation':
-            'You cannot attest for yourself. '
-            'Use a different witness account.',
+            'You cannot verify your own location. '
+            'Ask another verifier to confirm you.',
         'InsufficientAttestations':
-            'Not enough witnesses yet. '
-            'Need at least 3 attestations first.',
+            'Not enough location confirmations yet. '
+            'You need at least 3 nearby verifiers.',
         'InsufficientWitnesses':
             'Not enough witnesses yet. '
             'Need at least 3 attestations before verifying.',
@@ -672,6 +727,16 @@ class LaudCLI:
         'QuorumNotReached':
             'Not enough votes yet. '
             'Need at least 3 validator votes to finalize.',
+        'VaultLocked':
+            'This vault is locked and cannot be accessed right now.',
+        'InvalidRingSize':
+            'The vault requires between 3 and 10 members.',
+        'ThresholdTooLow':
+            'At least 2 key holders are required for security.',
+        'AlreadyRegistered':
+            'This account is already registered.',
+        'BondingPeriod':
+            'The security deposit bonding period has not elapsed yet.',
     }
 
     def _error_hint(self, err):
@@ -697,7 +762,11 @@ class LaudCLI:
             if cmd.action == "separator":
                 opts.append(("---", cmd.label))
             else:
-                opts.append((cmd.key, cmd.label))
+                label = (cmd.normal_label
+                         if (self._mode == 'normal'
+                             and cmd.normal_label)
+                         else cmd.label)
+                opts.append((cmd.key, label))
         opts.append(("i", "Instructions"))
         opts.append(("?", "Show options"))
         opts.append(("0", "Back"))
@@ -889,8 +958,14 @@ class LaudCLI:
                 blk = self.substrate.get_block_header(
                 )['header']['number']
                 parts.append(f"{C.G}block #{blk}{C.R}")
+            except (ConnectionError, BrokenPipeError, OSError):
+                parts.append(f"{C.G}connected{C.R}")
+                if self._mode == 'dev':
+                    self._info("Block header fetch failed (connection)")
             except Exception:
                 parts.append(f"{C.G}connected{C.R}")
+                if self._mode == 'dev':
+                    self._info("Block header fetch failed")
         else:
             parts.append(f"{C.RED}offline{C.R}")
         if self._ctx_epoch is not None:
@@ -979,8 +1054,9 @@ class LaudCLI:
         except (ConnectionError, BrokenPipeError, OSError):
             self._err("Connection lost while checking epoch status")
             return False
-        except Exception:
-            pass
+        except Exception as e:
+            if self._mode == 'dev':
+                self._info(f"Epoch check failed: {e}")
         self._info("No active session found.")
         if self._prompt_bool(
                 "Run bootstrap? (sets up session + validators + positions)"):
@@ -1034,7 +1110,12 @@ class LaudCLI:
                         [epoch_id, kp.ss58_address])
                     result['is_participant'] = bool(
                         is_part and is_part.value)
-                except Exception:
+                except (ConnectionError, BrokenPipeError, OSError):
+                    result['is_participant'] = False
+                except Exception as e:
+                    if self._mode == 'dev':
+                        self._info(
+                            f"Participant query failed: {e}")
                     result['is_participant'] = False
 
                 # Check presence state
@@ -1051,7 +1132,12 @@ class LaudCLI:
                             'vote_count', 0)
                     else:
                         result['presence_state'] = None
-                except Exception:
+                except (ConnectionError, BrokenPipeError, OSError):
+                    result['presence_state'] = None
+                except Exception as e:
+                    if self._mode == 'dev':
+                        self._info(
+                            f"Presence query failed: {e}")
                     result['presence_state'] = None
 
             # Quorum config
@@ -1063,21 +1149,35 @@ class LaudCLI:
                         'threshold', 2)
                 else:
                     result['quorum_threshold'] = 2
-            except Exception:
+            except (ConnectionError, BrokenPipeError, OSError):
+                result['quorum_threshold'] = 2
+            except Exception as e:
+                if self._mode == 'dev':
+                    self._info(f"Quorum query failed: {e}")
                 result['quorum_threshold'] = 2
 
             # Current block
             try:
                 header = self.substrate.get_block_header()['header']
                 result['current_block'] = int(header['number'])
-            except Exception:
+            except (ConnectionError, BrokenPipeError, OSError):
+                result['current_block'] = 0
+            except Exception as e:
+                if self._mode == 'dev':
+                    self._info(
+                        f"Block header query failed: {e}")
                 result['current_block'] = 0
 
             result['_ts'] = now
             self._epoch_cache = result
             return result
 
-        except Exception:
+        except (ConnectionError, BrokenPipeError, OSError):
+            self._err("Connection lost")
+            return None
+        except Exception as e:
+            if self._mode == 'dev':
+                self._info(f"Epoch status fetch failed: {e}")
             return None
 
     def _epoch_status_tag(self):
@@ -1300,12 +1400,22 @@ class LaudCLI:
         try:
             count_r = self.substrate.query("Epoch", "EpochCount")
             next_id = (count_r.value if count_r else 0) + 1
-        except Exception:
+        except (ConnectionError, BrokenPipeError, OSError):
+            self._err("Connection lost")
+            next_id = 2
+        except Exception as e:
+            if self._mode == 'dev':
+                self._info(f"EpochCount query failed: {e}")
             next_id = 2
         try:
             header = self.substrate.get_block_header()['header']
             current_block = int(header['number'])
-        except Exception:
+        except (ConnectionError, BrokenPipeError, OSError):
+            self._err("Connection lost")
+            current_block = 10
+        except Exception as e:
+            if self._mode == 'dev':
+                self._info(f"Block header query failed: {e}")
             current_block = 10
         self._info(f"Scheduling session {next_id}")
         self._submit("Epoch", "schedule_epoch",
@@ -1379,7 +1489,12 @@ class LaudCLI:
         try:
             header = self.substrate.get_block_header()['header']
             current_block = int(header['number'])
-        except Exception:
+        except (ConnectionError, BrokenPipeError, OSError):
+            self._err("Connection lost")
+            current_block = 1
+        except Exception as e:
+            if self._mode == 'dev':
+                self._info(f"Block header query failed: {e}")
             current_block = 1
 
         # Step 2: Schedule epoch 1
@@ -2308,7 +2423,13 @@ class LaudCLI:
         uri = self._prompt("URI (e.g. //Alice or mnemonic)", "//Alice")
         try:
             kp = Keypair.create_from_uri(uri)
-        except Exception:
+        except (ValueError, TypeError) as e:
+            if self._mode == 'dev':
+                self._info(f"URI parse failed, trying mnemonic: {e}")
+            kp = Keypair.create_from_mnemonic(uri)
+        except Exception as e:
+            if self._mode == 'dev':
+                self._info(f"URI parse failed, trying mnemonic: {e}")
             kp = Keypair.create_from_mnemonic(uri)
         self._val("Public Key", f"0x{kp.public_key.hex()}")
         self._val("SS58 Address", kp.ss58_address)
@@ -2390,13 +2511,15 @@ class LaudCLI:
         value = self._prompt("Value", "42")
         try:
             val = int(value) if value.isdigit() else value
-        except Exception:
+        except (ValueError, TypeError):
             val = value
         try:
             obj = self.substrate.runtime_config.create_scale_object(
                 type_str)
             obj.encode(val)
             self._val("Encoded", f"0x{obj.data.to_hex()}")
+        except (ValueError, TypeError) as e:
+            self._err(f"SCALE encode: {e}")
         except Exception as e:
             self._err(f"SCALE encode: {e}")
 
@@ -2412,6 +2535,8 @@ class LaudCLI:
                 type_str)
             obj.decode(ScaleBytes(hex_data))
             self._val("Decoded", obj.value)
+        except (ValueError, TypeError) as e:
+            self._err(f"SCALE decode: {e}")
         except Exception as e:
             self._err(f"SCALE decode: {e}")
 
@@ -2447,6 +2572,8 @@ class LaudCLI:
                 self._ok("Signature is VALID")
             else:
                 self._err("Signature is INVALID")
+        except (ValueError, TypeError) as e:
+            self._err(f"Verify failed: {e}")
         except Exception as e:
             self._err(f"Verify failed: {e}")
 
@@ -2699,8 +2826,10 @@ class LaudCLI:
             self._val("Total Stake", ts)
         except (ConnectionError, BrokenPipeError, OSError):
             self._err("Connection lost")
-        except Exception:
+        except Exception as e:
             self._info("Could not fetch session data")
+            if self._mode == 'dev':
+                self._info(f"Detail: {e}")
 
     def _dashboard_my_status(self):
         if not self._ensure():
@@ -2792,6 +2921,10 @@ class LaudCLI:
         if size > 100 * 1024 * 1024:
             self._err(f"File too large: {size:,} bytes (max 100 MB)")
             return
+        privacy = self._prompt_bool(
+            "Hide filename for privacy? "
+            "(recommended for sensitive documents)",
+            default=True)
         self._info(f"Securing {path.name} ({size:,} bytes)...")
         self._info(f"Protection: {threshold}-of-{ring_size} threshold")
 
@@ -2875,10 +3008,15 @@ class LaudCLI:
             key_fingerprint_hex=fp_hex,
             threshold=threshold,
             ring_size=ring_size,
+            privacy_mode=privacy,
         )
 
         secure_zero(fek)
         self._ok(f"Document secured: {path.name}")
+        if privacy:
+            self._info(
+                "Filename is hidden. "
+                "Only the document hash is stored.")
         self._info(f"Requires {threshold} of {ring_size} shares to unlock")
 
     def _vault_unlock_file(self):
@@ -2892,7 +3030,11 @@ class LaudCLI:
             return
 
         for i, f in enumerate(files):
-            print(f"    {C.Y}{i+1}{C.R} {f['original_name']} "
+            if f.get('name_redacted', False):
+                display = f"Document #{i+1} (private)"
+            else:
+                display = f['original_name']
+            print(f"    {C.Y}{i+1}{C.R} {display} "
                   f"{C.DIM}({f.get('enc_hash', '?')[:16]}...){C.R}")
         idx = self._prompt_int("File #", 1) - 1
         if not (0 <= idx < len(files)):
@@ -2901,7 +3043,10 @@ class LaudCLI:
         enc_hash = f.get('enc_hash', '')
         threshold = f.get('threshold', 2)
 
-        self._val("File", f['original_name'])
+        if f.get('name_redacted', False):
+            self._val("File", f"Document #{idx+1} (private)")
+        else:
+            self._val("File", f['original_name'])
         self._val("Threshold", f"{threshold} shares needed")
 
         # Request unlock on-chain
@@ -2960,7 +3105,13 @@ class LaudCLI:
         self._ok("Key fingerprint verified")
 
         # Decrypt
-        dest = self._prompt("Export to", f"./{f['original_name']}")
+        if f.get('name_redacted', False):
+            orig = f.get('original_name', '')
+            ext = pathlib.Path(orig).suffix if orig else ''
+            default_dest = f"./{enc_hash[:16]}{ext}"
+        else:
+            default_dest = f"./{f['original_name']}"
+        dest = self._prompt("Export to", default_dest)
         try:
             resolved = retrieve_and_decrypt(
                 vault_id, enc_hash, bytes(fek), dest)
@@ -2977,10 +3128,14 @@ class LaudCLI:
             self._info("No files in this vault")
             return
         rows = []
-        for f in files:
+        for i, f in enumerate(files):
             h = f.get('enc_hash', f.get('file_hash', '?'))
+            if f.get('name_redacted', False):
+                display = f"Document #{i+1} (private)"
+            else:
+                display = f['original_name']
             rows.append([
-                f['original_name'][:24],
+                display[:24],
                 f"{f['size_bytes']:,}",
                 h[:16] + '...',
                 f['uploaded_at'][:10],
@@ -2997,7 +3152,11 @@ class LaudCLI:
             return
         for i, f in enumerate(files):
             h = f.get('enc_hash', f.get('file_hash', '?'))
-            print(f"    {C.Y}{i+1}{C.R} {f['original_name']} "
+            if f.get('name_redacted', False):
+                display = f"Document #{i+1} (private)"
+            else:
+                display = f['original_name']
+            print(f"    {C.Y}{i+1}{C.R} {display} "
                   f"{C.DIM}({h[:16]}...){C.R}")
         idx = self._prompt_int("File #", 1) - 1
         if not (0 <= idx < len(files)):
@@ -3116,6 +3275,14 @@ class LaudCLI:
         except Exception as e:
             self._err(str(e))
 
+    def _vault_anonymize_index(self):
+        """Hash all plaintext filenames in the vault index."""
+        count = anonymize_existing_index()
+        if count == 0:
+            self._info("No entries to anonymize")
+        else:
+            self._ok(f"Anonymized {count} file entries in vault index")
+
     # ------------------------------------------------------------------
     # Custom handlers: Dev Extensions
     # ------------------------------------------------------------------
@@ -3172,6 +3339,8 @@ class LaudCLI:
                 call = self.substrate.compose_call(mod, fn, params)
                 calls.append(call)
                 self._ok(f"Added {mod}.{fn} (#{len(calls)})")
+            except (ConnectionError, BrokenPipeError, OSError) as e:
+                self._err(f"Connection lost: {e}")
             except Exception as e:
                 self._err(f"Failed to compose: {e}")
         if not calls:
@@ -3747,6 +3916,14 @@ class LaudCLI:
             self.test_commit_reveal()
             return
 
+        # Top-level shortcuts
+        if cmd == 'protect':
+            self._vault_secure_file()
+            return
+        if cmd == 'unlock':
+            self._vault_unlock_file()
+            return
+
         # Bootstrap
         if cmd in ('b', 'boot', 'bootstrap'):
             self.bootstrap()
@@ -3784,6 +3961,31 @@ class LaudCLI:
     # Entry point
     # ------------------------------------------------------------------
 
+    def _first_run_onboarding(self):
+        if os.path.exists(self.MODE_CONFIG_FILE):
+            return  # Not first run
+        print()
+        self._box([
+            f"{C.BB}Welcome to LAUD NETWORKS{C.R}  {C.DIM}7ayLabs{C.R}",
+            "",
+            f"  {C.W}What you can do:{C.R}",
+            f"  {C.G}>{C.R} Prove your presence at events and sessions",
+            f"  {C.G}>{C.R} Protect documents with split-key encryption",
+            f"  {C.G}>{C.R} Build verifiable trust relationships",
+            "",
+        ], color=C.BB)
+        choice = self._prompt_int(
+            "Choose your mode:
+"
+            "  1  Standard  (simple interface)
+"
+            "  2  Developer (full protocol access)
+"
+            "Mode", 1)
+        self._mode = 'dev' if choice == 2 else 'normal'
+        self._save_mode()
+        self._menu_aliases = build_menu_aliases_for_mode(self._mode)
+
     def _print_welcome(self):
         mode_str = "DEVELOPER" if self._mode == 'dev' else "NORMAL"
         mode_color = C.Y if self._mode == 'dev' else C.G
@@ -3802,6 +4004,7 @@ class LaudCLI:
         print()
 
     def run(self):
+        self._first_run_onboarding()
         self._print_welcome()
         self._setup_readline()
 
