@@ -967,14 +967,23 @@ class LaudCLI:
         if not self._ensure():
             return False
         try:
-            result = self.substrate.query("Presence", "EpochActive", [1])
-            if result and result.value:
-                return True
+            epoch_r = self.substrate.query("Epoch", "CurrentEpoch")
+            epoch_id = epoch_r.value if epoch_r else 0
+            if epoch_id > 0:
+                info = self.substrate.query(
+                    "Epoch", "EpochInfo", [epoch_id])
+                if info and info.value:
+                    state = info.value.get('state', 'None')
+                    if state == 'Active':
+                        return True
+        except (ConnectionError, BrokenPipeError, OSError):
+            self._err("Connection lost while checking epoch status")
+            return False
         except Exception:
             pass
-        self._info("Epoch 1 is not active yet.")
+        self._info("No active session found.")
         if self._prompt_bool(
-                "Run bootstrap? (activates epoch + validators + positions)"):
+                "Run bootstrap? (sets up session + validators + positions)"):
             self.bootstrap()
             return True
         return False
@@ -1288,23 +1297,25 @@ class LaudCLI:
         print()
 
     def _next_test_epoch(self):
-        for e in range(2, 1000):
-            try:
-                result = self.substrate.query(
-                    "Presence", "EpochActive", [e])
-                if not (result and result.value):
-                    self._info(f"Activating fresh epoch {e}")
-                    self._submit("Presence", "set_epoch_active",
-                                 {"epoch": e, "active": True},
-                                 sudo=True, _skip_confirm=True)
-                    return e
-            except Exception:
-                self._info(f"Activating fresh epoch {e}")
-                self._submit("Presence", "set_epoch_active",
-                             {"epoch": e, "active": True},
-                             sudo=True, _skip_confirm=True)
-                return e
-        return 2
+        try:
+            count_r = self.substrate.query("Epoch", "EpochCount")
+            next_id = (count_r.value if count_r else 0) + 1
+        except Exception:
+            next_id = 2
+        try:
+            header = self.substrate.get_block_header()['header']
+            current_block = int(header['number'])
+        except Exception:
+            current_block = 10
+        self._info(f"Scheduling session {next_id}")
+        self._submit("Epoch", "schedule_epoch",
+                     {"start_block": current_block + 5, "duration": 200},
+                     sudo=True, _skip_confirm=True)
+        self._info(f"Starting session {next_id}")
+        self._submit("Epoch", "start_epoch",
+                     {"epoch_id": next_id},
+                     sudo=True, _skip_confirm=True)
+        return next_id
 
     # ------------------------------------------------------------------
     # Custom handlers: Presence
@@ -1360,28 +1371,70 @@ class LaudCLI:
             'eve':     {"x": -50000, "y": 0,      "z": 0},
             'ferdie':  {"x": -25000, "y": -43301, "z": 0},
         }
-        total = 1 + len(positions) * 2
+        # Steps: schedule + start + quorum + N*(register + activate + position)
+        total = 3 + len(positions) * 3
         step = 0
+
+        # Step 1: Get current block for scheduling
+        try:
+            header = self.substrate.get_block_header()['header']
+            current_block = int(header['number'])
+        except Exception:
+            current_block = 1
+
+        # Step 2: Schedule epoch 1
         step += 1
-        self._progress(step, total, "Activating time period 1")
-        self._submit("Presence", "set_epoch_active",
-                     {"epoch": 1, "active": True},
+        self._progress(step, total, "Scheduling session 1")
+        r = self._submit("Epoch", "schedule_epoch",
+                         {"start_block": current_block + 3,
+                          "duration": 200},
+                         sudo=True, _skip_confirm=True)
+        if r and not r.is_success:
+            # Epoch may already exist, try starting it directly
+            self._info("Session may already be scheduled, continuing...")
+
+        # Step 3: Start epoch 1
+        step += 1
+        self._progress(step, total, "Starting session 1")
+        r = self._submit("Epoch", "start_epoch",
+                         {"epoch_id": 1},
+                         sudo=True, _skip_confirm=True)
+        if r and not r.is_success:
+            self._info("Session may already be active, continuing...")
+
+        # Step 4: Set quorum config
+        step += 1
+        self._progress(step, total, "Setting approval threshold (2 of 3)")
+        self._submit("Presence", "set_quorum_config",
+                     {"threshold": 2, "total": 3},
                      sudo=True, _skip_confirm=True)
+
+        # Step 5: Register, activate, and position each validator
         for name, pos in positions.items():
             vid = self._validator_id(name)
+
             step += 1
             self._progress(step, total,
                            f"Register {C.W}{name}{C.R}")
-            self._submit("Presence", "set_validator_status",
-                         {"validator": vid, "active": True},
-                         sudo=True, _skip_confirm=True)
+            self._submit("Validator", "register_validator",
+                         {"stake": 1000000000000},
+                         name, _skip_confirm=True)
+
+            step += 1
+            self._progress(step, total,
+                           f"Activate {C.W}{name}{C.R}")
+            self._submit("Validator", "activate_validator",
+                         {}, name, _skip_confirm=True)
+
             step += 1
             self._progress(step, total,
                            f"Position {C.W}{name}{C.R} "
                            f"({pos['x']}, {pos['y']}, {pos['z']})")
             self._submit("Presence", "set_validator_position",
                          {"validator": vid, "position": pos}, name)
-        self._ok("Bootstrap complete — 6 validators in hexagonal formation")
+
+        self._ok("Bootstrap complete — 6 validators in hexagonal"
+                 " formation")
 
     def _auto_pbt_test(self):
         if not self._ensure():
@@ -2631,14 +2684,23 @@ class LaudCLI:
         self._val("Peers", h.get('peers', 0))
         self._val("Syncing", h.get('isSyncing', False))
         try:
-            epoch = self.substrate.query("Presence", "CurrentEpoch")
-            self._val("Current Epoch", epoch)
+            epoch = self.substrate.query("Epoch", "CurrentEpoch")
+            self._val("Current Session", epoch)
+            info = self.substrate.query(
+                "Epoch", "EpochInfo",
+                [epoch.value if epoch else 0])
+            if info and info.value:
+                state = info.value.get('state', 'Unknown')
+                self._val("Session Status",
+                          self._colorize_state(state))
             vc = self.substrate.query("Validator", "ValidatorCount")
             self._val("Validators", vc)
             ts = self.substrate.query("Validator", "TotalStake")
             self._val("Total Stake", ts)
+        except (ConnectionError, BrokenPipeError, OSError):
+            self._err("Connection lost")
         except Exception:
-            pass
+            self._info("Could not fetch session data")
 
     def _dashboard_my_status(self):
         if not self._ensure():
@@ -2654,17 +2716,18 @@ class LaudCLI:
                       f"{data.get('free', 0) / 1e12:.4f} UNIT")
         aid = self._actor_id(name)
         try:
-            epoch_r = self.substrate.query(
-                "Presence", "CurrentEpoch")
+            epoch_r = self.substrate.query("Epoch", "CurrentEpoch")
             epoch = epoch_r.value if epoch_r else 1
             pres = self.substrate.query(
                 "Presence", "Presences", [epoch, aid])
             if pres and pres.value:
-                self._val("Presence (epoch " + str(epoch) + ")", pres)
+                self._val(f"Check-in (session {epoch})", pres)
             else:
-                self._info(f"No presence record in epoch {epoch}")
+                self._info(f"Not checked in for session {epoch}")
+        except (ConnectionError, BrokenPipeError, OSError):
+            self._err("Connection lost")
         except Exception:
-            pass
+            self._info("Could not fetch check-in status")
         try:
             vid = self._validator_id(name)
             val_info = self.substrate.query(
