@@ -361,7 +361,7 @@ pub mod pallet {
             ensure!(
                 dispute.status == DisputeStatus::Open
                     || dispute.status == DisputeStatus::UnderReview,
-                Error::<T>::DisputeAlreadyResolved
+                Error::<T>::DisputeNotOpen
             );
             ensure!(
                 block_number <= Self::resolution_deadline(&dispute),
@@ -420,7 +420,7 @@ pub mod pallet {
             ensure!(
                 dispute.status == DisputeStatus::Open
                     || dispute.status == DisputeStatus::UnderReview,
-                Error::<T>::DisputeAlreadyResolved
+                Error::<T>::DisputeNotOpen
             );
             ensure!(
                 block_number >= Self::resolution_deadline(&dispute),
@@ -464,7 +464,7 @@ pub mod pallet {
             ensure!(
                 dispute.status == DisputeStatus::Open
                     || dispute.status == DisputeStatus::UnderReview,
-                Error::<T>::DisputeAlreadyResolved
+                Error::<T>::DisputeNotOpen
             );
             ensure!(
                 block_number >= Self::resolution_deadline(&dispute),
