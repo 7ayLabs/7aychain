@@ -68,16 +68,8 @@ impl PositionProximityCircuit {
         radius_sq: u64,
         epoch_id: u64,
     ) -> Option<Self> {
-        let dx = if exact_x >= center_x {
-            exact_x - center_x
-        } else {
-            center_x - exact_x
-        };
-        let dy = if exact_y >= center_y {
-            exact_y - center_y
-        } else {
-            center_y - exact_y
-        };
+        let dx = exact_x.abs_diff(center_x);
+        let dy = exact_y.abs_diff(center_y);
 
         let dist_sq = dx.checked_mul(dx)?.checked_add(dy.checked_mul(dy)?)?;
         if dist_sq > radius_sq {

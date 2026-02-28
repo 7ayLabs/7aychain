@@ -168,7 +168,7 @@ impl ConstraintSynthesizer<Fr> for VoteCircuit {
         }
 
         // Constraint 1: leaf = MiMC(validator_id), verify Merkle membership
-        let leaf = mimc_hash_gadget(&[validator_id_var.clone()], &constants)?;
+        let leaf = mimc_hash_gadget(std::slice::from_ref(&validator_id_var), &constants)?;
         let computed_root = merkle_verify_gadget(&leaf, &siblings, &path_bits, &constants)?;
         computed_root.enforce_equal(&validator_root_var)?;
 

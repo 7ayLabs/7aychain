@@ -256,10 +256,9 @@ fn proofs_from_different_circuits_not_interchangeable() {
     // Invalid: share proof with reputation VK (cross-circuit)
     // Note: this may error or return false depending on input count mismatch
     let cross_result = Groth16::<Bn254>::verify(&rep_vk, &rep_inputs, &share_proof);
-    match cross_result {
-        Ok(valid) => assert!(!valid, "cross-circuit proof should not verify"),
-        Err(_) => {} // Error is also acceptable — different VK structure
-    }
+    if let Ok(valid) = cross_result {
+        assert!(!valid, "cross-circuit proof should not verify");
+    } // Error is also acceptable — different VK structure
 }
 
 // ─── Validator Workflow Integration ─────────────────────────────────────
@@ -498,7 +497,7 @@ fn reputation_range_proof_boundary_values() {
 
     for (score, threshold) in test_cases {
         let circuit = ReputationCircuit::new(Fr::from(1u64), score, threshold, Fr::from(0xABu64))
-            .expect(&format!("score {} >= threshold {}", score, threshold));
+            .unwrap_or_else(|| panic!("score {} >= threshold {}", score, threshold));
 
         let inputs = circuit.public_inputs();
         let proof = Groth16::<Bn254>::prove(&pk, circuit, &mut rng).expect("prove");
@@ -538,7 +537,7 @@ fn stake_range_proof_boundary_values() {
             siblings.clone(),
             path_bits.clone(),
         )
-        .expect(&format!("stake {} >= min {}", stake, min));
+        .unwrap_or_else(|| panic!("stake {} >= min {}", stake, min));
 
         let inputs = circuit.public_inputs();
         let proof = Groth16::<Bn254>::prove(&pk, circuit, &mut rng).expect("prove");
@@ -575,7 +574,7 @@ fn position_proximity_various_positions_within_radius() {
 
     for (x, y) in positions {
         let circuit = PositionProximityCircuit::new(x, y, center_x, center_y, radius_sq, 1)
-            .expect(&format!("position ({}, {}) within radius", x, y));
+            .unwrap_or_else(|| panic!("position ({}, {}) within radius", x, y));
 
         let inputs = circuit.public_inputs();
         let proof = Groth16::<Bn254>::prove(&pk, circuit, &mut rng).expect("prove");

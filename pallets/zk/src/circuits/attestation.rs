@@ -169,7 +169,7 @@ impl ConstraintSynthesizer<Fr> for AttestationCircuit {
         }
 
         // Constraint 1: device leaf + Merkle membership
-        let leaf = mimc_hash_gadget(&[device_id_var.clone()], &constants)?;
+        let leaf = mimc_hash_gadget(std::slice::from_ref(&device_id_var), &constants)?;
         let computed_root = merkle_verify_gadget(&leaf, &siblings, &path_bits, &constants)?;
         computed_root.enforce_equal(&device_root_var)?;
 
