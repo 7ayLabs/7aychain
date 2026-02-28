@@ -3975,12 +3975,9 @@ class LaudCLI:
             "",
         ], color=C.BB)
         choice = self._prompt_int(
-            "Choose your mode:
-"
-            "  1  Standard  (simple interface)
-"
-            "  2  Developer (full protocol access)
-"
+            "Choose your mode:\n"
+            "  1  Standard  (simple interface)\n"
+            "  2  Developer (full protocol access)\n"
             "Mode", 1)
         self._mode = 'dev' if choice == 2 else 'normal'
         self._save_mode()
