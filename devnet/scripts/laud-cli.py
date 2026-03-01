@@ -1229,7 +1229,12 @@ class LaudCLI:
             else:
                 self._kv("epoch", eid)
                 self._kv("state", state)
-            self._kv("participants", pc)
+            dc = status.get('declared_count', 0)
+            if dc > 0 or pc > 0:
+                self._kv("checked in", f"{dc} of "
+                         f"{len(self.keypairs)} accounts")
+            else:
+                self._kv("checked in", "none yet")
 
             # Progress bar for active epoch
             if state == 'Active' and end_blk > 0:
@@ -1405,7 +1410,9 @@ class LaudCLI:
                    f"{C.DIM}{'━' * (bar_len - filled)}{C.R}")
             print(f"  {C.BC}▸{C.R} {bar} {C.DIM}{pct}% "
                   f"· ~{remaining} blocks left{C.R}")
-        self._kv("participants", pc)
+        dc = status.get('declared_count', 0)
+        self._kv("checked in", f"{dc} of "
+                 f"{len(self.keypairs)}")
 
         print(f"\n  {C.DIM}ACTIONS{C.R}")
         opts = []
@@ -1675,6 +1682,20 @@ class LaudCLI:
                             f"Presence query failed: {e}")
                     result['presence_state'] = None
 
+            # Count actual presences across known accounts
+            declared_count = 0
+            try:
+                for name in self.keypairs:
+                    aid = self._actor_id(name)
+                    p = self.substrate.query(
+                        "Presence", "Presences",
+                        [epoch_id, aid])
+                    if p and p.value:
+                        declared_count += 1
+            except Exception:
+                pass
+            result['declared_count'] = declared_count
+
             # Quorum config
             try:
                 qc = self.substrate.query(
@@ -1803,8 +1824,8 @@ class LaudCLI:
                 print()
 
         # Participation summary
-        pc = status.get('participant_count', 0)
-        self._kv("participants", pc)
+        dc = status.get('declared_count', 0)
+        self._kv("checked in", f"{dc} of {len(self.keypairs)}")
 
         if pres == 'Finalized':
             print(f"  {C.BG}\u2713{C.R} Verified and locked")
