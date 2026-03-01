@@ -271,9 +271,9 @@ class TestParams:
                         f"{d.name}/{c.key}"
 
     def test_param_kinds_valid(self):
-        valid_kinds = {"str", "int", "h256", "actor", "epoch",
-                       "enum", "bool", "hex", "bytes", "float",
-                       "account", "position"}
+        valid_kinds = {"str", "int", "h256", "actor", "self_actor",
+                       "epoch", "enum", "bool", "hex", "bytes",
+                       "float", "account", "position"}
         for d in DOMAINS:
             for c in d.commands:
                 for p in c.params:

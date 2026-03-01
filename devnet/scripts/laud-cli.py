@@ -1081,6 +1081,14 @@ class LaudCLI:
             elif p.kind == "account":
                 signer = self._prompt_account(p.label)
                 has_account_param = True
+            elif p.kind == "self_actor":
+                # Auto-derive actor from signer — ask account first
+                signer = self._prompt_account("Your account")
+                has_account_param = True
+                params[p.name] = self._actor_id(signer)
+                if self._mode == 'dev':
+                    print(f"  {C.DIM}ID: "
+                          f"{params[p.name][:20]}...{C.R}")
             elif p.kind == "actor":
                 params[p.name] = self._prompt_actor(p.label)
             elif p.kind == "h256":

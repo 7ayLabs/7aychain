@@ -745,7 +745,7 @@ DOMAINS = [
             Command("1", "Create Vault", "submit",
                     pallet="Vault", function="create_vault",
                     params=[
-                        Param("owner", "Owner identity", "actor"),
+                        Param("owner", "Vault owner", "self_actor"),
                         Param("threshold", "Minimum signers needed (t)", "int", 2),
                         Param("ring_size", "Total members (n)", "int", 3),
                         Param("secret_hash", "Secret ID (32-byte hex)", "h256"),
