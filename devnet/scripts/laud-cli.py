@@ -1287,6 +1287,8 @@ class LaudCLI:
         """Show all accounts with validator + presence status."""
         if not self._ensure():
             return
+        if self._mode == 'normal':
+            self._ensure_bootstrapped()
         status = self._fetch_epoch_status()
         eid = status.get('epoch_id', 0) if status else 0
         qt = status.get('quorum_threshold', 3) if status else 3
@@ -1341,6 +1343,8 @@ class LaudCLI:
         """Show validator summary table."""
         if not self._ensure():
             return
+        if self._mode == 'normal':
+            self._ensure_bootstrapped()
         print()
         self._heading("VALIDATORS")
         active = 0
@@ -1381,6 +1385,8 @@ class LaudCLI:
         """Quick epoch overview with inline actions."""
         if not self._ensure():
             return
+        if self._mode == 'normal':
+            self._ensure_bootstrapped()
         status = self._fetch_epoch_status()
         if not status:
             self._info("No epoch info available")
@@ -1457,6 +1463,8 @@ class LaudCLI:
         """Quick declare presence in current epoch."""
         if not self._ensure():
             return
+        if self._mode == 'normal':
+            self._ensure_bootstrapped()
         status = self._fetch_epoch_status()
         if not status:
             self._info("No active epoch")
@@ -1470,6 +1478,8 @@ class LaudCLI:
         """Quick vote on a presence in current epoch."""
         if not self._ensure():
             return
+        if self._mode == 'normal':
+            self._ensure_bootstrapped()
         status = self._fetch_epoch_status()
         if not status:
             self._info("No active epoch")
@@ -1486,6 +1496,8 @@ class LaudCLI:
         """Quick finalize a presence in current epoch."""
         if not self._ensure():
             return
+        if self._mode == 'normal':
+            self._ensure_bootstrapped()
         status = self._fetch_epoch_status()
         if not status:
             self._info("No active epoch")
