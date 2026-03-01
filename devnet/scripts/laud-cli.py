@@ -79,11 +79,128 @@ class LaudCLI:
 
     MODE_CONFIG_FILE = os.path.expanduser('~/.laud_config.json')
 
+    # Map technical terms to human-friendly labels
+    FRIENDLY_TERMS = {
+        'epoch': 'session', 'Epoch': 'Session',
+        'presence': 'check-in', 'Presence': 'Check-In',
+        'validator': 'verifier', 'Validator': 'Verifier',
+        'actor': 'participant', 'Actor': 'Participant',
+        'declare_presence': 'check in',
+        'vote_presence': 'approve presence',
+        'finalize_presence': 'confirm check-in',
+        'quorum': 'enough votes',
+        'slash': 'penalty',
+    }
+
+    # Friendly action labels for _submit output
+    ACTION_LABELS = {
+        'declare_presence': 'Checking in',
+        'declare_presence_with_commitment': 'Checking in (private)',
+        'reveal_commitment': 'Revealing check-in',
+        'vote_presence': 'Approving presence',
+        'finalize_presence': 'Confirming check-in',
+        'register_validator': 'Registering verifier',
+        'force_activate_validator': 'Activating verifier',
+        'activate_validator': 'Activating verifier',
+        'deactivate_validator': 'Deactivating verifier',
+        'schedule_epoch': 'Scheduling session',
+        'start_epoch': 'Starting session',
+        'close_epoch': 'Closing session',
+        'set_quorum_config': 'Setting approval threshold',
+        'set_validator_position': 'Setting position',
+        'create_vault': 'Creating document safe',
+        'register_device': 'Registering device',
+    }
+
+    # Normal-mode error messages (user-friendly)
+    NORMAL_ERRORS = {
+        'EpochNotActive':
+            'No session is running right now.',
+        'EpochNotFound':
+            'That session does not exist.',
+        'EpochAlreadyActive':
+            'A session is already running.',
+        'DuplicatePresence':
+            'You already checked in for this session. '
+            'You can check in again when a new session starts.',
+        'AlreadyDeclared':
+            'You already checked in for this session.',
+        'DuplicateVote':
+            'You already approved this person for this session.',
+        'DuplicateAttestation':
+            'You already confirmed this person.',
+        'PresenceImmutable':
+            'This check-in is finalized and cannot be changed.',
+        'PresenceNotFound':
+            'This person has not checked in for this session.',
+        'QuorumNotReached':
+            'Not enough approvals yet. More verifiers need to vote.',
+        'SelfAttestation':
+            'You cannot approve yourself. Ask someone else.',
+        'InsufficientAttestations':
+            'Need more confirmations from nearby verifiers.',
+        'InsufficientWitnesses':
+            'Need at least 3 witness confirmations.',
+        'PositionAlreadyClaimed':
+            'Position already set for this session.',
+        'ValidatorNotActive':
+            'This verifier is not active.',
+        'NotAValidator':
+            'This account is not a verifier.',
+        'NotAnActiveValidator':
+            'This verifier is not active.',
+        'AlreadyActive':
+            'Already active.',
+        'AlreadyRegistered':
+            'This account is already registered.',
+        'StakeTooHigh':
+            'Too much stake. Maximum for one verifier is 33% of total.',
+        'StakeTooLow':
+            'Not enough stake to register.',
+        'BondingPeriod':
+            'The waiting period has not finished yet.',
+        'BondingPeriodNotElapsed':
+            'The waiting period has not finished yet.',
+        'ValidatorNotFound':
+            'No verifier found for this account.',
+        'VaultLocked':
+            'This safe is locked right now.',
+        'InvalidRingSize':
+            'A safe needs between 3 and 10 members.',
+        'ThresholdTooLow':
+            'Need at least 2 keyholders.',
+        'BadOrigin':
+            'You do not have permission for this action.',
+        'InsufficientBalance':
+            'Not enough funds.',
+        'CallFiltered':
+            'This action is not available right now.',
+        'UnauthorizedDeclaration':
+            'Not authorized to perform this action.',
+    }
+
+    # Friendly breadcrumb names for navigation stack
+    NAV_LABELS = {
+        'presence': 'Check-In',
+        'epoch': 'Sessions',
+        'validator': 'Verifiers',
+        'dispute': 'Challenges',
+        'vault': 'Document Safe',
+        'device': 'Devices',
+        'semantic': 'Trust',
+        'governance': 'Permissions',
+        'pbt': 'Location',
+        'dashboard': 'Dashboard',
+        'chain': 'Network',
+        'accounts': 'Accounts',
+    }
+
     def __init__(self, url="ws://127.0.0.1:9944", mode=None):
         self.url = url
         self.substrate = None
         self.keypairs = {}
         self.connected = False
+        self._last_known_epoch = 0
         self._ctx_epoch = None
         self._ctx_account = 'alice'
         self._nav_stack = []
@@ -269,10 +386,16 @@ class LaudCLI:
                 kp = self.keypairs[signer]
                 ext = self.substrate.create_signed_extrinsic(
                     call=call, keypair=kp)
-                tag = f"{C.DIM}[admin]{C.R} " if sudo else ""
-                self._info(
-                    f"{tag}{C.W}{module}.{fn}{C.R} "
-                    f"{C.DIM}as{C.R} {C.Y}{signer}{C.R}")
+                if self._mode == 'normal':
+                    friendly = self.ACTION_LABELS.get(fn, fn)
+                    self._info(
+                        f"{friendly} as "
+                        f"{C.W}{signer}{C.R}...")
+                else:
+                    tag = f"{C.DIM}[admin]{C.R} " if sudo else ""
+                    self._info(
+                        f"{tag}{C.W}{module}.{fn}{C.R} "
+                        f"{C.DIM}as{C.R} {C.Y}{signer}{C.R}")
                 receipt = self.substrate.submit_extrinsic(
                     ext, wait_for_inclusion=True)
                 if receipt.is_success:
@@ -320,17 +443,28 @@ class LaudCLI:
                     ev_str = (f" {C.DIM}({', '.join(pallet_events)}){C.R}"
                               if pallet_events else "")
                     if sudo_failed:
-                        self._err(f"Block {blk_num}{ev_str}")
+                        if self._mode == 'normal':
+                            self._err("Failed")
+                        else:
+                            self._err(f"Block {blk_num}{ev_str}")
                         receipt._is_success = False
                     else:
-                        self._ok(f"Block {blk_num}{ev_str}")
+                        if self._mode == 'normal':
+                            self._ok("Done")
+                        else:
+                            self._ok(f"Block {blk_num}{ev_str}")
                 else:
                     err = receipt.error_message
                     err_name = self._extract_error_name(err)
-                    self._err(err_name)
-                    hint = self._error_hint(err)
-                    if hint:
-                        print(f"       {C.Y}{hint}{C.R}")
+                    if self._mode == 'normal':
+                        friendly = self.NORMAL_ERRORS.get(
+                            err_name, err_name)
+                        self._err(friendly)
+                    else:
+                        self._err(err_name)
+                        hint = self._error_hint(err)
+                        if hint:
+                            print(f"       {C.Y}{hint}{C.R}")
                 # Always wait for next slot after any submission.
                 self._slot_wait()
                 return receipt
@@ -644,9 +778,13 @@ class LaudCLI:
                 self._menu_cell(key, label, ht)
 
         print()
-        print(f"  {C.DIM}i{C.R} instructions  "
-              f"{C.DIM}?{C.R} refresh  "
-              f"{C.DIM}0{C.R} back")
+        if self._mode == 'normal':
+            print(f"  {C.DIM}Type 'back' to return, "
+                  f"'help' for info{C.R}")
+        else:
+            print(f"  {C.DIM}i{C.R} instructions  "
+                  f"{C.DIM}?{C.R} refresh  "
+                  f"{C.DIM}back{C.R} return")
         print()
 
     # ------------------------------------------------------------------
@@ -880,7 +1018,7 @@ class LaudCLI:
             else:
                 c = self._prompt("", "0")
 
-            if c in ("0", "back"):
+            if c in ("0", "back", "b", "done", "..", "exit"):
                 self._nav_stack.pop()
                 break
             if c == "?":
@@ -1415,6 +1553,24 @@ class LaudCLI:
     def bootstrap(self):
         self._auto_setup_validators()
 
+    def _silent_bootstrap(self):
+        """Auto-bootstrap for normal mode. Minimal output."""
+        if not self._ensure():
+            return False
+        try:
+            vc = self.substrate.query("Validator", "ValidatorCount")
+            if vc and vc.value and vc.value >= 3:
+                return True
+        except Exception:
+            pass
+        print()
+        print(f"  {C.DIM}Setting up the network "
+              f"for first use...{C.R}")
+        self._auto_setup_validators()
+        print(f"  {C.BG}\u2713{C.R} Ready")
+        print()
+        return True
+
     def _check_epoch(self):
         if not self._ensure():
             return False
@@ -1429,11 +1585,13 @@ class LaudCLI:
                     if state == 'Active':
                         return True
         except (ConnectionError, BrokenPipeError, OSError):
-            self._err("Connection lost while checking epoch status")
+            self._err("Cannot reach the network")
             return False
         except Exception as e:
             if self._mode == 'dev':
                 self._info(f"Epoch check failed: {e}")
+        if self._mode == 'normal':
+            return self._silent_bootstrap()
         self._info("No active session found.")
         if self._prompt_bool(
                 "Run bootstrap? (sets up session + validators + positions)"):
@@ -4098,25 +4256,78 @@ class LaudCLI:
     # ------------------------------------------------------------------
 
     def _show_compact_menu(self):
+        if self._mode == 'normal':
+            self._show_normal_menu()
+        else:
+            self._show_dev_menu()
+
+    def _show_normal_menu(self):
+        """Consumer-friendly menu with word commands."""
+        print()
+        actions = [
+            ("checkin",   "Check in",
+             "Prove your presence this session"),
+            ("vote",      "Approve someone",
+             "Vote to confirm another person"),
+            ("finalize",  "Confirm a check-in",
+             "Finalize after enough votes"),
+        ]
+        info_cmds = [
+            ("status",    "My status",
+             "Your account, session, and activity"),
+            ("who",       "Everyone",
+             "See all accounts and their status"),
+            ("recap",     "Session recap",
+             "Summary of this session"),
+        ]
+        explore_cmds = [
+            ("vault",     "Document Safe",
+             "Protect and share documents"),
+            ("epoch",     "Sessions",
+             "View and manage sessions"),
+            ("vals",      "Verifiers",
+             "View verifier status and stake"),
+        ]
+
+        self._section("WHAT WOULD YOU LIKE TO DO?")
+        print()
+        for key, label, hint in actions:
+            print(f"    {C.BC}{key:<14}{C.R} {label}")
+            print(f"    {' ' * 14} {C.DIM}{hint}{C.R}")
+        print()
+        self._section("INFO")
+        print()
+        for key, label, hint in info_cmds:
+            print(f"    {C.BC}{key:<14}{C.R} {label}  "
+                  f"{C.DIM}{hint}{C.R}")
+        print()
+        self._section("EXPLORE")
+        print()
+        for key, label, hint in explore_cmds:
+            print(f"    {C.BC}{key:<14}{C.R} {label}  "
+                  f"{C.DIM}{hint}{C.R}")
+        print()
+        print(f"  {C.DIM}Type a command above, "
+              f"'flow' for next steps, "
+              f"'help' for guidance, "
+              f"'quit' to exit{C.R}")
+        print(f"  {C.DIM}Switch to full access: "
+              f"mode dev{C.R}")
+        print()
+
+    def _show_dev_menu(self):
+        """Developer menu with numbered domains."""
         visible = get_domains_for_mode(self._mode)
         group_order = get_group_display_order(self._mode)
 
         groups = {}
         for d in visible:
-            g = (d.normal_group
-                 if self._mode == 'normal' and d.normal_group
-                 else d.group)
-            groups.setdefault(g, []).append(d)
+            groups.setdefault(d.group, []).append(d)
 
         print()
-        if self._mode == 'dev':
-            print(f"  {C.BA}DEV{C.R}  "
-                  f"{C.DIM}\u00b7 type{C.R} mode normal "
-                  f"{C.DIM}to simplify{C.R}")
-        else:
-            print(f"  {C.BG}NORMAL{C.R}  "
-                  f"{C.DIM}\u00b7 type{C.R} mode dev "
-                  f"{C.DIM}for full access{C.R}")
+        print(f"  {C.BA}DEV{C.R}  "
+              f"{C.DIM}\u00b7 type{C.R} mode normal "
+              f"{C.DIM}to simplify{C.R}")
 
         tw = _term_width()
         for gkey, gtitle in group_order:
@@ -4126,34 +4337,27 @@ class LaudCLI:
             print()
             self._section(gtitle)
 
-            # 2-column grid for wide terminals
             if tw >= 72 and len(domains) >= 2:
                 col_w = (tw - 8) // 2
                 for idx in range(0, len(domains), 2):
                     d = domains[idx]
-                    d2 = domains[idx + 1] if idx + 1 < len(domains) else None
-                    t1 = (d.normal_title
-                          if self._mode == 'normal' and d.normal_title
-                          else d.name.capitalize())
+                    d2 = (domains[idx + 1]
+                          if idx + 1 < len(domains) else None)
                     left = (f" {C.BA}{d.number:>2}{C.R}  "
-                            f"{t1:<{col_w - 6}}")
+                            f"{d.name.capitalize():<{col_w - 6}}")
                     if d2:
-                        t2 = (d2.normal_title
-                              if self._mode == 'normal' and d2.normal_title
-                              else d2.name.capitalize())
-                        right = f" {C.BA}{d2.number:>2}{C.R}  {t2}"
+                        right = (f" {C.BA}{d2.number:>2}{C.R}  "
+                                 f"{d2.name.capitalize()}")
                         print(f"  {left}{right}")
                     else:
                         print(f"  {left}")
             else:
                 for d in domains:
-                    title = (d.normal_title
-                             if self._mode == 'normal'
-                             and d.normal_title
-                             else d.name.capitalize())
                     desc = (d.help_summary[:32]
                             if d.help_summary else "")
-                    self._menu_cell(str(d.number), title, desc)
+                    self._menu_cell(
+                        str(d.number),
+                        d.name.capitalize(), desc)
 
         print()
         self._section("TESTS")
@@ -4165,7 +4369,8 @@ class LaudCLI:
             col_w = (tw - 8) // 2
             for idx in range(0, len(tests), 2):
                 a = tests[idx]
-                left = f" {C.BA}{a[0]:>2}{C.R}  {a[1]:<{col_w - 6}}"
+                left = (f" {C.BA}{a[0]:>2}{C.R}  "
+                        f"{a[1]:<{col_w - 6}}")
                 if idx + 1 < len(tests):
                     b = tests[idx + 1]
                     right = f" {C.BA}{b[0]:>2}{C.R}  {b[1]}"
@@ -4182,7 +4387,8 @@ class LaudCLI:
 
         print()
         print(f"  {C.DIM}status \u00b7 bootstrap (b) \u00b7 "
-              f"flow (f) \u00b7 connect (1) \u00b7 help \u00b7 ? \u00b7 exit{C.R}")
+              f"flow (f) \u00b7 who \u00b7 vals \u00b7 "
+              f"recap \u00b7 help \u00b7 quit{C.R}")
         print()
 
     # ------------------------------------------------------------------
@@ -4287,10 +4493,35 @@ class LaudCLI:
         self.connect(url)
 
     def _build_prompt(self):
+        if self._mode == 'normal':
+            return self._build_normal_prompt()
+        return self._build_dev_prompt()
+
+    def _build_normal_prompt(self):
+        if self._nav_stack:
+            crumbs = [self.NAV_LABELS.get(s, s.title())
+                      for s in self._nav_stack]
+            path = " > ".join(crumbs)
+            return f"  {C.DIM}{path}{C.R} > "
+        status = self._fetch_epoch_status()
+        if status:
+            eid = status.get('epoch_id', 0)
+            state = status.get('epoch_state', 'None')
+            if state == 'Active':
+                tag = f" {C.DIM}[session {eid}]{C.R}"
+            elif eid > 0:
+                tag = f" {C.DIM}[session {eid} "\
+                      f"{state.lower()}]{C.R}"
+            else:
+                tag = ""
+        else:
+            tag = ""
+        return f"  {C.BC}laud{C.R}{tag} > "
+
+    def _build_dev_prompt(self):
         path = "/".join(["laud"] + self._nav_stack)
         parts = []
-        if self._mode == 'dev':
-            parts.append(f"{C.BA}dev{C.R}")
+        parts.append(f"{C.BA}dev{C.R}")
         if self._ctx_account != 'alice':
             parts.append(f"{C.AMBER}{self._ctx_account}{C.R}")
         if self._ctx_epoch is not None:
@@ -4305,7 +4536,7 @@ class LaudCLI:
             return
         cmd = parts[0].lower()
 
-        if cmd in ('exit', 'quit', '0'):
+        if cmd in ('exit', 'quit', 'q'):
             raise SystemExit
         if cmd in ('help', 'h'):
             self._cmd_help(parts[1:] if len(parts) > 1 else None)
@@ -4388,31 +4619,36 @@ class LaudCLI:
             return
 
         # Quick actions
-        if cmd in ('e', 'epoch'):
+        if cmd in ('e', 'epoch', 'sessions'):
             self._quick_epoch()
             return
-        if cmd in ('who', 'w'):
+        if cmd in ('who', 'w', 'everyone'):
             self._cmd_who()
             return
-        if cmd in ('vals', 'validators'):
+        if cmd in ('vals', 'validators', 'verifiers'):
             self._cmd_validators()
             return
-        if cmd in ('declare', 'checkin'):
+        if cmd in ('declare', 'checkin', 'check'):
             self._quick_declare()
             return
-        if cmd == 'vote':
+        if cmd in ('vote', 'approve'):
             self._quick_vote()
             return
-        if cmd == 'finalize':
+        if cmd in ('finalize', 'confirm'):
             self._quick_finalize()
             return
         if cmd == 'recap':
             self._cmd_recap()
             return
 
-        # Bootstrap
+        # Bootstrap — hidden in normal mode
         if cmd in ('b', 'boot', 'bootstrap'):
-            self.bootstrap()
+            if self._mode == 'dev':
+                self.bootstrap()
+            else:
+                self._info("The network sets up automatically "
+                           "when needed.")
+                self._info(f"For manual setup: {C.DIM}mode dev{C.R}")
             return
 
         # Connect
@@ -4451,35 +4687,75 @@ class LaudCLI:
         if os.path.exists(self.MODE_CONFIG_FILE):
             return  # Not first run
         print()
-        self._panel("Welcome to LAUD NETWORKS", "7ayLabs")
+        self._panel("Welcome to LAUD NETWORKS")
         print()
-        print(f"    {C.BG}\u2713{C.R} Prove your presence at events")
-        print(f"    {C.BG}\u2713{C.R} Protect documents with split-key encryption")
-        print(f"    {C.BG}\u2713{C.R} Build verifiable trust relationships")
+        print(f"    Prove you were present at events")
+        print(f"    Protect documents with shared keys")
+        print(f"    Build verified trust connections")
         print()
-        choice = self._prompt_int(
-            "Choose your mode:\n"
-            "  1  Standard  (simple interface)\n"
-            "  2  Developer (full protocol access)\n"
-            "Mode", 1)
+        print(f"  How would you like to use this tool?")
+        print()
+        print(f"    {C.BC}1{C.R}  Standard")
+        print(f"       {C.DIM}Simple interface for checking in "
+              f"and protecting documents.{C.R}")
+        print()
+        print(f"    {C.BC}2{C.R}  Developer")
+        print(f"       {C.DIM}Full protocol access with all "
+              f"pallets and raw queries.{C.R}")
+        print()
+        choice = self._prompt_int("Your choice", 1)
         self._mode = 'dev' if choice == 2 else 'normal'
         self._save_mode()
         self._menu_aliases = build_menu_aliases_for_mode(self._mode)
 
     def _print_welcome(self):
-        mode_str = "DEV" if self._mode == 'dev' else "NORMAL"
-        mode_color = C.BA if self._mode == 'dev' else C.BG
         print()
         self._panel(
-            "LAUD NETWORKS 7ayLabs",
+            "LAUD NETWORKS",
             "Proof of Presence Protocol",
             f"{C.DIM}v0.8.27{C.R}",
         )
         print()
-        print(f"  {mode_color}{mode_str}{C.R}"
-              f" {C.DIM}\u00b7 type{C.R} menu"
-              f" {C.DIM}\u00b7{C.R} ? {C.DIM}for guide{C.R}")
+        if self._mode == 'normal':
+            print(f"  Type {C.BC}menu{C.R} to see options, "
+                  f"{C.BC}help{C.R} for guidance, "
+                  f"{C.BC}quit{C.R} to exit")
+        else:
+            print(f"  {C.BA}DEV{C.R}"
+                  f" {C.DIM}\u00b7 type{C.R} menu"
+                  f" {C.DIM}\u00b7{C.R} help"
+                  f" {C.DIM}\u00b7{C.R} quit")
         print()
+
+    def _show_contextual_hint(self):
+        """Show what the user can do when they press Enter."""
+        status = self._fetch_epoch_status()
+        if not status:
+            print(f"  {C.DIM}Type 'menu' to see options{C.R}")
+            return
+        state = status.get('epoch_state', 'None')
+        pres = status.get('presence_state')
+        if state == 'None':
+            print(f"  {C.DIM}No session running. "
+                  f"Type 'flow' to see what to do.{C.R}")
+        elif state == 'Active' and pres is None:
+            print(f"  {C.DIM}Session is active. "
+                  f"Type 'checkin' to prove your presence.{C.R}")
+        elif pres == 'Declared':
+            vc = status.get('vote_count', 0)
+            qt = status.get('quorum_threshold', 2)
+            need = max(0, qt - vc)
+            print(f"  {C.DIM}Checked in. Waiting for "
+                  f"{need} more vote(s). "
+                  f"Type 'who' to see everyone.{C.R}")
+        elif pres == 'Validated':
+            print(f"  {C.DIM}Enough votes! "
+                  f"Type 'finalize' to confirm.{C.R}")
+        elif pres == 'Finalized':
+            print(f"  {C.DIM}You are verified. "
+                  f"Type 'vault' or 'approve' someone else.{C.R}")
+        else:
+            print(f"  {C.DIM}Type 'menu' for options{C.R}")
 
     def run(self):
         self._first_run_onboarding()
@@ -4500,6 +4776,8 @@ class LaudCLI:
             try:
                 line = input(self._build_prompt()).strip()
                 if not line:
+                    if self._mode == 'normal':
+                        self._show_contextual_hint()
                     continue
                 self._dispatch(line)
             except SystemExit:
@@ -4510,8 +4788,8 @@ class LaudCLI:
                 if self._nav_stack:
                     self._nav_stack.clear()
                     continue
-                print(f"  {C.DIM}Ctrl+C again or type{C.R} "
-                      f"exit {C.DIM}to quit{C.R}")
+                print(f"  {C.DIM}Press Ctrl+C again or type "
+                      f"'quit' to exit{C.R}")
             except EOFError:
                 print(f"\n  {C.DIM}\u00b7 LAUD NETWORKS 7ayLabs{C.R}\n")
                 break
