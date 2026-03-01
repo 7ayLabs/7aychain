@@ -1435,29 +1435,49 @@ class LaudCLI:
         print()
 
     def _next_test_epoch(self):
+        """Get or create an active epoch for testing.
+
+        If there's already an active epoch, use it. Otherwise close the
+        current one and schedule+start the next sequential epoch.
+        """
         try:
-            count_r = self.substrate.query("Epoch", "EpochCount")
-            next_id = (count_r.value if count_r else 0) + 1
-        except (ConnectionError, BrokenPipeError, OSError):
-            self._err("Connection lost")
-            next_id = 2
-        except Exception as e:
-            if self._mode == 'dev':
-                self._info(f"EpochCount query failed: {e}")
-            next_id = 2
+            cur_r = self.substrate.query("Epoch", "CurrentEpoch")
+            cur_id = cur_r.value if cur_r else 0
+        except Exception:
+            cur_id = 0
+
+        # Check if current epoch is already active
+        if cur_id > 0:
+            try:
+                info = self.substrate.query(
+                    "Epoch", "EpochInfo", [cur_id])
+                if info and info.value:
+                    state = info.value.get('state', 'None')
+                    if state == 'Active':
+                        self._info(
+                            f"Using active epoch {cur_id}")
+                        return cur_id
+                    # Close it if not already closed/finalized
+                    if state not in ('Closed', 'Finalized'):
+                        self._info(
+                            f"Closing epoch {cur_id} ({state})")
+                        self._submit("Epoch", "close_epoch",
+                                     {"epoch_id": cur_id},
+                                     sudo=True, _skip_confirm=True)
+            except Exception:
+                pass
+
+        # Schedule and start the next epoch
+        next_id = cur_id + 1
         try:
             header = self.substrate.get_block_header()['header']
             current_block = int(header['number'])
-        except (ConnectionError, BrokenPipeError, OSError):
-            self._err("Connection lost")
+        except Exception:
             current_block = 10
-        except Exception as e:
-            if self._mode == 'dev':
-                self._info(f"Block header query failed: {e}")
-            current_block = 10
+
         self._info(f"Scheduling session {next_id}")
         self._submit("Epoch", "schedule_epoch",
-                     {"start_block": current_block + 5, "duration": 200},
+                     {"start_block": current_block + 3, "duration": 200},
                      sudo=True, _skip_confirm=True)
         self._info(f"Starting session {next_id}")
         self._submit("Epoch", "start_epoch",
