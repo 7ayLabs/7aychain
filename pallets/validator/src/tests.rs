@@ -273,17 +273,23 @@ fn invariant_inv46_min_validators() {
 #[test]
 fn invariant_inv47_max_stake_ratio() {
     new_test_ext().execute_with(|| {
+        // Need 3 registered validators before ratio check kicks in
         assert_ok!(Validator::register_validator(
             RuntimeOrigin::signed(1),
-            3000
+            1000
         ));
         assert_ok!(Validator::register_validator(
             RuntimeOrigin::signed(2),
-            1400
+            1000
+        ));
+        assert_ok!(Validator::register_validator(
+            RuntimeOrigin::signed(3),
+            1000
         ));
 
+        // 4th with huge stake: 10000 / 13000 = 77% > 33%
         assert_noop!(
-            Validator::register_validator(RuntimeOrigin::signed(3), 10_000),
+            Validator::register_validator(RuntimeOrigin::signed(4), 10_000),
             Error::<Test>::StakeTooHigh
         );
     });
@@ -912,6 +918,65 @@ fn force_activate_validator_rejects_already_active() {
         assert_noop!(
             Validator::force_activate_validator(RuntimeOrigin::root(), 1),
             Error::<Test>::AlreadyActive
+        );
+    });
+}
+
+#[test]
+fn sequential_registration_bypasses_ratio_check_under_3_validators() {
+    new_test_ext().execute_with(|| {
+        // First validator — should always work
+        assert_ok!(Validator::register_validator(
+            RuntimeOrigin::signed(1),
+            5000
+        ));
+
+        // Second validator with equal stake — previously failed with
+        // StakeTooHigh because 5000/10000 = 50% > 33%.  Now bypassed
+        // because validator_count < 3.
+        assert_ok!(Validator::register_validator(
+            RuntimeOrigin::signed(2),
+            5000
+        ));
+
+        // Third validator — still under the < 3 bypass
+        assert_ok!(Validator::register_validator(
+            RuntimeOrigin::signed(3),
+            5000
+        ));
+
+        // Fourth validator at equal stake: 5000/20000 = 25% < 33% — OK
+        assert_ok!(Validator::register_validator(
+            RuntimeOrigin::signed(4),
+            5000
+        ));
+    });
+}
+
+#[test]
+fn stake_ratio_enforced_at_3_plus_validators() {
+    new_test_ext().execute_with(|| {
+        // Register 3 validators with small stake
+        assert_ok!(Validator::register_validator(
+            RuntimeOrigin::signed(1),
+            1000
+        ));
+        assert_ok!(Validator::register_validator(
+            RuntimeOrigin::signed(2),
+            1000
+        ));
+        assert_ok!(Validator::register_validator(
+            RuntimeOrigin::signed(3),
+            1000
+        ));
+
+        // Fourth with huge stake: 100000 / 103000 = 97% > 33%
+        assert_noop!(
+            Validator::register_validator(
+                RuntimeOrigin::signed(4),
+                100000
+            ),
+            Error::<Test>::StakeTooHigh
         );
     });
 }

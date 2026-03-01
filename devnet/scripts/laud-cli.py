@@ -281,13 +281,10 @@ class LaudCLI:
                         hdr = self.substrate.get_block_header(
                             block_hash=receipt.block_hash)
                         blk_num = f"#{hdr['header']['number']}"
-                    except (ConnectionError, BrokenPipeError, OSError):
-                        blk_num = str(receipt.block_hash)[:16]
-                    except (KeyError, TypeError):
-                        blk_num = str(receipt.block_hash)[:16]
                     except Exception:
                         blk_num = str(receipt.block_hash)[:16]
                     pallet_events = []
+                    sudo_failed = False
                     for ev in receipt.triggered_events:
                         ev_val = ev.value
                         if isinstance(ev_val, dict) and 'event' in ev_val:
@@ -299,24 +296,41 @@ class LaudCLI:
                                     and eid == 'ExtrinsicFailed'):
                                 pallet_events.append(
                                     f"{C.RED}{mid}.{eid}{C.R}")
+                            elif mid == 'Sudo' and eid == 'Sudid':
+                                attrs = edata.get('attributes', {})
+                                sr = (attrs.get('sudo_result')
+                                      or attrs.get('result'))
+                                if isinstance(sr, dict) and 'Err' in sr:
+                                    sudo_failed = True
+                                    inner = sr['Err']
+                                    if isinstance(inner, dict):
+                                        nm = inner.get('Module', {})
+                                        if isinstance(nm, dict):
+                                            inner = nm.get(
+                                                'error_name',
+                                                nm.get('name', inner))
+                                    pallet_events.append(
+                                        f"{C.RED}inner: {inner}{C.R}")
+                                else:
+                                    pallet_events.append(f"{mid}.{eid}")
                             elif mid not in ('System',
                                              'TransactionPayment',
                                              'Balances', 0):
                                 pallet_events.append(f"{mid}.{eid}")
                     ev_str = (f" {C.DIM}({', '.join(pallet_events)}){C.R}"
                               if pallet_events else "")
-                    self._ok(f"Block {blk_num}{ev_str}")
+                    if sudo_failed:
+                        self._err(f"Block {blk_num}{ev_str}")
+                        receipt._is_success = False
+                    else:
+                        self._ok(f"Block {blk_num}{ev_str}")
                 else:
-                    self._err(f"{receipt.error_message}")
-                    if (hasattr(receipt, 'error_message')
-                            and receipt.error_message):
-                        err = receipt.error_message
-                        if isinstance(err, dict):
-                            print(f"       {C.RED}Detail: "
-                                  f"{json.dumps(err, indent=2)}{C.R}")
-                    hint = self._error_hint(receipt.error_message)
+                    err = receipt.error_message
+                    err_name = self._extract_error_name(err)
+                    self._err(err_name)
+                    hint = self._error_hint(err)
                     if hint:
-                        print(f"       {C.Y}Hint: {hint}{C.R}")
+                        print(f"       {C.Y}{hint}{C.R}")
                 # Always wait for next slot after any submission.
                 self._slot_wait()
                 return receipt
@@ -714,13 +728,22 @@ class LaudCLI:
         idx = self._prompt_int(label, 1) - 1
         return options[max(0, min(idx, len(options) - 1))]
 
+    def _domain_hash(self, domain, data):
+        """Replicate on-chain hash_with_domain: LE32(len) || domain || data."""
+        d = domain.encode() if isinstance(domain, str) else domain
+        prefix = len(d).to_bytes(4, 'little')
+        payload = prefix + d + data
+        return '0x' + hashlib.blake2b(
+            payload, digest_size=32).hexdigest()
+
     def _actor_id(self, name):
         kp = self.keypairs[name]
-        return '0x' + hashlib.blake2b(
-            kp.public_key, digest_size=32).hexdigest()
+        return self._domain_hash(b"7ay:actor:v1", kp.public_key)
 
     def _validator_id(self, name):
-        return self._actor_id(name)
+        kp = self.keypairs[name]
+        return self._domain_hash(
+            b"7ay:validator:v1", kp.public_key)
 
     def _divider(self):
         print()
@@ -733,55 +756,84 @@ class LaudCLI:
     # ------------------------------------------------------------------
 
     ERROR_HINTS = {
+        # Epoch
         'EpochNotActive':
-            'The time period is not active yet. '
-            'Type "bootstrap" to set up the network.',
-        'NotAValidator':
-            'This account is not a validator. '
-            'Type "bootstrap" to register all test validators.',
-        'NotAnActiveValidator':
-            'This validator is not active. '
-            'Type "bootstrap" to register and activate validators.',
-        'PositionAlreadyClaimed':
-            'You already claimed a position this period. '
-            'Try "use epoch <N>" to switch periods.',
-        'DuplicateAttestation':
-            'This witness already confirmed this period. '
-            'Use a different witness account.',
+            'No active session right now. Run "bootstrap" to set up.',
+        'EpochNotFound':
+            'That session does not exist yet.',
+        'EpochAlreadyActive':
+            'A session is already running.',
+        # Presence
         'DuplicatePresence':
-            'Already declared this period. '
-            'Try "use epoch <N>" to switch periods.',
-        'DuplicateVote':
-            'Already voted this period. '
-            'Try "use epoch <N>" to switch periods.',
-        'PresenceImmutable':
-            'This check-in is already confirmed. '
-            'Confirmed records cannot be changed.',
-        'SelfAttestation':
-            'You cannot verify your own location. '
-            'Ask another verifier to confirm you.',
-        'InsufficientAttestations':
-            'Not enough location confirmations yet. '
-            'You need at least 3 nearby verifiers.',
-        'InsufficientWitnesses':
-            'Not enough witnesses yet. '
-            'Need at least 3 attestations before verifying.',
+            'Already checked in this session. '
+            'Start a new session or use a different account.',
         'AlreadyDeclared':
-            'Already declared presence this period.',
+            'Already checked in this session.',
+        'DuplicateVote':
+            'Already voted for this person in this session.',
+        'DuplicateAttestation':
+            'Already confirmed this person. Use a different account.',
+        'PresenceImmutable':
+            'This record is finalized and cannot be changed.',
+        'PresenceNotFound':
+            'No check-in found for this person in this session.',
         'QuorumNotReached':
-            'Not enough votes yet. '
-            'Need at least 3 validator votes to finalize.',
-        'VaultLocked':
-            'This vault is locked and cannot be accessed right now.',
-        'InvalidRingSize':
-            'The vault requires between 3 and 10 members.',
-        'ThresholdTooLow':
-            'At least 2 key holders are required for security.',
+            'Not enough votes yet — need at least 3 validators.',
+        'SelfAttestation':
+            'Cannot verify yourself. Ask someone else.',
+        'InsufficientAttestations':
+            'Need at least 3 nearby verifiers first.',
+        'InsufficientWitnesses':
+            'Need at least 3 witness confirmations first.',
+        'PositionAlreadyClaimed':
+            'Already claimed a position this session.',
+        # Validator
+        'ValidatorNotActive':
+            'This validator is not active. Run "bootstrap" first.',
+        'NotAValidator':
+            'This account is not a validator. Run "bootstrap" first.',
+        'NotAnActiveValidator':
+            'This validator is not active. Run "bootstrap" first.',
+        'AlreadyActive':
+            'This validator is already active.',
         'AlreadyRegistered':
             'This account is already registered.',
+        'StakeTooHigh':
+            'Stake exceeds the 33% concentration limit. Use less.',
+        'StakeTooLow':
+            'Stake is below the minimum required amount.',
         'BondingPeriod':
-            'The security deposit bonding period has not elapsed yet.',
+            'Bonding period has not elapsed yet (~4 days).',
+        'BondingPeriodNotElapsed':
+            'Bonding period has not elapsed yet (~4 days). '
+            'Use force_activate_validator via sudo for devnet.',
+        'ValidatorNotFound':
+            'No validator found for this account.',
+        # Vault
+        'VaultLocked':
+            'This vault is locked right now.',
+        'InvalidRingSize':
+            'Vault needs between 3 and 10 members.',
+        'ThresholdTooLow':
+            'Need at least 2 key holders.',
+        # General
+        'BadOrigin':
+            'Permission denied. This requires sudo or root access.',
+        'InsufficientBalance':
+            'Not enough balance for this operation.',
+        'CallFiltered':
+            'This call is not allowed in the current context.',
     }
+
+    @staticmethod
+    def _extract_error_name(err):
+        """Pull a clean name from the pallet error dict."""
+        if isinstance(err, dict):
+            name = err.get('name', '')
+            if name:
+                return name
+            return err.get('type', 'Unknown error')
+        return str(err)
 
     def _error_hint(self, err):
         err_str = str(err)
@@ -1076,6 +1128,289 @@ class LaudCLI:
 
             print(f"\n  {C.DIM}type{C.R} flow "
                   f"{C.DIM}for next steps{C.R}")
+
+    # ------------------------------------------------------------------
+    # Quick commands — top-level shortcuts
+    # ------------------------------------------------------------------
+
+    def _colorize_votes(self, current, threshold):
+        if current >= threshold:
+            return f"{C.BG}{current}/{threshold}{C.R}"
+        elif current > 0:
+            return f"{C.BA}{current}/{threshold}{C.R}"
+        return f"{C.DIM}0/{threshold}{C.R}"
+
+    def _cmd_who(self):
+        """Show all accounts with validator + presence status."""
+        if not self._ensure():
+            return
+        status = self._fetch_epoch_status()
+        eid = status.get('epoch_id', 0) if status else 0
+        qt = status.get('quorum_threshold', 3) if status else 3
+        print()
+        self._heading("ACCOUNTS")
+        hdr = (f"  {C.DIM}{'Name':<10} {'Validator':<12} "
+               f"{'Presence E' + str(eid):<16} {'Votes'}{C.R}")
+        print(hdr)
+        print(f"  {C.DIM}{'─' * 52}{C.R}")
+        for name in self.keypairs:
+            vid = self._validator_id(name)
+            aid = self._actor_id(name)
+            # Validator status
+            v_info = self._safe_query(
+                "Validator", "Validators", [vid])
+            if v_info and v_info.value:
+                vs = v_info.value.get('status', '?')
+                if vs == 'Active':
+                    vs_str = f"{C.BG}Active{C.R}"
+                elif vs == 'Bonding':
+                    vs_str = f"{C.BA}Bonding{C.R}"
+                else:
+                    vs_str = f"{C.DIM}{vs}{C.R}"
+            else:
+                vs_str = f"{C.DIM}--{C.R}"
+            # Presence status
+            p_info = self._safe_query(
+                "Presence", "Presences", [eid, aid]) if eid else None
+            if p_info and p_info.value:
+                ps = p_info.value.get('state', 'None')
+                if ps == 'Finalized':
+                    ps_str = f"{C.BG}Finalized{C.R}"
+                elif ps in ('Declared', 'Validated'):
+                    ps_str = f"{C.BC}{ps}{C.R}"
+                elif ps == 'Slashed':
+                    ps_str = f"{C.BR}Slashed{C.R}"
+                else:
+                    ps_str = f"{C.DIM}{ps}{C.R}"
+            else:
+                ps_str = f"{C.DIM}--{C.R}"
+            # Vote count
+            vc_r = self._safe_query(
+                "Presence", "VoteCount", [eid, aid]) if eid else None
+            vc = vc_r.value if vc_r and vc_r.value else 0
+            vc_str = self._colorize_votes(vc, qt) if vc else f"{C.DIM}--{C.R}"
+            # Use raw name width for alignment (strip ANSI for display)
+            nm = f"{C.W}{name}{C.R}"
+            print(f"  {nm:<22} {vs_str:<24} {ps_str:<28} {vc_str}")
+        print()
+
+    def _cmd_validators(self):
+        """Show validator summary table."""
+        if not self._ensure():
+            return
+        print()
+        self._heading("VALIDATORS")
+        active = 0
+        total_stake = 0
+        rows = []
+        for name in self.keypairs:
+            vid = self._validator_id(name)
+            v_info = self._safe_query(
+                "Validator", "Validators", [vid])
+            if v_info and v_info.value:
+                vs = v_info.value.get('status', '?')
+                stake = v_info.value.get('stake', 0)
+                total_stake += stake
+                if vs == 'Active':
+                    active += 1
+                    vs_str = f"{C.BG}Active{C.R}"
+                else:
+                    vs_str = f"{C.DIM}{vs}{C.R}"
+                stake_str = f"{stake:>12,}"
+                rows.append((name, vs_str, stake_str))
+            else:
+                rows.append((name, f"{C.DIM}--{C.R}", f"{C.DIM}--{C.R}"))
+        total = len(self.keypairs)
+        print(f"  {C.DIM}{active} active of {total}{C.R}")
+        print(f"  {C.DIM}{'Name':<10} {'Status':<12} "
+              f"{'Stake':>12}{C.R}")
+        print(f"  {C.DIM}{'─' * 38}{C.R}")
+        for name, vs_str, stake_str in rows:
+            nm = f"{C.W}{name}{C.R}"
+            print(f"  {nm:<22} {vs_str:<24} {stake_str}")
+        if total_stake:
+            print(f"  {C.DIM}{'─' * 38}{C.R}")
+            print(f"  {C.DIM}Total stake:{C.R} "
+                  f"{C.W}{total_stake:>12,}{C.R}")
+        print()
+
+    def _quick_epoch(self):
+        """Quick epoch overview with inline actions."""
+        if not self._ensure():
+            return
+        status = self._fetch_epoch_status()
+        if not status:
+            self._info("No epoch info available")
+            return
+        eid = status.get('epoch_id', 0)
+        state = status.get('epoch_state', 'None')
+        pc = status.get('participant_count', 0)
+        cur_blk = status.get('current_block', 0)
+        end_blk = status.get('end_block', 0)
+        start_blk = status.get('start_block', 0)
+
+        state_colors = {
+            'Active': C.BG, 'Scheduled': C.BA,
+            'Closed': C.DIM, 'Finalized': C.DIM,
+        }
+        sc = state_colors.get(state, C.DIM)
+        print()
+        print(f"  {C.W}Epoch {eid}{C.R} {sc}{state}{C.R}")
+        if state == 'Active' and end_blk > start_blk:
+            remaining = max(0, end_blk - cur_blk)
+            pct = min(100, max(0, int(
+                (cur_blk - start_blk) /
+                (end_blk - start_blk) * 100)))
+            bar_len = 24
+            filled = int(bar_len * pct / 100)
+            bar = (f"{C.BC}{'━' * filled}"
+                   f"{C.DIM}{'━' * (bar_len - filled)}{C.R}")
+            print(f"  {C.BC}▸{C.R} {bar} {C.DIM}{pct}% "
+                  f"· ~{remaining} blocks left{C.R}")
+        self._kv("participants", pc)
+
+        print(f"\n  {C.DIM}ACTIONS{C.R}")
+        opts = []
+        if state == 'Active':
+            opts.append(("d", "Declare presence"))
+            opts.append(("v", "Vote on presence"))
+            opts.append(("n", "Next epoch (close + new)"))
+        elif state in ('Closed', 'Finalized', 'None'):
+            opts.append(("n", "Start new epoch"))
+        elif state == 'Scheduled':
+            opts.append(("s", "Start this epoch"))
+        opts.append(("i", "Full epoch info"))
+        opts.append(("0", "Cancel"))
+        for key, label in opts:
+            print(f"    {C.BC}{key}{C.R}  {label}")
+        print()
+
+        choice = self._prompt("", "0")
+        if choice == 'd':
+            self._submit("Presence", "declare_presence",
+                         {"epoch": eid})
+        elif choice == 'v':
+            target = self._prompt("Account to vote on", "eve")
+            aid = self._actor_id(target)
+            voter = self._prompt("Vote as", self._ctx_account)
+            self._submit("Presence", "vote_presence",
+                         {"actor": aid, "epoch": eid,
+                          "approve": True}, voter)
+        elif choice == 'n':
+            self._next_test_epoch()
+        elif choice == 's' and state == 'Scheduled':
+            self._submit("Epoch", "start_epoch",
+                         {"epoch_id": eid},
+                         sudo=True, _skip_confirm=True)
+        elif choice == 'i':
+            r = self._query("Epoch", "EpochInfo", [eid])
+            if r and r.value:
+                for k, v in r.value.items():
+                    self._kv(k, v)
+
+    def _quick_declare(self):
+        """Quick declare presence in current epoch."""
+        if not self._ensure():
+            return
+        status = self._fetch_epoch_status()
+        if not status:
+            self._info("No active epoch")
+            return
+        eid = status.get('epoch_id', 0)
+        acct = self._prompt("Account", self._ctx_account)
+        self._submit("Presence", "declare_presence",
+                     {"epoch": eid}, acct)
+
+    def _quick_vote(self):
+        """Quick vote on a presence in current epoch."""
+        if not self._ensure():
+            return
+        status = self._fetch_epoch_status()
+        if not status:
+            self._info("No active epoch")
+            return
+        eid = status.get('epoch_id', 0)
+        target = self._prompt("Vote for (account name)", "eve")
+        aid = self._actor_id(target)
+        voter = self._prompt("Vote as", self._ctx_account)
+        self._submit("Presence", "vote_presence",
+                     {"actor": aid, "epoch": eid,
+                      "approve": True}, voter)
+
+    def _quick_finalize(self):
+        """Quick finalize a presence in current epoch."""
+        if not self._ensure():
+            return
+        status = self._fetch_epoch_status()
+        if not status:
+            self._info("No active epoch")
+            return
+        eid = status.get('epoch_id', 0)
+        target = self._prompt("Finalize (account name)", "eve")
+        aid = self._actor_id(target)
+        caller = self._prompt("As", self._ctx_account)
+        self._submit("Presence", "finalize_presence",
+                     {"actor": aid, "epoch": eid}, caller)
+
+    def _cmd_recap(self):
+        """Summarize what happened in the current epoch."""
+        if not self._ensure():
+            return
+        status = self._fetch_epoch_status()
+        if not status:
+            self._info("No epoch info available")
+            return
+        eid = status.get('epoch_id', 0)
+        state = status.get('epoch_state', 'None')
+        qt = status.get('quorum_threshold', 3)
+        print()
+        self._heading(f"EPOCH {eid} RECAP")
+        self._kv("state", state)
+
+        declared = 0
+        finalized = 0
+        slashed = 0
+        pending = 0
+        for name in self.keypairs:
+            aid = self._actor_id(name)
+            p = self._safe_query("Presence", "Presences", [eid, aid])
+            if p and p.value:
+                ps = p.value.get('state', 'None')
+                vc_r = self._safe_query(
+                    "Presence", "VoteCount", [eid, aid])
+                vc = vc_r.value if vc_r and vc_r.value else 0
+                if ps == 'Finalized':
+                    finalized += 1
+                    tag = f"{C.BG}Finalized{C.R}"
+                elif ps == 'Slashed':
+                    slashed += 1
+                    tag = f"{C.BR}Slashed{C.R}"
+                elif ps in ('Declared', 'Validated'):
+                    pending += 1
+                    declared += 1
+                    votes = self._colorize_votes(vc, qt)
+                    tag = f"{C.BC}{ps}{C.R} ({votes})"
+                else:
+                    tag = f"{C.DIM}--{C.R}"
+                nm = f"{C.W}{name}{C.R}"
+                print(f"    {nm:<22} {tag}")
+            else:
+                nm = f"{C.DIM}{name}{C.R}"
+                print(f"    {nm:<22} {C.DIM}--{C.R}")
+
+        print()
+        parts = []
+        if finalized:
+            parts.append(f"{C.BG}{finalized} finalized{C.R}")
+        if pending:
+            parts.append(f"{C.BA}{pending} pending{C.R}")
+        if slashed:
+            parts.append(f"{C.BR}{slashed} slashed{C.R}")
+        not_decl = len(self.keypairs) - finalized - pending - slashed
+        if not_decl > 0:
+            parts.append(f"{C.DIM}{not_decl} not declared{C.R}")
+        print(f"  {', '.join(parts)}")
+        print()
 
     def bootstrap(self):
         self._auto_setup_validators()
@@ -1555,25 +1890,32 @@ class LaudCLI:
                 self._info(f"Block header query failed: {e}")
             current_block = 1
 
-        # Step 2: Schedule epoch 1
-        step += 1
-        self._progress(step, total, "Scheduling session 1")
-        r = self._submit("Epoch", "schedule_epoch",
+        # Step 2-3: Schedule + start epoch 1 (skip if genesis already active)
+        epoch_active = False
+        try:
+            info = self.substrate.query("Epoch", "EpochInfo", [1])
+            if info and info.value:
+                state = info.value.get('state', '')
+                if state == 'Active':
+                    epoch_active = True
+        except Exception:
+            pass
+
+        if epoch_active:
+            step += 2
+            self._info("Session 1 already active from genesis")
+        else:
+            step += 1
+            self._progress(step, total, "Scheduling session 1")
+            self._submit("Epoch", "schedule_epoch",
                          {"start_block": current_block + 3,
                           "duration": 200},
                          sudo=True, _skip_confirm=True)
-        if r and not r.is_success:
-            # Epoch may already exist, try starting it directly
-            self._info("Session may already be scheduled, continuing...")
-
-        # Step 3: Start epoch 1
-        step += 1
-        self._progress(step, total, "Starting session 1")
-        r = self._submit("Epoch", "start_epoch",
+            step += 1
+            self._progress(step, total, "Starting session 1")
+            self._submit("Epoch", "start_epoch",
                          {"epoch_id": 1},
                          sudo=True, _skip_confirm=True)
-        if r and not r.is_success:
-            self._info("Session may already be active, continuing...")
 
         # Step 4: Set quorum config
         step += 1
@@ -1583,6 +1925,7 @@ class LaudCLI:
                      sudo=True, _skip_confirm=True)
 
         # Step 5: Register, force-activate, and position each validator
+        failed = False
         for name, pos in positions.items():
             vid = self._validator_id(name)
             kp = self.keypairs[name]
@@ -1590,16 +1933,26 @@ class LaudCLI:
             step += 1
             self._progress(step, total,
                            f"Register {C.W}{name}{C.R}")
-            self._submit("Validator", "register_validator",
-                         {"stake": 1000000},
-                         name, _skip_confirm=True)
+            r = self._submit("Validator", "register_validator",
+                             {"stake": 1000000},
+                             name, _skip_confirm=True)
+            if r is None or not r.is_success:
+                self._err(f"Registration failed for {name}, "
+                          "aborting bootstrap")
+                failed = True
+                break
 
             step += 1
             self._progress(step, total,
                            f"Activate {C.W}{name}{C.R}")
-            self._submit("Validator", "force_activate_validator",
-                         {"controller": kp.ss58_address},
-                         sudo=True, _skip_confirm=True)
+            r = self._submit("Validator", "force_activate_validator",
+                             {"controller": kp.ss58_address},
+                             sudo=True, _skip_confirm=True)
+            if r is None or not r.is_success:
+                self._err(f"Activation failed for {name}, "
+                          "aborting bootstrap")
+                failed = True
+                break
 
             step += 1
             self._progress(step, total,
@@ -1609,8 +1962,9 @@ class LaudCLI:
                          {"validator": vid, "position": pos},
                          sudo=True, _skip_confirm=True)
 
-        self._ok("Bootstrap complete — 6 validators in hexagonal"
-                 " formation")
+        if not failed:
+            self._ok("Bootstrap complete — 6 validators in hexagonal"
+                     " formation")
 
     def _auto_pbt_test(self):
         if not self._ensure():
@@ -3659,10 +4013,23 @@ class LaudCLI:
     # Test flows
     # ------------------------------------------------------------------
 
+    def _ensure_bootstrapped(self):
+        """Check validators are active; auto-bootstrap if not."""
+        try:
+            vc = self.substrate.query("Validator", "ValidatorCount")
+            if vc and vc.value and vc.value > 0:
+                return True
+        except Exception:
+            pass
+        self._info("No validators found — running bootstrap first")
+        self.bootstrap()
+        return True
+
     def test_full_lifecycle(self):
         if not self._ensure():
             return
         self._check_epoch()
+        self._ensure_bootstrapped()
         self._header("FULL PoP LIFECYCLE TEST")
         epoch = self._next_test_epoch()
 
@@ -3700,6 +4067,7 @@ class LaudCLI:
         if not self._ensure():
             return
         self._check_epoch()
+        self._ensure_bootstrapped()
         self._header("COMMIT-REVEAL TEST")
         epoch = self._next_test_epoch()
 
@@ -3845,6 +4213,15 @@ class LaudCLI:
     t2 / test pbt     PBT triangulation test
     t3 / test commit  Commit-reveal test
     1 / connect       Connect to node
+
+  {C.BC}Shortcuts{C.R}
+    e / epoch         Epoch overview + actions
+    declare / checkin Declare presence
+    vote              Vote on a presence
+    finalize          Finalize a presence
+    who / w           All accounts + status
+    vals              Validator summary
+    recap             Epoch summary
 
   {C.BC}Tips{C.R}
     Tab               Autocomplete commands
@@ -4008,6 +4385,29 @@ class LaudCLI:
             return
         if cmd == 'unlock':
             self._vault_unlock_file()
+            return
+
+        # Quick actions
+        if cmd in ('e', 'epoch'):
+            self._quick_epoch()
+            return
+        if cmd in ('who', 'w'):
+            self._cmd_who()
+            return
+        if cmd in ('vals', 'validators'):
+            self._cmd_validators()
+            return
+        if cmd in ('declare', 'checkin'):
+            self._quick_declare()
+            return
+        if cmd == 'vote':
+            self._quick_vote()
+            return
+        if cmd == 'finalize':
+            self._quick_finalize()
+            return
+        if cmd == 'recap':
+            self._cmd_recap()
             return
 
         # Bootstrap
