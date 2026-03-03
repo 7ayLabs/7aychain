@@ -1117,3 +1117,124 @@ fn events_emitted_for_file_operations() {
         }));
     });
 }
+
+// ===========================================================================
+// Expired unlock cleanup tests
+// ===========================================================================
+
+#[test]
+fn expired_unlock_cleaned_on_new_request() {
+    new_test_ext().execute_with(|| {
+        let vault_id = create_active_vault(1);
+        let enc_hash = H256([10u8; 32]);
+
+        assert_ok!(Vault::register_file(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            enc_hash,
+            H256([11u8; 32]),
+            H256([12u8; 32]),
+            100,
+        ));
+
+        // Create first unlock request at block 1
+        assert_ok!(Vault::request_unlock(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            enc_hash,
+        ));
+        let first_req_id = UnlockRequestId::new(0);
+        assert!(Vault::active_unlocks(vault_id, enc_hash).is_some());
+
+        // Advance past expiry (UnlockPeriodBlocks = 50)
+        System::set_block_number(100);
+
+        // New request should clean expired and succeed
+        assert_ok!(Vault::request_unlock(
+            RuntimeOrigin::signed(2),
+            vault_id,
+            enc_hash,
+        ));
+
+        // Old request should be removed
+        assert!(Vault::unlock_requests(first_req_id).is_none());
+
+        // New request exists
+        let new_req_id = UnlockRequestId::new(1);
+        let new_req = Vault::unlock_requests(new_req_id)
+            .expect("new request should exist");
+        assert_eq!(new_req.requester, account_to_actor(2));
+    });
+}
+
+#[test]
+fn complete_unlock_cleans_approvals() {
+    new_test_ext().execute_with(|| {
+        let vault_id = create_active_vault(1);
+        let enc_hash = H256([10u8; 32]);
+
+        assert_ok!(Vault::register_file(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            enc_hash,
+            H256([11u8; 32]),
+            H256([12u8; 32]),
+            100,
+        ));
+
+        assert_ok!(Vault::request_unlock(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            enc_hash,
+        ));
+        let req_id = UnlockRequestId::new(0);
+
+        // Approval exists for requester
+        assert!(Vault::unlock_approvals(req_id, account_to_actor(1)).is_some());
+
+        // Second approval triggers completion
+        assert_ok!(Vault::authorize_unlock(
+            RuntimeOrigin::signed(2),
+            req_id,
+        ));
+
+        // Approvals should be cleaned after completion
+        assert!(Vault::unlock_approvals(req_id, account_to_actor(1)).is_none());
+        assert!(Vault::unlock_approvals(req_id, account_to_actor(2)).is_none());
+    });
+}
+
+#[test]
+fn dissolve_vault_cleans_unlock_state() {
+    new_test_ext().execute_with(|| {
+        let vault_id = create_active_vault(1);
+        let enc_hash = H256([10u8; 32]);
+
+        assert_ok!(Vault::register_file(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            enc_hash,
+            H256([11u8; 32]),
+            H256([12u8; 32]),
+            100,
+        ));
+
+        // Create an active unlock request
+        assert_ok!(Vault::request_unlock(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            enc_hash,
+        ));
+        let req_id = UnlockRequestId::new(0);
+        assert!(Vault::unlock_requests(req_id).is_some());
+
+        // Lock then dissolve
+        assert_ok!(Vault::lock_vault(RuntimeOrigin::signed(1), vault_id));
+        assert_ok!(Vault::dissolve_vault(RuntimeOrigin::root(), vault_id));
+
+        // All unlock state should be cleaned
+        assert!(Vault::unlock_requests(req_id).is_none());
+        assert!(Vault::active_unlocks(vault_id, enc_hash).is_none());
+        assert!(Vault::unlock_approvals(req_id, account_to_actor(1)).is_none());
+    });
+}

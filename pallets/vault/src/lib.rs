@@ -877,31 +877,39 @@ pub mod pallet {
                     Error::<T>::CannotDissolvActiveVault
                 );
 
-                if v.status == VaultStatus::Active {
-                    ActiveVaultCount::<T>::mutate(|count| *count = count.saturating_sub(1));
-                }
-
                 v.status = VaultStatus::Dissolved;
                 v.last_activity = frame_system::Pallet::<T>::block_number();
 
-                // M19: clean up members and decrement their VaultCountPerActor
+                // Clean up members and decrement their VaultCountPerActor
                 for (actor, _) in VaultMembers::<T>::drain_prefix(vault_id) {
                     ActorVaults::<T>::remove(actor, vault_id);
                     VaultCountPerActor::<T>::mutate(actor, |c| *c = c.saturating_sub(1));
                 }
 
-                // M19: clean up shares
+                // Clean up shares
                 for (share_id, _) in VaultShares::<T>::drain_prefix(vault_id) {
                     if let Some(share) = Shares::<T>::take(share_id) {
                         ActorShares::<T>::remove(share.holder, share_id);
                     }
                 }
 
-                // M19: clean up files
+                // Clean up files
                 let _ = VaultFiles::<T>::clear_prefix(vault_id, u32::MAX, None);
                 VaultFileCount::<T>::remove(vault_id);
 
-                // M19: clean up recovery requests
+                // Clean up unlock state
+                for (_enc_hash, request_id) in
+                    ActiveUnlocks::<T>::drain_prefix(vault_id)
+                {
+                    UnlockRequests::<T>::remove(request_id);
+                    let _ = UnlockApprovals::<T>::clear_prefix(
+                        request_id,
+                        u32::MAX,
+                        None,
+                    );
+                }
+
+                // Clean up recovery requests
                 RecoveryRequests::<T>::remove(vault_id);
 
                 Self::deposit_event(Event::VaultDissolved { vault_id });
@@ -1013,12 +1021,31 @@ pub mod pallet {
                 Error::<T>::FileNotFound
             );
 
+            // Clean expired unlock before checking for active
+            let block_number = frame_system::Pallet::<T>::block_number();
+            if let Some(existing_id) =
+                ActiveUnlocks::<T>::get(vault_id, file_enc_hash)
+            {
+                if let Some(existing_req) = UnlockRequests::<T>::get(existing_id) {
+                    if block_number > existing_req.expires_at
+                        && !existing_req.completed
+                    {
+                        ActiveUnlocks::<T>::remove(vault_id, file_enc_hash);
+                        UnlockRequests::<T>::remove(existing_id);
+                        let _ = UnlockApprovals::<T>::clear_prefix(
+                            existing_id,
+                            u32::MAX,
+                            None,
+                        );
+                    }
+                }
+            }
+
             ensure!(
                 !ActiveUnlocks::<T>::contains_key(vault_id, file_enc_hash),
                 Error::<T>::UnlockAlreadyActive
             );
 
-            let block_number = frame_system::Pallet::<T>::block_number();
             let expires_at = block_number.saturating_add(T::UnlockPeriodBlocks::get());
             let request_id = Self::next_unlock_request_id();
 
@@ -1143,6 +1170,11 @@ pub mod pallet {
                 }
             });
             ActiveUnlocks::<T>::remove(vault_id, file_enc_hash);
+            let _ = UnlockApprovals::<T>::clear_prefix(
+                request_id,
+                u32::MAX,
+                None,
+            );
             Self::deposit_event(Event::FileUnlockCompleted {
                 vault_id,
                 request_id,
