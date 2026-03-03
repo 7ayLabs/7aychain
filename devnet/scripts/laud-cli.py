@@ -3665,6 +3665,34 @@ class LaudCLI:
             self._val("File", f['original_name'])
         self._val("Threshold", f"{threshold} shares needed")
 
+        # Verify file is registered on-chain
+        chain_file = self._safe_query(
+            "Vault", "VaultFiles",
+            [vault_id, f"0x{enc_hash}"])
+        if not chain_file or not chain_file.value:
+            self._err(
+                "File not registered on-chain. "
+                "Chain may have been reset since this file was secured.")
+            re_reg = self._prompt_bool(
+                "Re-register file on-chain now?", default=True)
+            if re_reg:
+                signer = self._prompt_account("Signer")
+                fp_hex = f.get('key_fingerprint', '0' * 64)
+                pt_hash = f.get('plaintext_hash', '0' * 64)
+                receipt = self._submit("Vault", "register_file", {
+                    "vault_id": vault_id,
+                    "enc_hash": f"0x{enc_hash}",
+                    "plaintext_hash": f"0x{pt_hash}",
+                    "key_fingerprint": f"0x{fp_hex}",
+                    "size_bytes": f.get('size_bytes', 0),
+                }, signer)
+                if not (receipt and receipt.is_success):
+                    self._err("Re-registration failed")
+                    return
+                self._ok("File re-registered on-chain")
+            else:
+                return
+
         # Request unlock on-chain
         signer = self._prompt_account("Signer")
         self._info("Requesting unlock on-chain (Vault.request_unlock)...")
@@ -3674,7 +3702,8 @@ class LaudCLI:
         }, signer)
 
         if not (receipt and receipt.is_success):
-            self._err("Unlock request failed (may need approvals first)")
+            self._err("Unlock request failed — chain rejected")
+            return
 
         # Collect shares
         self._info("Loading local shares...")
@@ -4049,13 +4078,21 @@ class LaudCLI:
                     display = f"Document #{i+1} (private)"
                 else:
                     display = f['original_name']
+                # Check on-chain registration
+                cf = self._safe_query(
+                    "Vault", "VaultFiles",
+                    [vault_id, f"0x{h}" if h != '?' else "0x"])
+                chain_ok = (f"{C.G}On-chain{C.R}" if cf and cf.value
+                            else f"{C.Y}Local only{C.R}")
                 rows.append([
                     str(i + 1),
                     display[:24],
                     f"{f['size_bytes']:,}",
                     h[:16] + '...',
+                    chain_ok,
                 ])
-            self._table(["#", "Name", "Size", "Hash"], rows)
+            self._table(
+                ["#", "Name", "Size", "Hash", "Status"], rows)
         elif status == 'Active':
             print()
             self._info("No documents secured yet.")
