@@ -214,6 +214,9 @@ class TestCoreDomains:
         assert "r" in keys
         assert "u" in keys
         assert "v" in keys
+        # New vault UX commands
+        for k in ("15", "16", "17", "c", "d", "e", "f"):
+            assert k in keys, f"New vault key '{k}' missing"
 
     def test_zk_domain_has_new_commands(self):
         d = next(d for d in DOMAINS if d.name == "zk")
@@ -243,6 +246,19 @@ class TestNormalLabels:
         labeled = [c for c in d.commands if c.normal_label]
         assert len(labeled) >= 3
 
+    def test_vault_new_commands_have_normal_labels(self):
+        d = next(d for d in DOMAINS if d.name == "vault")
+        new_keys = {"15", "16", "17", "c", "d", "e", "f"}
+        cmds = {c.key: c for c in d.commands
+                if c.key in new_keys}
+        for k in new_keys:
+            assert k in cmds, f"New vault key '{k}' missing"
+            assert cmds[k].normal_label, \
+                f"Vault key '{k}' missing normal_label"
+            assert "_" not in cmds[k].normal_label, \
+                f"Vault key '{k}' normal_label not friendly: " \
+                f"{cmds[k].normal_label}"
+
     def test_normal_titles_friendly(self):
         d = next(d for d in DOMAINS if d.name == "presence")
         assert d.normal_title == "CHECK-IN"
@@ -250,6 +266,69 @@ class TestNormalLabels:
         assert d.normal_title == "DOCUMENT SAFE"
         d = next(d for d in DOMAINS if d.name == "dispute")
         assert d.normal_title == "CHALLENGES"
+
+
+# ── New vault UX commands ────────────────────────────────────────
+
+class TestVaultNewCommands:
+    """Validates the 8 new vault UX commands added in Phase 1."""
+
+    EXPECTED = {
+        "15": "_vault_browse",
+        "16": "_vault_health",
+        "17": "_vault_approvals",
+        "c":  "_vault_my_vaults",
+        "d":  "_vault_enter",
+        "e":  "_vault_share_status",
+        "f":  "_vault_unlock_requests",
+    }
+
+    @staticmethod
+    def _vault():
+        return next(d for d in DOMAINS if d.name == "vault")
+
+    def test_all_new_keys_exist(self):
+        keys = [c.key for c in self._vault().commands
+                if c.action != "separator"]
+        for k in self.EXPECTED:
+            assert k in keys, f"Key '{k}' not in vault domain"
+
+    def test_all_new_commands_are_custom(self):
+        cmds = {c.key: c for c in self._vault().commands}
+        for k in self.EXPECTED:
+            assert cmds[k].action == "custom", \
+                f"Key '{k}' should be custom, got {cmds[k].action}"
+
+    def test_correct_handlers(self):
+        cmds = {c.key: c for c in self._vault().commands}
+        for k, handler in self.EXPECTED.items():
+            assert cmds[k].custom_handler == handler, \
+                f"Key '{k}' handler: expected {handler}, " \
+                f"got {cmds[k].custom_handler}"
+
+    def test_all_mode_both(self):
+        cmds = {c.key: c for c in self._vault().commands}
+        for k in self.EXPECTED:
+            assert cmds[k].mode == "both", \
+                f"Key '{k}' mode should be 'both', " \
+                f"got {cmds[k].mode}"
+
+    def test_separators_present(self):
+        seps = [c.label for c in self._vault().commands
+                if c.action == "separator"]
+        assert "Browse & Status" in seps, \
+            "Missing 'Browse & Status' separator"
+        assert "Vault Detail" in seps, \
+            "Missing 'Vault Detail' separator"
+
+    def test_no_key_d_prefix_collision(self):
+        """Verify 'd' doesn't collide with 'd1', 'd2', 'd3', 'd4'."""
+        cmds = {c.key: c for c in self._vault().commands
+                if c.action != "separator"}
+        # 'd' and 'd1'-'d4' are distinct string keys
+        assert "d" in cmds
+        assert "d1" in cmds
+        assert cmds["d"].custom_handler != cmds["d1"].custom_handler
 
 
 # ── Param structure ──────────────────────────────────────────────
