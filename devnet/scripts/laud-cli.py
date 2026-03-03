@@ -4187,6 +4187,266 @@ class LaudCLI:
         return members
 
     # ------------------------------------------------------------------
+    # Vault UX: Approvals & Unlock Requests (F5)
+    # ------------------------------------------------------------------
+
+    def _vault_approvals(self):
+        """View and act on pending unlock requests across all vaults."""
+        if not self._ensure():
+            return
+        actor_id = self._actor_id(self._ctx_account)
+        vault_ids = self._vault_actor_vaults(actor_id)
+        if not vault_ids:
+            self._info("You don't belong to any vaults yet.")
+            return
+
+        self._header("PENDING APPROVALS")
+        pending = []
+        for vid in vault_ids:
+            vault_data = self._safe_query("Vault", "Vaults", [vid])
+            if not vault_data or not vault_data.value:
+                continue
+            vd = vault_data.value
+            threshold = vd.get('threshold', 2)
+            # Scan active unlocks for this vault
+            try:
+                entries = list(
+                    self.substrate.query_map(
+                        "Vault", "ActiveUnlocks", [vid]))
+                for entry in entries:
+                    if not entry[1] or not entry[1].value:
+                        continue
+                    req_id = entry[1].value
+                    req = self._safe_query(
+                        "Vault", "UnlockRequests", [req_id])
+                    if not req or not req.value:
+                        continue
+                    rd = req.value
+                    if rd.get('completed', False):
+                        continue
+                    pending.append({
+                        'req_id': req_id,
+                        'vault_id': vid,
+                        'file_hash': rd.get('file_enc_hash', '?'),
+                        'requester': rd.get('requester', '?'),
+                        'approvals': rd.get('approvals', 0),
+                        'threshold': threshold,
+                        'initiated': rd.get('initiated_at', '?'),
+                        'expires': rd.get('expires_at', '?'),
+                    })
+            except Exception:
+                # Fallback: scan by request count
+                req_count = self._safe_query(
+                    "Vault", "UnlockRequestCount", [])
+                total = req_count.value if req_count and req_count.value else 0
+                for rid in range(1, min(total + 1, 100)):
+                    req = self._safe_query(
+                        "Vault", "UnlockRequests", [rid])
+                    if not req or not req.value:
+                        continue
+                    rd = req.value
+                    if rd.get('vault', 0) != vid:
+                        continue
+                    if rd.get('completed', False):
+                        continue
+                    pending.append({
+                        'req_id': rid,
+                        'vault_id': vid,
+                        'file_hash': rd.get('file_enc_hash', '?'),
+                        'requester': rd.get('requester', '?'),
+                        'approvals': rd.get('approvals', 0),
+                        'threshold': threshold,
+                        'initiated': rd.get('initiated_at', '?'),
+                        'expires': rd.get('expires_at', '?'),
+                    })
+
+        if not pending:
+            self._info("No pending unlock requests found.")
+            return
+
+        # Display pending table
+        rows = []
+        for i, p in enumerate(pending):
+            fh = p['file_hash']
+            if isinstance(fh, str) and len(fh) > 16:
+                fh = fh[:16] + "..."
+            elif isinstance(fh, int):
+                fh = hex(fh)[:16] + "..."
+            req_str = str(p['requester'])
+            if len(req_str) > 12:
+                req_str = req_str[:12] + ".."
+            progress = f"{p['approvals']}/{p['threshold']}"
+            if p['approvals'] >= p['threshold']:
+                progress = f"{C.G}{progress}{C.R}"
+            else:
+                progress = f"{C.Y}{progress}{C.R}"
+            rows.append([
+                str(i + 1), str(p['req_id']), str(p['vault_id']),
+                fh, req_str, progress,
+            ])
+        self._table(
+            ["#", "Request", "Vault", "File", "Requester", "Approvals"],
+            rows)
+
+        # Inline approve
+        choice = self._prompt(
+            "Approve request # (or 'b' to go back)", "b")
+        if choice.lower() == 'b':
+            return
+        try:
+            idx = int(choice) - 1
+        except ValueError:
+            return
+        if not (0 <= idx < len(pending)):
+            self._err("Invalid selection")
+            return
+
+        p = pending[idx]
+        signer = self._prompt_account("Approve as")
+        self._info(
+            f"Authorizing unlock for request #{p['req_id']} "
+            f"on vault #{p['vault_id']}...")
+        receipt = self._submit("Vault", "authorize_unlock", {
+            "request_id": p['req_id'],
+        }, signer)
+        if receipt and receipt.is_success:
+            self._ok(
+                f"Approved! ({p['approvals'] + 1}/{p['threshold']})")
+        else:
+            self._err("Approval failed — you may have already voted")
+
+    def _vault_unlock_requests(self):
+        """View pending and past unlock requests for a specific vault."""
+        if not self._ensure():
+            return
+        vault_id = self._prompt_int("Vault ID", 0)
+        vault_data = self._safe_query("Vault", "Vaults", [vault_id])
+        if not vault_data or not vault_data.value:
+            self._err(f"Vault #{vault_id} not found")
+            return
+
+        vd = vault_data.value
+        threshold = vd.get('threshold', 2)
+        self._header(f"UNLOCK REQUESTS — VAULT #{vault_id}")
+        self._val("Status", self._colorize_state(
+            vd.get('status', 'Unknown')))
+        self._val("Threshold", f"{threshold} approvals needed")
+
+        # Gather all requests for this vault
+        requests = []
+        req_count = self._safe_query("Vault", "UnlockRequestCount", [])
+        total = req_count.value if req_count and req_count.value else 0
+
+        for rid in range(1, min(total + 1, 200)):
+            req = self._safe_query("Vault", "UnlockRequests", [rid])
+            if not req or not req.value:
+                continue
+            rd = req.value
+            if rd.get('vault', 0) != vault_id:
+                continue
+            requests.append({
+                'req_id': rid,
+                'file_hash': rd.get('file_enc_hash', '?'),
+                'requester': rd.get('requester', '?'),
+                'approvals': rd.get('approvals', 0),
+                'completed': rd.get('completed', False),
+                'initiated': rd.get('initiated_at', '?'),
+                'expires': rd.get('expires_at', '?'),
+            })
+
+        if not requests:
+            self._info("No unlock requests found for this vault.")
+            return
+
+        # Split into active vs completed
+        active = [r for r in requests if not r['completed']]
+        completed = [r for r in requests if r['completed']]
+
+        if active:
+            self._heading("Active Requests")
+            rows = []
+            for r in active:
+                fh = r['file_hash']
+                if isinstance(fh, str) and len(fh) > 16:
+                    fh = fh[:16] + "..."
+                elif isinstance(fh, int):
+                    fh = hex(fh)[:16] + "..."
+                req_str = str(r['requester'])
+                if len(req_str) > 12:
+                    req_str = req_str[:12] + ".."
+                progress = f"{r['approvals']}/{threshold}"
+                rows.append([
+                    str(r['req_id']), fh, req_str,
+                    progress, str(r['expires']),
+                ])
+            self._table(
+                ["Request", "File", "Requester",
+                 "Approvals", "Expires"],
+                rows)
+
+            # Voter breakdown for active requests
+            for r in active:
+                self._val(
+                    f"Request #{r['req_id']} voters",
+                    self._get_approval_voters(r['req_id']))
+
+        if completed:
+            self._heading("Completed Requests")
+            rows = []
+            for r in completed:
+                fh = r['file_hash']
+                if isinstance(fh, str) and len(fh) > 16:
+                    fh = fh[:16] + "..."
+                elif isinstance(fh, int):
+                    fh = hex(fh)[:16] + "..."
+                rows.append([
+                    str(r['req_id']), fh,
+                    str(r['requester'])[:14],
+                    f"{C.G}Done{C.R}",
+                ])
+            self._table(
+                ["Request", "File", "Requester", "Status"],
+                rows)
+
+        # Inline approve option for active
+        if active:
+            choice = self._prompt(
+                "Approve request ID (or 'b' to go back)", "b")
+            if choice.lower() != 'b':
+                try:
+                    req_id = int(choice)
+                except ValueError:
+                    return
+                signer = self._prompt_account("Approve as")
+                receipt = self._submit("Vault", "authorize_unlock", {
+                    "request_id": req_id,
+                }, signer)
+                if receipt and receipt.is_success:
+                    self._ok("Approval submitted successfully!")
+                else:
+                    self._err("Approval failed")
+
+    def _get_approval_voters(self, request_id):
+        """Get list of actors who approved an unlock request."""
+        voters = []
+        try:
+            entries = list(
+                self.substrate.query_map(
+                    "Vault", "UnlockApprovals", [request_id]))
+            for entry in entries:
+                if entry[0]:
+                    v = entry[0]
+                    if hasattr(v, 'value'):
+                        v = v.value
+                    s = str(v)
+                    if len(s) > 12:
+                        s = s[:12] + ".."
+                    voters.append(s)
+        except Exception:
+            voters.append("(unable to query)")
+        return ", ".join(voters) if voters else "none"
+
+    # ------------------------------------------------------------------
     # Custom handlers: Dev Extensions
     # ------------------------------------------------------------------
 
