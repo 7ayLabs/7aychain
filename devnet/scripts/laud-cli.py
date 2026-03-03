@@ -4068,6 +4068,7 @@ class LaudCLI:
 
         # -- Documents panel --
         files = get_vault_files(vault_id)
+        unregistered = []
         if files:
             print()
             print(f"  {C.BC}DOCUMENTS ({len(files)}){C.R}")
@@ -4082,8 +4083,11 @@ class LaudCLI:
                 cf = self._safe_query(
                     "Vault", "VaultFiles",
                     [vault_id, f"0x{h}" if h != '?' else "0x"])
-                chain_ok = (f"{C.G}On-chain{C.R}" if cf and cf.value
-                            else f"{C.Y}Local only{C.R}")
+                if cf and cf.value:
+                    chain_ok = f"{C.G}On-chain{C.R}"
+                else:
+                    chain_ok = f"{C.Y}Local only{C.R}"
+                    unregistered.append(f)
                 rows.append([
                     str(i + 1),
                     display[:24],
@@ -4093,13 +4097,19 @@ class LaudCLI:
                 ])
             self._table(
                 ["#", "Name", "Size", "Hash", "Status"], rows)
+            if unregistered:
+                self._info(
+                    f"{C.Y}{len(unregistered)} file(s) exist "
+                    f"locally but not on-chain{C.R} "
+                    f"(chain may have been reset)")
         elif status == 'Active':
             print()
             self._info("No documents secured yet.")
 
         # -- State-dependent actions --
         if status == 'Active':
-            self._vault_enter_active_menu(vault_id)
+            self._vault_enter_active_menu(
+                vault_id, unregistered=unregistered)
         elif status == 'Locked':
             print()
             self._info(f"This {safe.lower()} is LOCKED. "
@@ -4112,16 +4122,21 @@ class LaudCLI:
         else:
             self._info(f"{safe} is in state: {status}")
 
-    def _vault_enter_active_menu(self, vault_id):
+    def _vault_enter_active_menu(self, vault_id, unregistered=None):
         """Interactive submenu for an active vault."""
         safe = "safe" if self._mode == 'normal' else "vault"
         while True:
             print()
-            print(f"  {C.DIM}[s]ecure  [u]nlock  [d]etail  "
-                  f"[v]erify  [l]ock  [b]ack{C.R}")
+            opts = "[s]ecure  [u]nlock  [d]etail  [v]erify  [l]ock"
+            if unregistered:
+                opts += f"  [r]egister ({len(unregistered)})"
+            print(f"  {C.DIM}{opts}  [b]ack{C.R}")
             choice = self._prompt("Action", "b").lower()
             if choice == 'b':
                 return
+            elif choice == 'r' and unregistered:
+                self._vault_reregister_files(vault_id, unregistered)
+                unregistered = []  # Clear after re-registration
             elif choice == 's':
                 self._vault_secure_file_for(vault_id)
             elif choice == 'u':
@@ -4139,6 +4154,29 @@ class LaudCLI:
                         {"vault_id": vault_id},
                         self._ctx_account)
                 return
+
+    def _vault_reregister_files(self, vault_id, files):
+        """Re-register local-only files on-chain after a chain reset."""
+        signer = self._prompt_account("Register as")
+        ok = 0
+        for f in files:
+            h = f.get('enc_hash', '')
+            name = f.get('original_name', 'unnamed')
+            if f.get('name_redacted', False):
+                name = "(private)"
+            self._info(f"Registering {name}...")
+            receipt = self._submit("Vault", "register_file", {
+                "vault_id": vault_id,
+                "enc_hash": f"0x{h}",
+                "plaintext_hash": f"0x{f.get('plaintext_hash', '0' * 64)}",
+                "key_fingerprint": f"0x{f.get('key_fingerprint', '0' * 64)}",
+                "size_bytes": f.get('size_bytes', 0),
+            }, signer)
+            if receipt and receipt.is_success:
+                ok += 1
+            else:
+                self._err(f"Failed to register {name}")
+        self._ok(f"{ok}/{len(files)} file(s) registered on-chain")
 
     def _vault_enter_recovery(self, vault_id):
         """Start recovery for a locked vault."""
