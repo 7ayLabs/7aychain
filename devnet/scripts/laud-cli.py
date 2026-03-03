@@ -3508,11 +3508,12 @@ class LaudCLI:
     # Custom handlers: Vault Secure Documents
     # ------------------------------------------------------------------
 
-    def _vault_secure_file(self):
+    def _vault_secure_file(self, prefill_vault=None):
         """Encrypt a file with AES-256-GCM, split key via Shamir, register on-chain."""
         if not self._ensure():
             return
-        vault_id = self._prompt_int("Vault ID", 0)
+        vault_id = (prefill_vault if prefill_vault is not None
+                    else self._prompt_int("Vault ID", 0))
         vault_info = self._query("Vault", "Vaults", [vault_id])
         if not vault_info or not vault_info.value:
             self._err("Vault not found")
@@ -3633,11 +3634,12 @@ class LaudCLI:
                 "Only the document hash is stored.")
         self._info(f"Requires {threshold} of {ring_size} shares to unlock")
 
-    def _vault_unlock_file(self):
+    def _vault_unlock_file(self, prefill_vault=None):
         """Collect shares, reconstruct FEK, decrypt and export a vault file."""
         if not self._ensure():
             return
-        vault_id = self._prompt_int("Vault ID", 0)
+        vault_id = (prefill_vault if prefill_vault is not None
+                    else self._prompt_int("Vault ID", 0))
         files = get_vault_files(vault_id)
         if not files:
             self._info("No files in this vault")
@@ -3896,6 +3898,293 @@ class LaudCLI:
             self._info("No entries to anonymize")
         else:
             self._ok(f"Anonymized {count} file entries in vault index")
+
+    # ------------------------------------------------------------------
+    # Custom handlers: Vault Browse & Status
+    # ------------------------------------------------------------------
+
+    def _vault_browse(self):
+        """Browse all vaults the current user belongs to."""
+        if not self._ensure():
+            return
+        safe = "Safe" if self._mode == 'normal' else "Vault"
+        self._header(f"MY {safe.upper()}S")
+        aid = self._actor_id(self._ctx_account)
+        vaults = self._vault_actor_vaults(aid)
+        if not vaults:
+            self._info(f"No {safe.lower()}s found. "
+                       "Create one with option 1.")
+            return
+        rows = []
+        for i, vid in enumerate(vaults):
+            vi = self._safe_query("Vault", "Vaults", [vid])
+            if not vi or not vi.value:
+                rows.append([str(i + 1), f"#{vid}", "?", "?", "?", "?"])
+                continue
+            v = vi.value
+            status = v.get('status', '?')
+            t = v.get('threshold', '?')
+            n = v.get('ring_size', '?')
+            mc = v.get('member_count', '?')
+            files = get_vault_files(vid)
+            doc_count = len(files) if files else 0
+            rows.append([
+                str(i + 1),
+                f"#{vid}",
+                self._colorize_state(status),
+                f"{mc}/{n}",
+                str(doc_count),
+                f"{t}-of-{n}",
+            ])
+        doc_label = "Documents" if self._mode != 'normal' else "Docs"
+        self._table(
+            ["#", f"{safe} ID", "Status", "Members",
+             doc_label, "Protection"],
+            rows)
+        choice = self._prompt(
+            f"Enter # to open a {safe.lower()}, or 'b' to go back", "b")
+        if choice.lower() == 'b':
+            return
+        try:
+            idx = int(choice) - 1
+            if 0 <= idx < len(vaults):
+                self._vault_enter(vault_id=vaults[idx])
+        except (ValueError, TypeError):
+            pass
+
+    def _vault_my_vaults(self):
+        """Quick list of vault IDs and status for current user."""
+        if not self._ensure():
+            return
+        safe = "Safe" if self._mode == 'normal' else "Vault"
+        aid = self._actor_id(self._ctx_account)
+        vaults = self._vault_actor_vaults(aid)
+        if not vaults:
+            self._info(f"No {safe.lower()}s found.")
+            return
+        for vid in vaults:
+            vi = self._safe_query("Vault", "Vaults", [vid])
+            if vi and vi.value:
+                status = vi.value.get('status', '?')
+                t = vi.value.get('threshold', '?')
+                n = vi.value.get('ring_size', '?')
+                self._val(f"{safe} #{vid}",
+                          f"{self._colorize_state(status)}  "
+                          f"{C.DIM}{t}-of-{n}{C.R}")
+            else:
+                self._val(f"{safe} #{vid}", "?")
+
+    def _vault_actor_vaults(self, actor_id):
+        """Return list of vault IDs for an actor via storage iteration."""
+        try:
+            entries = list(
+                self.substrate.query_map(
+                    "Vault", "ActorVaults",
+                    [actor_id]))
+            return [e[0].value for e in entries]
+        except Exception:
+            pass
+        # Fallback: scan VaultCount range
+        try:
+            vc = self.substrate.query("Vault", "VaultCount")
+            total = vc.value if vc else 0
+            found = []
+            for vid in range(total):
+                m = self._safe_query(
+                    "Vault", "VaultMembers", [vid, actor_id])
+                if m and m.value:
+                    found.append(vid)
+            return found
+        except Exception:
+            return []
+
+    def _vault_enter(self, vault_id=None):
+        """Enter a vault to view members, documents, and status."""
+        if not self._ensure():
+            return
+        safe = "Safe" if self._mode == 'normal' else "Vault"
+        if vault_id is None:
+            vault_id = self._prompt_int(f"{safe} ID", 0)
+        vi = self._query("Vault", "Vaults", [vault_id])
+        if not vi or not vi.value:
+            self._err(f"{safe} #{vault_id} not found")
+            return
+        v = vi.value
+        status = v.get('status', '?')
+        t = v.get('threshold', '?')
+        n = v.get('ring_size', '?')
+        owner = v.get('owner', '?')
+
+        self._header(f"{safe.upper()}: #{vault_id}")
+        self._val("Status", self._colorize_state(status))
+        self._val("Protection", f"{t}-of-{n}")
+        self._val("Owner", str(owner)[:16] + '...'
+                  if len(str(owner)) > 16 else str(owner))
+
+        # -- Members panel --
+        members = self._vault_get_members(vault_id, n)
+        if members:
+            print()
+            print(f"  {C.BC}MEMBERS{C.R}")
+            for m in members:
+                role = m.get('role', '?')
+                committed = m.get('share_committed', False)
+                actor = str(m.get('actor', '?'))
+                actor_short = actor[:16] + '...' if len(actor) > 16 else actor
+                commit_icon = (f"{C.G}\u2713{C.R}"
+                               if committed
+                               else f"{C.DIM}\u2717{C.R}")
+                print(f"    {role:<14} {actor_short}  "
+                      f"Share: {commit_icon}")
+
+        # -- Documents panel --
+        files = get_vault_files(vault_id)
+        if files:
+            print()
+            print(f"  {C.BC}DOCUMENTS ({len(files)}){C.R}")
+            rows = []
+            for i, f in enumerate(files):
+                h = f.get('enc_hash', '?')
+                if f.get('name_redacted', False):
+                    display = f"Document #{i+1} (private)"
+                else:
+                    display = f['original_name']
+                rows.append([
+                    str(i + 1),
+                    display[:24],
+                    f"{f['size_bytes']:,}",
+                    h[:16] + '...',
+                ])
+            self._table(["#", "Name", "Size", "Hash"], rows)
+        elif status == 'Active':
+            print()
+            self._info("No documents secured yet.")
+
+        # -- State-dependent actions --
+        if status == 'Active':
+            self._vault_enter_active_menu(vault_id)
+        elif status == 'Locked':
+            print()
+            self._info(f"This {safe.lower()} is LOCKED. "
+                       "Documents cannot be accessed.")
+            choice = self._prompt("[r]ecovery  [b]ack", "b")
+            if choice.lower() == 'r':
+                self._vault_enter_recovery(vault_id)
+        elif status == 'Recovering':
+            self._vault_enter_recovering(vault_id, v)
+        else:
+            self._info(f"{safe} is in state: {status}")
+
+    def _vault_enter_active_menu(self, vault_id):
+        """Interactive submenu for an active vault."""
+        safe = "safe" if self._mode == 'normal' else "vault"
+        while True:
+            print()
+            print(f"  {C.DIM}[s]ecure  [u]nlock  [v]erify  "
+                  f"[l]ock  [b]ack{C.R}")
+            choice = self._prompt("Action", "b").lower()
+            if choice == 'b':
+                return
+            elif choice == 's':
+                self._vault_secure_file_for(vault_id)
+            elif choice == 'u':
+                self._vault_unlock_file_for(vault_id)
+            elif choice == 'v':
+                self._vault_verify_for(vault_id)
+            elif choice == 'l':
+                confirm = self._prompt_bool(
+                    f"Lock {safe} #{vault_id}? This prevents access.")
+                if confirm:
+                    kp = self.keypairs[self._ctx_account]
+                    self._submit(
+                        "Vault", "lock_vault",
+                        {"vault_id": vault_id}, kp)
+                return
+
+    def _vault_enter_recovery(self, vault_id):
+        """Start recovery for a locked vault."""
+        kp = self.keypairs[self._ctx_account]
+        self._submit(
+            "Vault", "initiate_recovery",
+            {"vault_id": vault_id}, kp)
+
+    def _vault_enter_recovering(self, vault_id, vault_data):
+        """Show recovery progress for a recovering vault."""
+        t = vault_data.get('threshold', '?')
+        print()
+        self._info("RECOVERY IN PROGRESS")
+        rec = self._safe_query(
+            "Vault", "RecoveryRequests", [vault_id])
+        if rec and rec.value:
+            revealed = rec.value.get('shares_revealed', 0)
+            self._val("Shares revealed", f"{revealed}/{t}")
+        choice = self._prompt("[r]eveal share  [b]ack", "b")
+        if choice.lower() == 'r':
+            share_id = self._prompt_int("Share ID to reveal", 0)
+            kp = self.keypairs[self._ctx_account]
+            self._submit(
+                "Vault", "reveal_share",
+                {"share_id": share_id}, kp)
+
+    def _vault_secure_file_for(self, vault_id):
+        """Call _vault_secure_file with vault_id pre-filled."""
+        self._vault_secure_file(prefill_vault=vault_id)
+
+    def _vault_unlock_file_for(self, vault_id):
+        """Call _vault_unlock_file with vault_id pre-filled."""
+        self._vault_unlock_file(prefill_vault=vault_id)
+
+    def _vault_verify_for(self, vault_id):
+        """Run file verification for a specific vault."""
+        files = get_vault_files(vault_id)
+        if not files:
+            self._info("No files in this vault")
+            return
+        for i, f in enumerate(files):
+            h = f.get('enc_hash', f.get('file_hash', '?'))
+            if f.get('name_redacted', False):
+                display = f"Document #{i+1} (private)"
+            else:
+                display = f['original_name']
+            print(f"    {C.Y}{i+1}{C.R} {display} "
+                  f"{C.DIM}({h[:16]}...){C.R}")
+        idx = self._prompt_int("File #", 1) - 1
+        if not (0 <= idx < len(files)):
+            return
+        f = files[idx]
+        enc_hash = f.get('enc_hash', f.get('file_hash', ''))
+        ok, current_hash = verify_vault_file(vault_id, enc_hash)
+        if ok is None:
+            self._err("Local file not found")
+        elif ok:
+            self._ok("File integrity verified")
+        else:
+            self._err("HASH MISMATCH -- file has been modified!")
+            self._val("Expected", enc_hash[:32] + '...')
+            self._val("Got", current_hash[:32] + '...')
+
+    def _vault_get_members(self, vault_id, ring_size):
+        """Fetch vault members via storage queries."""
+        members = []
+        try:
+            entries = list(
+                self.substrate.query_map(
+                    "Vault", "VaultMembers",
+                    [vault_id]))
+            for e in entries:
+                if e[1] and e[1].value:
+                    members.append(e[1].value)
+        except Exception:
+            pass
+        if not members:
+            # Fallback: probe known accounts
+            for name, kp in self.keypairs.items():
+                aid = self._actor_id(name)
+                m = self._safe_query(
+                    "Vault", "VaultMembers", [vault_id, aid])
+                if m and m.value:
+                    members.append(m.value)
+        return members
 
     # ------------------------------------------------------------------
     # Custom handlers: Dev Extensions
