@@ -4097,18 +4097,17 @@ class LaudCLI:
                 confirm = self._prompt_bool(
                     f"Lock {safe} #{vault_id}? This prevents access.")
                 if confirm:
-                    kp = self.keypairs[self._ctx_account]
                     self._submit(
                         "Vault", "lock_vault",
-                        {"vault_id": vault_id}, kp)
+                        {"vault_id": vault_id},
+                        self._ctx_account)
                 return
 
     def _vault_enter_recovery(self, vault_id):
         """Start recovery for a locked vault."""
-        kp = self.keypairs[self._ctx_account]
         self._submit(
             "Vault", "initiate_recovery",
-            {"vault_id": vault_id}, kp)
+            {"vault_id": vault_id}, self._ctx_account)
 
     def _vault_enter_recovering(self, vault_id, vault_data):
         """Show recovery progress for a recovering vault."""
@@ -4123,10 +4122,9 @@ class LaudCLI:
         choice = self._prompt("[r]eveal share  [b]ack", "b")
         if choice.lower() == 'r':
             share_id = self._prompt_int("Share ID to reveal", 0)
-            kp = self.keypairs[self._ctx_account]
             self._submit(
                 "Vault", "reveal_share",
-                {"share_id": share_id}, kp)
+                {"share_id": share_id}, self._ctx_account)
 
     def _vault_secure_file_for(self, vault_id):
         """Call _vault_secure_file with vault_id pre-filled."""
