@@ -4080,8 +4080,8 @@ class LaudCLI:
         safe = "safe" if self._mode == 'normal' else "vault"
         while True:
             print()
-            print(f"  {C.DIM}[s]ecure  [u]nlock  [v]erify  "
-                  f"[l]ock  [b]ack{C.R}")
+            print(f"  {C.DIM}[s]ecure  [u]nlock  [d]etail  "
+                  f"[v]erify  [l]ock  [b]ack{C.R}")
             choice = self._prompt("Action", "b").lower()
             if choice == 'b':
                 return
@@ -4089,6 +4089,8 @@ class LaudCLI:
                 self._vault_secure_file_for(vault_id)
             elif choice == 'u':
                 self._vault_unlock_file_for(vault_id)
+            elif choice == 'd':
+                self._vault_document_detail(vault_id=vault_id)
             elif choice == 'v':
                 self._vault_verify_for(vault_id)
             elif choice == 'l':
@@ -4647,6 +4649,189 @@ class LaudCLI:
         self._info(
             f"{committed_count}/{len(members)} shares committed, "
             f"threshold is {threshold}")
+
+    # ------------------------------------------------------------------
+    # Vault UX: Document Detail (F4)
+    # ------------------------------------------------------------------
+
+    def _vault_document_detail(self, vault_id=None, file_entry=None):
+        """Show detailed view of a vault document with integrity checks."""
+        if not self._ensure():
+            return
+        if vault_id is None:
+            vault_id = self._prompt_int("Vault ID", 0)
+        files = get_vault_files(vault_id)
+        if not files:
+            self._info("No files in this vault.")
+            return
+
+        # Select file if not provided
+        if file_entry is None:
+            for i, f in enumerate(files):
+                if f.get('name_redacted', False):
+                    display = f"Document #{i+1} (private)"
+                else:
+                    display = f['original_name']
+                enc_hash = f.get('enc_hash', '')
+                short_hash = enc_hash[:16] + "..." if enc_hash else "?"
+                print(f"    {C.Y}{i+1}{C.R} {display} "
+                      f"{C.DIM}({short_hash}){C.R}")
+            idx = self._prompt_int("File #", 1) - 1
+            if not (0 <= idx < len(files)):
+                return
+            file_entry = files[idx]
+
+        enc_hash = file_entry.get('enc_hash', '')
+        safe = "document" if self._mode == 'normal' else "file"
+        self._header(f"{safe.upper()} DETAIL")
+
+        # Metadata
+        if file_entry.get('name_redacted', False):
+            self._val("Name", "(private / redacted)")
+        else:
+            self._val("Name", file_entry.get('original_name', '?'))
+
+        size = file_entry.get('encrypted_size', 0)
+        if size > 1024 * 1024:
+            size_str = f"{size / (1024 * 1024):.1f} MB"
+        elif size > 1024:
+            size_str = f"{size / 1024:.1f} KB"
+        else:
+            size_str = f"{size} bytes"
+        self._val("Size", size_str)
+        self._val("Threshold",
+                  f"{file_entry.get('threshold', '?')} shares needed")
+        self._val("Encrypted hash", enc_hash[:32] + "..."
+                  if len(enc_hash) > 32 else enc_hash)
+        fp = file_entry.get('key_fingerprint', '')
+        self._val("Key fingerprint", fp[:32] + "..."
+                  if len(fp) > 32 else (fp or "—"))
+        self._val("Secured at",
+                  file_entry.get('timestamp', '?'))
+
+        # On-chain verification
+        self._heading("On-Chain Verification")
+        chain_file = self._safe_query(
+            "Vault", "VaultFiles",
+            [vault_id, f"0x{enc_hash}" if enc_hash else "0x"])
+        if chain_file and chain_file.value:
+            cf = chain_file.value
+            self._val("Registered by",
+                      str(cf.get('registered_by', '?')))
+            self._val("Registered at block",
+                      str(cf.get('registered_at', '?')))
+            pt_hash = cf.get('plaintext_hash', '')
+            if isinstance(pt_hash, str):
+                self._val("Plaintext hash",
+                          pt_hash[:32] + "..."
+                          if len(pt_hash) > 32 else pt_hash)
+            else:
+                self._val("Plaintext hash", str(pt_hash))
+            chain_fp = cf.get('key_fingerprint', '')
+            if isinstance(chain_fp, str):
+                fp_match = chain_fp == f"0x{fp}" or chain_fp == fp
+            else:
+                fp_match = str(chain_fp) == fp
+            self._val("Fingerprint match",
+                      f"{C.G}Yes{C.R}" if fp_match
+                      else f"{C.R_}MISMATCH{C.R}")
+            self._ok("File registered on-chain")
+        else:
+            self._err("File NOT found on-chain — may not be registered yet")
+
+        # Local integrity
+        self._heading("Local Integrity")
+        if enc_hash:
+            ok, current = verify_file(vault_id, enc_hash)
+            if ok is True:
+                self._ok("Local file integrity: PASS")
+            elif ok is False:
+                self._err(
+                    f"Local file integrity: FAIL "
+                    f"(expected {enc_hash[:16]}..., "
+                    f"got {current[:16] if current else '?'}...)")
+            else:
+                self._info("Local encrypted file not found "
+                           "(may be on another device)")
+        else:
+            self._info("No encrypted hash — cannot verify")
+
+        # Unlock history
+        self._heading("Unlock History")
+        unlock_found = False
+        req_count = self._safe_query(
+            "Vault", "UnlockRequestCount", [])
+        total = req_count.value if req_count and req_count.value else 0
+        history_rows = []
+
+        for rid in range(1, min(total + 1, 100)):
+            req = self._safe_query(
+                "Vault", "UnlockRequests", [rid])
+            if not req or not req.value:
+                continue
+            rd = req.value
+            if rd.get('vault', 0) != vault_id:
+                continue
+            # Compare file hash
+            rh = rd.get('file_enc_hash', '')
+            if isinstance(rh, str):
+                rh_clean = rh.replace('0x', '')
+            else:
+                rh_clean = str(rh)
+            if rh_clean != enc_hash and rh != f"0x{enc_hash}":
+                continue
+            unlock_found = True
+            status = (f"{C.G}Completed{C.R}" if rd.get('completed')
+                      else f"{C.Y}Pending{C.R}")
+            history_rows.append([
+                str(rid),
+                str(rd.get('requester', '?'))[:14],
+                f"{rd.get('approvals', 0)}",
+                status,
+                str(rd.get('initiated_at', '?')),
+            ])
+
+        if history_rows:
+            self._table(
+                ["Request", "Requester", "Votes",
+                 "Status", "Block"],
+                history_rows)
+        else:
+            self._info("No unlock requests for this file.")
+
+        # Actions
+        print()
+        print(f"  {C.DIM}[u]nlock  [v]erify  [e]xport share  "
+              f"[b]ack{C.R}")
+        choice = self._prompt("Action", "b").lower()
+        if choice == 'u':
+            self._vault_unlock_file_for(vault_id)
+        elif choice == 'v':
+            self._vault_verify_for(vault_id)
+        elif choice == 'e':
+            self._vault_export_share_for(vault_id)
+
+    def _vault_export_share_for(self, vault_id):
+        """Export a local share as hex for transfer to another member."""
+        from laud_files import load_all_shares, export_share_hex
+        shares = load_all_shares(vault_id)
+        if not shares:
+            self._info("No local shares found for this vault.")
+            return
+        for i, (idx, data) in enumerate(shares):
+            print(f"    {C.Y}{i+1}{C.R} Share #{idx} "
+                  f"({len(data)} bytes)")
+        choice = self._prompt_int("Share #", 1) - 1
+        if not (0 <= choice < len(shares)):
+            return
+        idx, _ = shares[choice]
+        hex_str = export_share_hex(vault_id, idx)
+        if hex_str is None:
+            self._err("Failed to export share")
+            return
+        self._heading("Exportable Share")
+        print(f"    {C.W}{hex_str}{C.R}")
+        self._info("Send this to the requesting vault member")
 
     # ------------------------------------------------------------------
     # Custom handlers: Dev Extensions
