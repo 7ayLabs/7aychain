@@ -3715,7 +3715,7 @@ class LaudCLI:
         active_req = self._safe_query(
             "Vault", "ActiveUnlocks",
             [vault_id, f"0x{enc_hash}"])
-        if active_req and active_req.value:
+        if active_req and active_req.value is not None:
             req_id = active_req.value
             req_data = self._safe_query(
                 "Vault", "UnlockRequests", [req_id])
@@ -4371,7 +4371,7 @@ class LaudCLI:
                     self.substrate.query_map(
                         "Vault", "ActiveUnlocks", [vid]))
                 for entry in entries:
-                    if not entry[1] or not entry[1].value:
+                    if not entry[1] or entry[1].value is None:
                         continue
                     req_id = entry[1].value
                     req = self._safe_query(
@@ -4395,7 +4395,7 @@ class LaudCLI:
                 # Fallback: scan by request count
                 req_count = self._safe_query(
                     "Vault", "UnlockRequestCount", [])
-                total = req_count.value if req_count and req_count.value else 0
+                total = req_count.value if req_count and req_count.value is not None else 0
                 for rid in range(1, min(total + 1, 100)):
                     req = self._safe_query(
                         "Vault", "UnlockRequests", [rid])
@@ -4492,7 +4492,7 @@ class LaudCLI:
         # Gather all requests for this vault
         requests = []
         req_count = self._safe_query("Vault", "UnlockRequestCount", [])
-        total = req_count.value if req_count and req_count.value else 0
+        total = req_count.value if req_count and req_count.value is not None else 0
 
         for rid in range(1, min(total + 1, 200)):
             req = self._safe_query("Vault", "UnlockRequests", [rid])
@@ -4916,7 +4916,7 @@ class LaudCLI:
         unlock_found = False
         req_count = self._safe_query(
             "Vault", "UnlockRequestCount", [])
-        total = req_count.value if req_count and req_count.value else 0
+        total = req_count.value if req_count and req_count.value is not None else 0
         history_rows = []
 
         for rid in range(1, min(total + 1, 100)):
