@@ -3665,6 +3665,24 @@ class LaudCLI:
             self._val("File", f['original_name'])
         self._val("Threshold", f"{threshold} shares needed")
 
+        # Show vault members so user knows who can sign
+        vault_data = self._safe_query("Vault", "Vaults", [vault_id])
+        ring_size = (vault_data.value.get('ring_size', 3)
+                     if vault_data and vault_data.value else 3)
+        members = self._vault_get_members(vault_id, ring_size)
+        member_names = []
+        if members:
+            actor_names = {}
+            for name in self.keypairs:
+                actor_names[self._actor_id(name)] = name
+            for m in members:
+                actor = str(m.get('actor', ''))
+                name = actor_names.get(actor, actor[:12] + '..')
+                member_names.append(name)
+            self._val("Members",
+                      ", ".join(f"{C.W}{n}{C.R}"
+                                for n in member_names))
+
         # Verify file is registered on-chain
         chain_file = self._safe_query(
             "Vault", "VaultFiles",
@@ -3693,17 +3711,61 @@ class LaudCLI:
             else:
                 return
 
-        # Request unlock on-chain
-        signer = self._prompt_account("Signer")
-        self._info("Requesting unlock on-chain (Vault.request_unlock)...")
-        receipt = self._submit("Vault", "request_unlock", {
-            "vault_id": vault_id,
-            "file_enc_hash": f"0x{enc_hash}",
-        }, signer)
+        # Check for existing active unlock request
+        active_req = self._safe_query(
+            "Vault", "ActiveUnlocks",
+            [vault_id, f"0x{enc_hash}"])
+        if active_req and active_req.value:
+            req_id = active_req.value
+            req_data = self._safe_query(
+                "Vault", "UnlockRequests", [req_id])
+            if req_data and req_data.value:
+                rd = req_data.value
+                approvals = rd.get('approvals', 0)
+                vt = (vault_data.value.get('threshold', 2)
+                      if vault_data and vault_data.value else 2)
+                if rd.get('completed', False):
+                    self._ok(
+                        f"Unlock already completed "
+                        f"(request #{req_id})")
+                else:
+                    self._info(
+                        f"Active unlock request #{req_id} "
+                        f"({approvals}/{vt} approvals)")
+                    if approvals < vt:
+                        approve = self._prompt_bool(
+                            "Add your approval?", default=True)
+                        if approve:
+                            signer = self._prompt_account(
+                                "Approve as"
+                                + (f" ({', '.join(member_names)})"
+                                   if member_names else ""))
+                            self._submit(
+                                "Vault", "authorize_unlock",
+                                {"request_id": req_id}, signer)
+                        if approvals + 1 < vt:
+                            self._info(
+                                f"Need {vt - approvals - 1} more "
+                                f"approval(s) before decrypt")
+                            return
+                    self._ok("Threshold met — proceeding to decrypt")
+        else:
+            # Request new unlock on-chain
+            signer = self._prompt_account(
+                "Signer"
+                + (f" ({', '.join(member_names)})"
+                   if member_names else ""))
+            self._info(
+                "Requesting unlock on-chain "
+                "(Vault.request_unlock)...")
+            receipt = self._submit("Vault", "request_unlock", {
+                "vault_id": vault_id,
+                "file_enc_hash": f"0x{enc_hash}",
+            }, signer)
 
-        if not (receipt and receipt.is_success):
-            self._err("Unlock request failed — chain rejected")
-            return
+            if not (receipt and receipt.is_success):
+                self._err("Unlock request failed — chain rejected")
+                return
 
         # Collect shares
         self._info("Loading local shares...")
