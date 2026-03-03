@@ -38,7 +38,7 @@ from laud_files import (
     add_to_index, get_vault_files, verify_file as verify_vault_file,
     store_share, load_share, load_all_shares,
     export_share_hex, import_share_hex, secure_zero,
-    anonymize_existing_index,
+    anonymize_existing_index, migrate_shares_to_per_file,
 )
 from laud_crypto import (
     ShamirScheme, key_fingerprint, generate_fek,
@@ -3564,9 +3564,9 @@ class LaudCLI:
             self._err("Shamir split failed")
             return
 
-        # Store shares locally
+        # Store shares locally (namespaced by file enc_hash)
         for idx, value in shares:
-            store_share(vault_id, idx, value)
+            store_share(vault_id, idx, value, enc_hash=enc_hash)
 
         self._val("Encrypted hash", f"0x{enc_hash[:32]}...")
         self._val("Plaintext hash", f"0x{pt_hash[:32]}...")
@@ -3767,9 +3767,10 @@ class LaudCLI:
                 self._err("Unlock request failed — chain rejected")
                 return
 
-        # Collect shares
+        # Collect shares (per-file namespace, auto-migrate flat layout)
         self._info("Loading local shares...")
-        local_shares = load_all_shares(vault_id)
+        migrate_shares_to_per_file(vault_id, enc_hash)
+        local_shares = load_all_shares(vault_id, enc_hash=enc_hash)
         self._val("Local shares found", str(len(local_shares)))
 
         all_shares = list(local_shares)
@@ -3892,13 +3893,27 @@ class LaudCLI:
 
     def _vault_import_share(self):
         vault_id = self._prompt_int("Vault ID", 0)
+        files = get_vault_files(vault_id)
+        enc_hash = None
+        if files:
+            if len(files) == 1:
+                enc_hash = files[0].get('enc_hash', '')
+            else:
+                self._heading("Select File for Share")
+                for i, f in enumerate(files):
+                    label = f.get('display_label',
+                                  f.get('original_name', '?'))
+                    print(f"    {C.Y}{i+1}{C.R} {label}")
+                fc = self._prompt_int("File #", 1) - 1
+                if 0 <= fc < len(files):
+                    enc_hash = files[fc].get('enc_hash', '')
         hex_input = self._prompt("Share hex (XX:value...)", "")
         parsed = import_share_hex(hex_input)
         if parsed is None:
             self._err("Invalid share format (expected: XX:hex...)")
             return
         idx, value = parsed
-        path = store_share(vault_id, idx, value)
+        path = store_share(vault_id, idx, value, enc_hash=enc_hash)
         self._ok(f"Share #{idx} imported and saved to {path}")
 
     # -- Dev mode vault tools --
@@ -4968,10 +4983,26 @@ class LaudCLI:
 
     def _vault_export_share_for(self, vault_id):
         """Export a local share as hex for transfer to another member."""
-        from laud_files import load_all_shares, export_share_hex
-        shares = load_all_shares(vault_id)
+        files = get_vault_files(vault_id)
+        if not files:
+            self._info("No files in this vault.")
+            return
+        enc_hash = None
+        if len(files) == 1:
+            enc_hash = files[0].get('enc_hash', '')
+        else:
+            self._heading("Select File")
+            for i, f in enumerate(files):
+                label = f.get('display_label', f.get('original_name', '?'))
+                print(f"    {C.Y}{i+1}{C.R} {label}")
+            fc = self._prompt_int("File #", 1) - 1
+            if not (0 <= fc < len(files)):
+                return
+            enc_hash = files[fc].get('enc_hash', '')
+        migrate_shares_to_per_file(vault_id, enc_hash)
+        shares = load_all_shares(vault_id, enc_hash=enc_hash)
         if not shares:
-            self._info("No local shares found for this vault.")
+            self._info("No local shares found for this file.")
             return
         for i, (idx, data) in enumerate(shares):
             print(f"    {C.Y}{i+1}{C.R} Share #{idx} "
@@ -4980,7 +5011,7 @@ class LaudCLI:
         if not (0 <= choice < len(shares)):
             return
         idx, _ = shares[choice]
-        hex_str = export_share_hex(vault_id, idx)
+        hex_str = export_share_hex(vault_id, idx, enc_hash=enc_hash)
         if hex_str is None:
             self._err("Failed to export share")
             return
