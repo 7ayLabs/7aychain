@@ -4447,6 +4447,208 @@ class LaudCLI:
         return ", ".join(voters) if voters else "none"
 
     # ------------------------------------------------------------------
+    # Vault UX: Health & Share Status (F6)
+    # ------------------------------------------------------------------
+
+    def _vault_health(self):
+        """Run health checks across all user vaults."""
+        if not self._ensure():
+            return
+        actor_id = self._actor_id(self._ctx_account)
+        vault_ids = self._vault_actor_vaults(actor_id)
+        if not vault_ids:
+            self._info("You don't belong to any vaults yet.")
+            return
+
+        self._header("VAULT HEALTH REPORT")
+        rows = []
+        healthy = 0
+        issues_total = 0
+
+        for vid in vault_ids:
+            vault_data = self._safe_query("Vault", "Vaults", [vid])
+            if not vault_data or not vault_data.value:
+                rows.append([
+                    str(vid), f"{C.R_}?{C.R}", "-", "-", "-",
+                    f"{C.R_}Not found{C.R}"])
+                issues_total += 1
+                continue
+
+            vd = vault_data.value
+            status = vd.get('status', 'Unknown')
+            threshold = vd.get('threshold', 2)
+            ring_size = vd.get('ring_size', 3)
+
+            # Count members
+            members = self._vault_get_members(vid, ring_size)
+            member_count = len(members)
+
+            # Check share commitments
+            committed = 0
+            for m in members:
+                if isinstance(m, dict) and m.get('share_committed', False):
+                    committed += 1
+
+            # Count local files
+            files = get_vault_files(vid)
+            file_count = len(files)
+
+            # File integrity checks
+            file_issues = 0
+            for f in files[:20]:  # Limit to avoid slowness
+                enc_hash = f.get('enc_hash', '')
+                if enc_hash:
+                    ok, _ = verify_file(vid, enc_hash)
+                    if ok is None or ok is False:
+                        file_issues += 1
+
+            # Build issue list
+            issues = []
+            if status not in ('Active',):
+                if isinstance(status, dict):
+                    s_str = next(iter(status.keys()), str(status))
+                else:
+                    s_str = str(status)
+                if s_str not in ('Active',):
+                    issues.append(f"status={s_str}")
+            if member_count < ring_size:
+                issues.append(
+                    f"members {member_count}/{ring_size}")
+            if committed < member_count:
+                issues.append(
+                    f"shares {committed}/{member_count}")
+            if file_issues > 0:
+                issues.append(
+                    f"{file_issues} file(s) corrupted")
+
+            issue_str = (
+                f"{C.G}OK{C.R}" if not issues
+                else f"{C.Y}{'; '.join(issues)}{C.R}")
+
+            if not issues:
+                healthy += 1
+            else:
+                issues_total += len(issues)
+
+            rows.append([
+                str(vid),
+                self._colorize_state(status),
+                f"{member_count}/{ring_size}",
+                f"{committed}/{member_count}",
+                str(file_count),
+                issue_str,
+            ])
+
+        self._table(
+            ["Vault", "Status", "Members", "Shares",
+             "Files", "Issues"],
+            rows)
+
+        total = len(vault_ids)
+        self._info(
+            f"{C.G}{healthy}{C.R} of {total} safe(s) healthy"
+            + (f", {C.Y}{issues_total} issue(s) found{C.R}"
+               if issues_total else ""))
+
+    def _vault_share_status(self):
+        """View key share distribution status per member."""
+        if not self._ensure():
+            return
+        vault_id = self._prompt_int("Vault ID", 0)
+        vault_data = self._safe_query("Vault", "Vaults", [vault_id])
+        if not vault_data or not vault_data.value:
+            self._err(f"Vault #{vault_id} not found")
+            return
+
+        vd = vault_data.value
+        threshold = vd.get('threshold', 2)
+        ring_size = vd.get('ring_size', 3)
+
+        self._header(f"SHARE STATUS — VAULT #{vault_id}")
+        self._val("Status", self._colorize_state(
+            vd.get('status', 'Unknown')))
+        self._val("Scheme",
+                  f"{threshold}-of-{ring_size} threshold")
+
+        members = self._vault_get_members(vault_id, ring_size)
+        if not members:
+            self._info("No members found.")
+            return
+
+        # Build share map: query VaultShares for this vault
+        vault_shares = {}
+        try:
+            entries = list(
+                self.substrate.query_map(
+                    "Vault", "VaultShares", [vault_id]))
+            for entry in entries:
+                if entry[0]:
+                    sid = entry[0]
+                    if hasattr(sid, 'value'):
+                        sid = sid.value
+                    vault_shares[sid] = True
+        except Exception:
+            pass
+
+        rows = []
+        for m in members:
+            if isinstance(m, dict):
+                actor = m.get('actor', '?')
+                role = m.get('role', '?')
+                share_idx = m.get('share_index', '?')
+                committed = m.get('share_committed', False)
+            else:
+                actor = str(m)
+                role = '?'
+                share_idx = '?'
+                committed = False
+
+            # Resolve actor name from known keypairs
+            actor_name = str(actor)
+            for name, kp in self.keypairs.items():
+                aid = self._actor_id(name)
+                if aid == actor:
+                    actor_name = name
+                    break
+            if len(actor_name) > 14:
+                actor_name = actor_name[:14] + ".."
+
+            # Format role
+            if isinstance(role, dict):
+                role_str = next(iter(role.keys()), str(role))
+            else:
+                role_str = str(role)
+
+            committed_str = (
+                f"{C.G}Yes{C.R}" if committed
+                else f"{C.Y}No{C.R}")
+
+            # Check if share exists in VaultShares
+            share_id_str = str(share_idx)
+            in_vault = (
+                f"{C.G}Registered{C.R}"
+                if vault_shares.get(share_idx, False)
+                else f"{C.DIM}—{C.R}")
+
+            rows.append([
+                actor_name, role_str, committed_str,
+                in_vault, share_id_str,
+            ])
+
+        self._table(
+            ["Member", "Role", "Committed", "Registered",
+             "Share ID"],
+            rows)
+
+        # Summary
+        committed_count = sum(
+            1 for m in members
+            if isinstance(m, dict) and m.get('share_committed', False))
+        self._info(
+            f"{committed_count}/{len(members)} shares committed, "
+            f"threshold is {threshold}")
+
+    # ------------------------------------------------------------------
     # Custom handlers: Dev Extensions
     # ------------------------------------------------------------------
 
