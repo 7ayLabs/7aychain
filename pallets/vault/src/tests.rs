@@ -1238,3 +1238,37 @@ fn dissolve_vault_cleans_unlock_state() {
         assert!(Vault::unlock_approvals(req_id, account_to_actor(1)).is_none());
     });
 }
+
+#[test]
+fn authorize_unlock_rejects_locked_vault() {
+    new_test_ext().execute_with(|| {
+        let vault_id = create_active_vault(1);
+        let enc_hash = H256([10u8; 32]);
+
+        assert_ok!(Vault::register_file(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            enc_hash,
+            H256([11u8; 32]),
+            H256([12u8; 32]),
+            100,
+        ));
+
+        // Create unlock request while vault is active
+        assert_ok!(Vault::request_unlock(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            enc_hash,
+        ));
+        let req_id = UnlockRequestId::new(0);
+
+        // Lock the vault
+        assert_ok!(Vault::lock_vault(RuntimeOrigin::signed(1), vault_id));
+
+        // authorize_unlock should fail with VaultNotActive (INV67)
+        assert_noop!(
+            Vault::authorize_unlock(RuntimeOrigin::signed(2), req_id),
+            Error::<Test>::VaultNotActive
+        );
+    });
+}

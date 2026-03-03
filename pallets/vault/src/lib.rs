@@ -1104,6 +1104,10 @@ pub mod pallet {
 
             let vault_id = request.vault;
             let vault = Vaults::<T>::get(vault_id).ok_or(Error::<T>::VaultNotFound)?;
+            ensure!(
+                vault.status == VaultStatus::Active,
+                Error::<T>::VaultNotActive
+            );
 
             let actor = Self::account_to_actor(who);
             ensure!(
