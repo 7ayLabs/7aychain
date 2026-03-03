@@ -4047,23 +4047,43 @@ class LaudCLI:
         self._header(f"{safe.upper()}: #{vault_id}")
         self._val("Status", self._colorize_state(status))
         self._val("Protection", f"{t}-of-{n}")
-        self._val("Owner", str(owner)[:16] + '...'
-                  if len(str(owner)) > 16 else str(owner))
+        # Resolve owner actor_id to name
+        owner_str = str(owner)
+        for name in self.keypairs:
+            if self._actor_id(name) == owner_str:
+                owner_str = f"{C.W}{name}{C.R}"
+                break
+        else:
+            if len(owner_str) > 16:
+                owner_str = owner_str[:16] + '...'
+        self._val("Owner", owner_str)
 
         # -- Members panel --
         members = self._vault_get_members(vault_id, n)
         if members:
+            # Build actor_id → name lookup
+            actor_names = {}
+            for name in self.keypairs:
+                actor_names[self._actor_id(name)] = name
             print()
             print(f"  {C.BC}MEMBERS{C.R}")
             for m in members:
                 role = m.get('role', '?')
                 committed = m.get('share_committed', False)
                 actor = str(m.get('actor', '?'))
-                actor_short = actor[:16] + '...' if len(actor) > 16 else actor
+                # Resolve to friendly name
+                acct_name = actor_names.get(actor, '')
+                if acct_name:
+                    display = f"{C.W}{acct_name}{C.R}"
+                else:
+                    display = (actor[:16] + '...'
+                               if len(actor) > 16 else actor)
                 commit_icon = (f"{C.G}\u2713{C.R}"
                                if committed
                                else f"{C.DIM}\u2717{C.R}")
-                print(f"    {role:<14} {actor_short}  "
+                if isinstance(role, dict):
+                    role = next(iter(role.keys()), str(role))
+                print(f"    {str(role):<14} {display:<20}  "
                       f"Share: {commit_icon}")
 
         # -- Documents panel --
