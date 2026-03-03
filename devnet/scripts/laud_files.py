@@ -371,7 +371,8 @@ def _hash_filename(name):
 
 def add_to_index(vault_id, enc_hash, plaintext_hash, original_name,
                  size_bytes, uploader, epoch, key_fingerprint_hex,
-                 threshold, ring_size, privacy_mode=False):
+                 threshold, ring_size, privacy_mode=False,
+                 bound_position=None, position_tolerance=None):
     """Add an encrypted file entry to the index."""
     index = load_index()
     key = f"{vault_id}:{enc_hash}"
@@ -381,7 +382,7 @@ def add_to_index(vault_id, enc_hash, plaintext_hash, original_name,
     else:
         display_label = original_name
 
-    index[key] = {
+    entry = {
         "vault_id": vault_id,
         "enc_hash": enc_hash,
         "plaintext_hash": plaintext_hash,
@@ -397,7 +398,12 @@ def add_to_index(vault_id, enc_hash, plaintext_hash, original_name,
         "ring_size": ring_size,
         "encrypted": True,
         "verified": True,
+        "presence_bound": bound_position is not None,
     }
+    if bound_position is not None:
+        entry["bound_position"] = bound_position
+        entry["position_tolerance"] = position_tolerance or 100
+    index[key] = entry
     save_index(index)
     return key
 

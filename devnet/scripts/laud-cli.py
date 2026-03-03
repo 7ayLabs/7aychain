@@ -3611,6 +3611,24 @@ class LaudCLI:
             "commitment": f"0x{commitment.hex()}",
         }, signer)
 
+        # Presence binding — optionally bind file to current location
+        bound_pos = None
+        pos_tolerance = None
+        bind_choice = self._prompt(
+            "Bind to current location? (y/n)", "n")
+        if bind_choice.lower() == 'y':
+            bound_pos, pos_tolerance = self._get_verified_position(
+                epoch, signer)
+            if bound_pos:
+                self._ok(
+                    f"Bound to position "
+                    f"({bound_pos['x']}, {bound_pos['y']}, "
+                    f"{bound_pos['z']})")
+            else:
+                self._info(
+                    "No verified position — file saved without "
+                    "location binding")
+
         # Update local index
         add_to_index(
             vault_id=vault_id,
@@ -3624,6 +3642,8 @@ class LaudCLI:
             threshold=threshold,
             ring_size=ring_size,
             privacy_mode=privacy,
+            bound_position=bound_pos,
+            position_tolerance=pos_tolerance,
         )
 
         secure_zero(fek)
@@ -3632,6 +3652,8 @@ class LaudCLI:
             self._info(
                 "Filename is hidden. "
                 "Only the document hash is stored.")
+        if bound_pos:
+            self._info("Location-bound — unlock requires proximity")
         self._info(f"Requires {threshold} of {ring_size} shares to unlock")
 
     def _vault_unlock_file(self, prefill_vault=None):
@@ -3682,6 +3704,15 @@ class LaudCLI:
             self._val("Members",
                       ", ".join(f"{C.W}{n}{C.R}"
                                 for n in member_names))
+
+        # Presence gate — check location binding
+        if f.get('presence_bound', False):
+            signer_pre = self._prompt_account(
+                "Signer (for location check)")
+            if not self._check_presence_for_file(
+                    f, signer_pre):
+                return
+            self._ok("Presence verified — location authorized")
 
         # Verify file is registered on-chain
         chain_file = self._safe_query(
@@ -4185,15 +4216,20 @@ class LaudCLI:
                 else:
                     chain_ok = f"{C.Y}Local only{C.R}"
                     unregistered.append(f)
+                loc = (f"{C.CY}Loc{C.R}"
+                       if f.get('presence_bound', False)
+                       else f"{C.DIM}—{C.R}")
                 rows.append([
                     str(i + 1),
                     display[:24],
                     f"{f['size_bytes']:,}",
                     h[:16] + '...',
                     chain_ok,
+                    loc,
                 ])
             self._table(
-                ["#", "Name", "Size", "Hash", "Status"], rows)
+                ["#", "Name", "Size", "Hash", "Status", "Loc"],
+                rows)
             if unregistered:
                 self._info(
                     f"{C.Y}{len(unregistered)} file(s) exist "
@@ -4357,6 +4393,111 @@ class LaudCLI:
                 if m and m.value:
                     members.append(m.value)
         return members
+
+    # ------------------------------------------------------------------
+    # Vault UX: Presence-gated access helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _position_distance_sq(pos_a, pos_b):
+        """Squared Euclidean distance between two position dicts."""
+        dx = pos_a.get('x', 0) - pos_b.get('x', 0)
+        dy = pos_a.get('y', 0) - pos_b.get('y', 0)
+        dz = pos_a.get('z', 0) - pos_b.get('z', 0)
+        return dx * dx + dy * dy + dz * dz
+
+    def _get_verified_position(self, epoch, signer_name):
+        """Query the current verified position for a signer.
+
+        Returns (position_dict, tolerance) or (None, None).
+        """
+        aid = self._actor_id(signer_name)
+        claim = self._safe_query(
+            "Presence", "PositionClaims", [epoch, aid])
+        if not claim or not claim.value:
+            return None, None
+        cv = claim.value
+        if not cv.get('verified', False):
+            return None, None
+        # Prefer triangulated position, fall back to claimed
+        pos = cv.get('triangulated_position')
+        if pos is None:
+            pos = cv.get('claimed_position')
+        if pos is None:
+            return None, None
+        tolerance = 100  # default tolerance (squared units)
+        return pos, tolerance
+
+    def _check_presence_for_file(self, file_entry, signer_name):
+        """Verify signer is within tolerance of a presence-bound file.
+
+        Returns True if access granted, False if denied.
+        """
+        if not file_entry.get('presence_bound', False):
+            return True  # unbound file always passes
+
+        bound_pos = file_entry.get('bound_position')
+        tolerance = file_entry.get('position_tolerance', 100)
+        if not bound_pos:
+            return True  # malformed entry, allow
+
+        # Get current epoch
+        try:
+            epoch_r = self.substrate.query("Epoch", "CurrentEpoch")
+            epoch = epoch_r.value if epoch_r else 0
+        except Exception:
+            epoch = 0
+
+        aid = self._actor_id(signer_name)
+        claim = self._safe_query(
+            "Presence", "PositionClaims", [epoch, aid])
+
+        if not claim or not claim.value:
+            self._err(
+                "ACCESS DENIED — no position claim found "
+                f"for {signer_name} in epoch {epoch}")
+            self._info(
+                "You must claim and verify your position before "
+                "unlocking location-bound files")
+            return False
+
+        cv = claim.value
+        if not cv.get('verified', False):
+            self._err(
+                "ACCESS DENIED — position not verified yet")
+            self._info(
+                f"Witness count: {cv.get('witness_count', 0)} — "
+                "need more witnesses to verify")
+            return False
+
+        # Check distance
+        current_pos = cv.get('triangulated_position')
+        if current_pos is None:
+            current_pos = cv.get('claimed_position')
+        if current_pos is None:
+            self._err("ACCESS DENIED — no position data available")
+            return False
+
+        dist_sq = self._position_distance_sq(bound_pos, current_pos)
+        tol_sq = tolerance * tolerance
+
+        if dist_sq > tol_sq:
+            import math
+            dist = math.sqrt(dist_sq)
+            self._err(
+                f"ACCESS DENIED — too far from vault location "
+                f"(distance: {dist:.0f}, tolerance: {tolerance})")
+            self._info(
+                f"Bound: ({bound_pos.get('x', 0)}, "
+                f"{bound_pos.get('y', 0)}, "
+                f"{bound_pos.get('z', 0)})")
+            self._info(
+                f"Current: ({current_pos.get('x', 0)}, "
+                f"{current_pos.get('y', 0)}, "
+                f"{current_pos.get('z', 0)})")
+            return False
+
+        return True
 
     # ------------------------------------------------------------------
     # Vault UX: Approvals & Unlock Requests (F5)
@@ -4877,7 +5018,14 @@ class LaudCLI:
         self._val("Key fingerprint", fp[:32] + "..."
                   if len(fp) > 32 else (fp or "—"))
         self._val("Secured at",
-                  file_entry.get('timestamp', '?'))
+                  file_entry.get('uploaded_at',
+                                 file_entry.get('timestamp', '?')))
+        if file_entry.get('presence_bound', False):
+            bp = file_entry.get('bound_position', {})
+            tol = file_entry.get('position_tolerance', 100)
+            self._val("Location bound",
+                      f"({bp.get('x', 0)}, {bp.get('y', 0)}, "
+                      f"{bp.get('z', 0)}) tol={tol}")
 
         # On-chain verification
         self._heading("On-Chain Verification")
