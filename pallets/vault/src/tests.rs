@@ -326,8 +326,8 @@ fn cannot_commit_share_twice() {
 #[test]
 fn initiate_recovery_success() {
     new_test_ext().execute_with(|| {
-        let vault_id = create_vault_with_members(1, 3);
-        assert_ok!(Vault::activate_vault(RuntimeOrigin::signed(1), vault_id));
+        // Owner (account 1) must have committed share to initiate recovery
+        let vault_id = create_active_vault_with_shares(1, &[1]);
 
         assert_ok!(Vault::initiate_recovery(RuntimeOrigin::signed(1), vault_id));
 
@@ -340,8 +340,7 @@ fn initiate_recovery_success() {
 #[test]
 fn cannot_initiate_recovery_twice() {
     new_test_ext().execute_with(|| {
-        let vault_id = create_vault_with_members(1, 3);
-        assert_ok!(Vault::activate_vault(RuntimeOrigin::signed(1), vault_id));
+        let vault_id = create_active_vault_with_shares(1, &[1]);
 
         assert_ok!(Vault::initiate_recovery(RuntimeOrigin::signed(1), vault_id));
 
@@ -355,14 +354,8 @@ fn cannot_initiate_recovery_twice() {
 #[test]
 fn reveal_share_success() {
     new_test_ext().execute_with(|| {
-        let vault_id = create_vault_with_members(1, 3);
-        assert_ok!(Vault::activate_vault(RuntimeOrigin::signed(1), vault_id));
-
-        assert_ok!(Vault::commit_share(
-            RuntimeOrigin::signed(1),
-            vault_id,
-            H256([2u8; 32])
-        ));
+        // Owner must have committed share to initiate recovery
+        let vault_id = create_active_vault_with_shares(1, &[1]);
 
         assert_ok!(Vault::initiate_recovery(RuntimeOrigin::signed(1), vault_id));
 
@@ -378,19 +371,7 @@ fn reveal_share_success() {
 #[test]
 fn recovery_completes_at_threshold() {
     new_test_ext().execute_with(|| {
-        let vault_id = create_vault_with_members(1, 3);
-        assert_ok!(Vault::activate_vault(RuntimeOrigin::signed(1), vault_id));
-
-        assert_ok!(Vault::commit_share(
-            RuntimeOrigin::signed(1),
-            vault_id,
-            H256([2u8; 32])
-        ));
-        assert_ok!(Vault::commit_share(
-            RuntimeOrigin::signed(2),
-            vault_id,
-            H256([3u8; 32])
-        ));
+        let vault_id = create_active_vault_with_shares(1, &[1, 2]);
 
         assert_ok!(Vault::initiate_recovery(RuntimeOrigin::signed(1), vault_id));
 
@@ -617,6 +598,20 @@ fn create_active_vault(owner: u64) -> VaultId {
     vault_id
 }
 
+/// Create active vault AND commit shares for specified accounts.
+/// Members are owner, owner+1, owner+2 (3 total).
+fn create_active_vault_with_shares(owner: u64, share_accounts: &[u64]) -> VaultId {
+    let vault_id = create_active_vault(owner);
+    for &acct in share_accounts {
+        assert_ok!(Vault::commit_share(
+            RuntimeOrigin::signed(acct),
+            vault_id,
+            H256([(acct as u8).wrapping_add(100); 32]),
+        ));
+    }
+    vault_id
+}
+
 // ===========================================================================
 // File registration tests
 // ===========================================================================
@@ -763,7 +758,7 @@ fn register_file_max_files_reached() {
 #[test]
 fn request_unlock_success() {
     new_test_ext().execute_with(|| {
-        let vault_id = create_active_vault(1);
+        let vault_id = create_active_vault_with_shares(1, &[1]);
         let enc_hash = H256([10u8; 32]);
 
         assert_ok!(Vault::register_file(
@@ -797,7 +792,7 @@ fn request_unlock_success() {
 #[test]
 fn request_unlock_file_not_found() {
     new_test_ext().execute_with(|| {
-        let vault_id = create_active_vault(1);
+        let vault_id = create_active_vault_with_shares(1, &[1]);
 
         assert_noop!(
             Vault::request_unlock(RuntimeOrigin::signed(1), vault_id, H256([99u8; 32]),),
@@ -809,7 +804,7 @@ fn request_unlock_file_not_found() {
 #[test]
 fn request_unlock_already_active() {
     new_test_ext().execute_with(|| {
-        let vault_id = create_active_vault(1);
+        let vault_id = create_active_vault_with_shares(1, &[1, 2]);
         let enc_hash = H256([10u8; 32]);
 
         assert_ok!(Vault::register_file(
@@ -841,7 +836,7 @@ fn request_unlock_already_active() {
 #[test]
 fn authorize_unlock_success() {
     new_test_ext().execute_with(|| {
-        let vault_id = create_active_vault(1);
+        let vault_id = create_active_vault_with_shares(1, &[1, 2]);
         let enc_hash = H256([10u8; 32]);
 
         assert_ok!(Vault::register_file(
@@ -864,10 +859,8 @@ fn authorize_unlock_success() {
         // Account 2 is a member (Participant added in helper)
         assert_ok!(Vault::authorize_unlock(RuntimeOrigin::signed(2), req_id,));
 
-        let request = Vault::unlock_requests(req_id).expect("request should exist");
-        // threshold=2, 2 approvals => completed
-        assert!(request.completed);
-        assert_eq!(request.approvals, 2);
+        // threshold=2, 2 approvals => completed and removed
+        assert!(Vault::unlock_requests(req_id).is_none());
 
         // Active unlock should be cleared
         assert_eq!(Vault::active_unlocks(vault_id, enc_hash), None);
@@ -877,7 +870,7 @@ fn authorize_unlock_success() {
 #[test]
 fn authorize_unlock_completes_at_threshold() {
     new_test_ext().execute_with(|| {
-        let vault_id = create_active_vault(1);
+        let vault_id = create_active_vault_with_shares(1, &[1, 2]);
         let enc_hash = H256([10u8; 32]);
 
         assert_ok!(Vault::register_file(
@@ -902,19 +895,17 @@ fn authorize_unlock_completes_at_threshold() {
         assert_eq!(request.approvals, 1);
         assert!(!request.completed);
 
-        // Second approval hits threshold (2)
+        // Second approval hits threshold (2) — request removed on completion
         assert_ok!(Vault::authorize_unlock(RuntimeOrigin::signed(2), req_id,));
 
-        let request = Vault::unlock_requests(req_id).expect("request should exist");
-        assert_eq!(request.approvals, 2);
-        assert!(request.completed);
+        assert!(Vault::unlock_requests(req_id).is_none());
     });
 }
 
 #[test]
 fn authorize_unlock_expired() {
     new_test_ext().execute_with(|| {
-        let vault_id = create_active_vault(1);
+        let vault_id = create_active_vault_with_shares(1, &[1, 2]);
         let enc_hash = H256([10u8; 32]);
 
         assert_ok!(Vault::register_file(
@@ -947,7 +938,7 @@ fn authorize_unlock_expired() {
 #[test]
 fn authorize_unlock_duplicate_rejected() {
     new_test_ext().execute_with(|| {
-        let vault_id = create_active_vault(1);
+        let vault_id = create_active_vault_with_shares(1, &[1]);
         let enc_hash = H256([10u8; 32]);
 
         assert_ok!(Vault::register_file(
@@ -978,7 +969,7 @@ fn authorize_unlock_duplicate_rejected() {
 #[test]
 fn authorize_unlock_not_member() {
     new_test_ext().execute_with(|| {
-        let vault_id = create_active_vault(1);
+        let vault_id = create_active_vault_with_shares(1, &[1]);
         let enc_hash = H256([10u8; 32]);
 
         assert_ok!(Vault::register_file(
@@ -1013,8 +1004,8 @@ fn authorize_unlock_not_member() {
 #[test]
 fn full_file_lifecycle() {
     new_test_ext().execute_with(|| {
-        // 1. Create active vault (owner=1, members=1,2,3)
-        let vault_id = create_active_vault(1);
+        // 1. Create active vault (owner=1, members=1,2,3) with shares committed
+        let vault_id = create_active_vault_with_shares(1, &[1, 2, 3]);
 
         // 2. Register a file
         let enc_hash = H256([10u8; 32]);
@@ -1039,11 +1030,9 @@ fn full_file_lifecycle() {
         assert_eq!(req.approvals, 1);
         assert!(!req.completed);
 
-        // 4. Second member authorizes => threshold met
+        // 4. Second member authorizes => threshold met, request removed
         assert_ok!(Vault::authorize_unlock(RuntimeOrigin::signed(3), req_id,));
-        let req = Vault::unlock_requests(req_id).expect("request");
-        assert!(req.completed);
-        assert_eq!(req.approvals, 2);
+        assert!(Vault::unlock_requests(req_id).is_none());
 
         // 5. Active unlock cleared
         assert!(Vault::active_unlocks(vault_id, enc_hash).is_none());
@@ -1062,7 +1051,7 @@ fn full_file_lifecycle() {
 #[test]
 fn events_emitted_for_file_operations() {
     new_test_ext().execute_with(|| {
-        let vault_id = create_active_vault(1);
+        let vault_id = create_active_vault_with_shares(1, &[1, 2]);
         let enc_hash = H256([10u8; 32]);
         let fp = H256([12u8; 32]);
         let actor1 = account_to_actor(1);
@@ -1125,7 +1114,7 @@ fn events_emitted_for_file_operations() {
 #[test]
 fn expired_unlock_cleaned_on_new_request() {
     new_test_ext().execute_with(|| {
-        let vault_id = create_active_vault(1);
+        let vault_id = create_active_vault_with_shares(1, &[1, 2]);
         let enc_hash = H256([10u8; 32]);
 
         assert_ok!(Vault::register_file(
@@ -1170,7 +1159,7 @@ fn expired_unlock_cleaned_on_new_request() {
 #[test]
 fn complete_unlock_cleans_approvals() {
     new_test_ext().execute_with(|| {
-        let vault_id = create_active_vault(1);
+        let vault_id = create_active_vault_with_shares(1, &[1, 2]);
         let enc_hash = H256([10u8; 32]);
 
         assert_ok!(Vault::register_file(
@@ -1207,7 +1196,7 @@ fn complete_unlock_cleans_approvals() {
 #[test]
 fn dissolve_vault_cleans_unlock_state() {
     new_test_ext().execute_with(|| {
-        let vault_id = create_active_vault(1);
+        let vault_id = create_active_vault_with_shares(1, &[1]);
         let enc_hash = H256([10u8; 32]);
 
         assert_ok!(Vault::register_file(
@@ -1240,9 +1229,83 @@ fn dissolve_vault_cleans_unlock_state() {
 }
 
 #[test]
+fn request_unlock_requires_committed_share() {
+    new_test_ext().execute_with(|| {
+        let vault_id = create_active_vault(1); // No shares committed
+        let enc_hash = H256([10u8; 32]);
+
+        assert_ok!(Vault::register_file(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            enc_hash,
+            H256([11u8; 32]),
+            H256([12u8; 32]),
+            100,
+        ));
+
+        // Account 1 has NOT committed a share => should fail
+        assert_noop!(
+            Vault::request_unlock(RuntimeOrigin::signed(1), vault_id, enc_hash),
+            Error::<Test>::InsufficientShares
+        );
+
+        // Commit share, then retry => should succeed
+        assert_ok!(Vault::commit_share(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            H256([50u8; 32]),
+        ));
+        assert_ok!(Vault::request_unlock(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            enc_hash,
+        ));
+    });
+}
+
+#[test]
+fn authorize_unlock_requires_committed_share() {
+    new_test_ext().execute_with(|| {
+        // Only account 1 commits share; account 2 does not
+        let vault_id = create_active_vault_with_shares(1, &[1]);
+        let enc_hash = H256([10u8; 32]);
+
+        assert_ok!(Vault::register_file(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            enc_hash,
+            H256([11u8; 32]),
+            H256([12u8; 32]),
+            100,
+        ));
+
+        assert_ok!(Vault::request_unlock(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            enc_hash,
+        ));
+        let req_id = UnlockRequestId::new(0);
+
+        // Account 2 has NOT committed share => should fail
+        assert_noop!(
+            Vault::authorize_unlock(RuntimeOrigin::signed(2), req_id),
+            Error::<Test>::InsufficientShares
+        );
+
+        // Commit share for account 2, then retry => should succeed
+        assert_ok!(Vault::commit_share(
+            RuntimeOrigin::signed(2),
+            vault_id,
+            H256([60u8; 32]),
+        ));
+        assert_ok!(Vault::authorize_unlock(RuntimeOrigin::signed(2), req_id));
+    });
+}
+
+#[test]
 fn authorize_unlock_rejects_locked_vault() {
     new_test_ext().execute_with(|| {
-        let vault_id = create_active_vault(1);
+        let vault_id = create_active_vault_with_shares(1, &[1, 2]);
         let enc_hash = H256([10u8; 32]);
 
         assert_ok!(Vault::register_file(
@@ -1270,5 +1333,284 @@ fn authorize_unlock_rejects_locked_vault() {
             Vault::authorize_unlock(RuntimeOrigin::signed(2), req_id),
             Error::<Test>::VaultNotActive
         );
+    });
+}
+
+// ===========================================================================
+// Hardening tests (C8) — audit findings
+// ===========================================================================
+
+#[test]
+fn initiate_recovery_requires_committed_share() {
+    new_test_ext().execute_with(|| {
+        // Owner has NOT committed share
+        let vault_id = create_active_vault(1);
+
+        assert_noop!(
+            Vault::initiate_recovery(RuntimeOrigin::signed(1), vault_id),
+            Error::<Test>::InsufficientShares
+        );
+
+        // Commit share, then retry => should succeed
+        assert_ok!(Vault::commit_share(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            H256([50u8; 32]),
+        ));
+        assert_ok!(Vault::initiate_recovery(
+            RuntimeOrigin::signed(1),
+            vault_id
+        ));
+    });
+}
+
+#[test]
+fn initiate_recovery_participant_rejected() {
+    new_test_ext().execute_with(|| {
+        // Account 3 is a Participant (added via create_vault_with_members)
+        let vault_id = create_active_vault_with_shares(1, &[1, 2, 3]);
+
+        // Participant (account 3) should be rejected even with committed share
+        assert_noop!(
+            Vault::initiate_recovery(RuntimeOrigin::signed(3), vault_id),
+            Error::<Test>::NotVaultOwner
+        );
+
+        // Owner (account 1) should succeed
+        assert_ok!(Vault::initiate_recovery(
+            RuntimeOrigin::signed(1),
+            vault_id
+        ));
+    });
+}
+
+#[test]
+fn add_member_cannot_assign_owner_role() {
+    new_test_ext().execute_with(|| {
+        let owner = account_to_actor(1);
+        let member = account_to_actor(2);
+
+        assert_ok!(Vault::create_vault(
+            RuntimeOrigin::signed(1),
+            owner,
+            2,
+            3,
+            H256([1u8; 32])
+        ));
+
+        let vault_id = VaultId::new(0);
+
+        // Cannot assign Owner role to additional members
+        assert_noop!(
+            Vault::add_member(
+                RuntimeOrigin::signed(1),
+                vault_id,
+                member,
+                MemberRole::Owner
+            ),
+            Error::<Test>::NotVaultOwner
+        );
+
+        // Guardian and Participant are fine
+        assert_ok!(Vault::add_member(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            member,
+            MemberRole::Guardian
+        ));
+    });
+}
+
+#[test]
+fn double_dissolve_rejected() {
+    new_test_ext().execute_with(|| {
+        let vault_id = create_active_vault(1);
+        assert_ok!(Vault::lock_vault(RuntimeOrigin::signed(1), vault_id));
+        assert_ok!(Vault::dissolve_vault(RuntimeOrigin::root(), vault_id));
+
+        // Second dissolve should fail (status is now Dissolved)
+        assert_noop!(
+            Vault::dissolve_vault(RuntimeOrigin::root(), vault_id),
+            Error::<Test>::CannotDissolvActiveVault
+        );
+    });
+}
+
+#[test]
+fn completed_unlock_request_removed() {
+    new_test_ext().execute_with(|| {
+        let vault_id = create_active_vault_with_shares(1, &[1, 2]);
+        let enc_hash = H256([10u8; 32]);
+
+        assert_ok!(Vault::register_file(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            enc_hash,
+            H256([11u8; 32]),
+            H256([12u8; 32]),
+            100,
+        ));
+
+        assert_ok!(Vault::request_unlock(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            enc_hash,
+        ));
+        let req_id = UnlockRequestId::new(0);
+        assert!(Vault::unlock_requests(req_id).is_some());
+
+        // Complete the unlock
+        assert_ok!(Vault::authorize_unlock(
+            RuntimeOrigin::signed(2),
+            req_id,
+        ));
+
+        // Request should be removed, not just marked completed
+        assert!(Vault::unlock_requests(req_id).is_none());
+        assert!(Vault::active_unlocks(vault_id, enc_hash).is_none());
+        assert!(Vault::unlock_approvals(req_id, account_to_actor(1)).is_none());
+    });
+}
+
+#[test]
+fn dissolve_recovering_vault_decrements_active_count() {
+    new_test_ext().execute_with(|| {
+        let vault_id = create_active_vault_with_shares(1, &[1]);
+        assert_eq!(Vault::get_total_active_vaults(), 1);
+
+        // Put vault into Recovering state
+        assert_ok!(Vault::initiate_recovery(
+            RuntimeOrigin::signed(1),
+            vault_id
+        ));
+        let vault = Vault::vaults(vault_id).expect("vault");
+        assert_eq!(vault.status, VaultStatus::Recovering);
+
+        // ActiveVaultCount should still be 1 (recovering is still "active")
+        assert_eq!(Vault::get_total_active_vaults(), 1);
+
+        // Dissolve from Recovering
+        assert_ok!(Vault::dissolve_vault(RuntimeOrigin::root(), vault_id));
+
+        // Active count should be decremented
+        assert_eq!(Vault::get_total_active_vaults(), 0);
+    });
+}
+
+#[test]
+fn threshold_equals_ring_size() {
+    new_test_ext().execute_with(|| {
+        // threshold = ring_size = 3, all members must approve
+        let owner = account_to_actor(1);
+
+        assert_ok!(Vault::create_vault(
+            RuntimeOrigin::signed(1),
+            owner,
+            3,
+            3,
+            H256([1u8; 32])
+        ));
+        let vault_id = VaultId::new(0);
+
+        assert_ok!(Vault::add_member(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            account_to_actor(2),
+            MemberRole::Guardian
+        ));
+        assert_ok!(Vault::add_member(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            account_to_actor(3),
+            MemberRole::Participant
+        ));
+        assert_ok!(Vault::activate_vault(RuntimeOrigin::signed(1), vault_id));
+
+        // All 3 commit shares
+        for acct in 1u64..=3 {
+            assert_ok!(Vault::commit_share(
+                RuntimeOrigin::signed(acct),
+                vault_id,
+                H256([(acct as u8).wrapping_add(100); 32]),
+            ));
+        }
+
+        let enc_hash = H256([10u8; 32]);
+        assert_ok!(Vault::register_file(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            enc_hash,
+            H256([11u8; 32]),
+            H256([12u8; 32]),
+            100,
+        ));
+
+        // Request unlock (auto-approves for requester = 1 approval)
+        assert_ok!(Vault::request_unlock(
+            RuntimeOrigin::signed(1),
+            vault_id,
+            enc_hash,
+        ));
+        let req_id = UnlockRequestId::new(0);
+
+        // 2nd approval — not enough yet (need 3)
+        assert_ok!(Vault::authorize_unlock(
+            RuntimeOrigin::signed(2),
+            req_id,
+        ));
+        let req = Vault::unlock_requests(req_id).expect("still pending");
+        assert_eq!(req.approvals, 2);
+        assert!(!req.completed);
+
+        // 3rd approval — threshold met, request removed
+        assert_ok!(Vault::authorize_unlock(
+            RuntimeOrigin::signed(3),
+            req_id,
+        ));
+        assert!(Vault::unlock_requests(req_id).is_none());
+    });
+}
+
+#[test]
+fn register_file_on_locked_vault_rejected() {
+    new_test_ext().execute_with(|| {
+        let vault_id = create_active_vault(1);
+        assert_ok!(Vault::lock_vault(RuntimeOrigin::signed(1), vault_id));
+
+        assert_noop!(
+            Vault::register_file(
+                RuntimeOrigin::signed(1),
+                vault_id,
+                H256([10u8; 32]),
+                H256([11u8; 32]),
+                H256([12u8; 32]),
+                100,
+            ),
+            Error::<Test>::VaultNotActive
+        );
+    });
+}
+
+#[test]
+fn recovery_expiration_cleanup() {
+    new_test_ext().execute_with(|| {
+        let vault_id = create_active_vault_with_shares(1, &[1, 2]);
+
+        // Start recovery
+        assert_ok!(Vault::initiate_recovery(
+            RuntimeOrigin::signed(1),
+            vault_id
+        ));
+        assert!(Vault::is_recovery_active(vault_id));
+
+        // Advance past recovery expiry (RecoveryPeriodBlocks = 100)
+        System::set_block_number(200);
+
+        // New recovery should clean up the expired one and succeed
+        assert_ok!(Vault::initiate_recovery(
+            RuntimeOrigin::signed(1),
+            vault_id
+        ));
+        assert!(Vault::is_recovery_active(vault_id));
     });
 }

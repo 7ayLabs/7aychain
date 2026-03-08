@@ -810,6 +810,7 @@ DOMAINS = [
                         Param("file_enc_hash", "Encrypted file hash",
                               "h256"),
                     ],
+                    mode="dev",
                     help_text="Request threshold-gated unlock",
                     normal_label="Request Document Access"),
             Command("v", "Authorize Unlock", "submit",

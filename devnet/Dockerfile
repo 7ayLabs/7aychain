@@ -34,8 +34,14 @@ COPY . .
 ENV CARGO_INCREMENTAL=0
 ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
 
-# Clean workspace crates so Cargo recompiles from real sources
-RUN cargo clean -p seveny-primitives -p seveny-runtime -p seveny-node --release 2>/dev/null || true
+# Clean all workspace crates so Cargo recompiles from real sources
+# (the pre-fetch layer stubs primitives, so pallets compile against dummies)
+RUN cargo clean -p seveny-primitives -p seveny-runtime -p seveny-node \
+    -p pallet-presence -p pallet-epoch -p pallet-validator -p pallet-dispute \
+    -p pallet-governance -p pallet-semantic -p pallet-boomerang \
+    -p pallet-autonomous -p pallet-octopus -p pallet-device -p pallet-vault \
+    -p pallet-zk -p pallet-storage -p pallet-lifecycle -p pallet-triangulation \
+    -p pallet-device-scanner --release 2>/dev/null || true
 
 RUN cargo build --release --package seveny-node
 

@@ -177,6 +177,40 @@ class LaudCLI:
             'This action is not available right now.',
         'UnauthorizedDeclaration':
             'Not authorized to perform this action.',
+        'InsufficientShares':
+            'You must commit your key share before requesting access.',
+        'NotVaultMember':
+            'You are not a member of this safe.',
+        'NotVaultOwner':
+            'Only the safe owner can do this.',
+        'VaultNotFound':
+            'Safe not found.',
+        'VaultNotActive':
+            'This safe is not active right now.',
+        'VaultAlreadyActive':
+            'This safe is already active.',
+        'ShareAlreadyCommitted':
+            'Your share is already committed.',
+        'FileAlreadyRegistered':
+            'This document is already registered.',
+        'FileNotFound':
+            'Document not found on-chain.',
+        'UnlockAlreadyActive':
+            'An access request is already pending for this document.',
+        'AlreadyApproved':
+            'You already approved this request.',
+        'UnlockExpired':
+            'This access request has expired. Submit a new one.',
+        'MaxFilesReached':
+            'Maximum documents reached for this safe.',
+        'UnlockNotFound':
+            'Access request not found.',
+        'UnlockAlreadyCompleted':
+            'This access request was already completed.',
+        'MemberAlreadyExists':
+            'This person is already a member.',
+        'MaxVaultsReached':
+            'Maximum safes reached for this account.',
     }
 
     # Friendly breadcrumb names for navigation stack
@@ -2074,7 +2108,9 @@ class LaudCLI:
             'ferdie':  {"x": -25000, "y": -43301, "z": 0},
         }
         # Steps: schedule + start + quorum + N*(register + activate + position)
-        total = 3 + len(positions) * 3
+        # + N*(claim) + N*3*(attest) + N*(verify)  [PBT flow]
+        n = len(positions)
+        total = 3 + n * 3 + n + n * 3 + n
         step = 0
 
         # Step 1: Get current block for scheduling
@@ -2162,8 +2198,49 @@ class LaudCLI:
                          sudo=True, _skip_confirm=True)
 
         if not failed:
-            self._ok("Bootstrap complete — 6 validators in hexagonal"
-                     " formation")
+            self._ok("Validators registered — setting up positions")
+
+            # PBT: Create verified position claims for all validators
+            names = list(positions.keys())
+            for name in names:
+                step += 1
+                self._progress(step, total,
+                               f"Position claim {C.W}{name}{C.R}")
+                aid = self._actor_id(name)
+                self._submit("Presence", "claim_position",
+                             {"epoch": 1,
+                              "position": positions[name]},
+                             name, _skip_confirm=True)
+
+            # Cross-attest: each validator attested by 3 others
+            for i, name in enumerate(names):
+                aid = self._actor_id(name)
+                witnesses = [n for n in names if n != name][:3]
+                for w in witnesses:
+                    step += 1
+                    self._progress(step, total,
+                                   f"{C.W}{w}{C.R} attests "
+                                   f"{C.W}{name}{C.R}")
+                    self._submit(
+                        "Presence", "submit_witness_attestation",
+                        {"target": aid, "epoch": 1,
+                         "latency_ms": 10,
+                         "direct_connection": True},
+                        w, _skip_confirm=True)
+
+            # Verify all positions
+            for i, name in enumerate(names):
+                step += 1
+                self._progress(step, total,
+                               f"Verify {C.W}{name}{C.R}")
+                aid = self._actor_id(name)
+                verifier = [n for n in names if n != name][0]
+                self._submit("Presence", "verify_position",
+                             {"target": aid, "epoch": 1},
+                             verifier, _skip_confirm=True)
+
+            self._ok("Bootstrap complete — 6 validators with "
+                     "verified positions")
 
     def _auto_pbt_test(self):
         if not self._ensure():
@@ -3593,7 +3670,7 @@ class LaudCLI:
             return
 
         self._info("Storing proof in Storage pallet...")
-        self._submit("Storage", "store_data", {
+        storage_receipt = self._submit("Storage", "store_data", {
             "epoch": epoch,
             "key": f"0x{enc_hash}",
             "data_hash": f"0x{enc_hash}",
@@ -3601,6 +3678,8 @@ class LaudCLI:
             "size_bytes": sz,
             "retention": "Persistent",
         }, signer)
+        if not (storage_receipt and storage_receipt.is_success):
+            self._info("Storage proof skipped (no active session)")
 
         # Commit only the signer's own share (one commit per member)
         self._info("Committing signer's share hash on-chain...")
@@ -3611,23 +3690,23 @@ class LaudCLI:
             "commitment": f"0x{commitment.hex()}",
         }, signer)
 
-        # Presence binding — optionally bind file to current location
+        # Presence binding — only prompt if a verified position exists
         bound_pos = None
         pos_tolerance = None
-        bind_choice = self._prompt(
-            "Bind to current location? (y/n)", "n")
-        if bind_choice.lower() == 'y':
-            bound_pos, pos_tolerance = self._get_verified_position(
-                epoch, signer)
-            if bound_pos:
+        bound_pos, pos_tolerance = self._get_verified_position(
+            epoch, signer)
+        if bound_pos:
+            bind_choice = self._prompt(
+                f"Bind to location ({bound_pos['x']}, "
+                f"{bound_pos['y']}, {bound_pos['z']})? (y/n)", "y")
+            if bind_choice.lower() != 'y':
+                bound_pos = None
+                pos_tolerance = None
+            else:
                 self._ok(
                     f"Bound to position "
                     f"({bound_pos['x']}, {bound_pos['y']}, "
                     f"{bound_pos['z']})")
-            else:
-                self._info(
-                    "No verified position — file saved without "
-                    "location binding")
 
         # Update local index
         add_to_index(
@@ -3771,6 +3850,22 @@ class LaudCLI:
                                 "Approve as"
                                 + (f" ({', '.join(member_names)})"
                                    if member_names else ""))
+                            # Pre-validate membership + share
+                            a_actor = self._actor_id(signer)
+                            a_chk = self._safe_query(
+                                "Vault", "VaultMembers",
+                                [vault_id, a_actor])
+                            if not a_chk or not a_chk.value:
+                                self._err(
+                                    f"{signer} is not a member "
+                                    "of this safe")
+                                return
+                            if not a_chk.value.get(
+                                    'share_committed', False):
+                                self._err(
+                                    f"{signer} hasn't committed "
+                                    "their key share yet.")
+                                return
                             self._submit(
                                 "Vault", "authorize_unlock",
                                 {"request_id": req_id}, signer)
@@ -3786,6 +3881,22 @@ class LaudCLI:
                 "Signer"
                 + (f" ({', '.join(member_names)})"
                    if member_names else ""))
+
+            # Pre-validate membership and share commitment
+            signer_actor = self._actor_id(signer)
+            m_check = self._safe_query(
+                "Vault", "VaultMembers",
+                [vault_id, signer_actor])
+            if not m_check or not m_check.value:
+                self._err(f"{signer} is not a member of this safe")
+                return
+            if not m_check.value.get('share_committed', False):
+                self._err(
+                    f"{signer} hasn't committed their key share yet. "
+                    "Ask a member who has committed to request "
+                    "access.")
+                return
+
             self._info(
                 "Requesting unlock on-chain "
                 "(Vault.request_unlock)...")
@@ -4616,6 +4727,20 @@ class LaudCLI:
 
         p = pending[idx]
         signer = self._prompt_account("Approve as")
+
+        # Pre-validate membership and share commitment
+        a_actor = self._actor_id(signer)
+        a_chk = self._safe_query(
+            "Vault", "VaultMembers",
+            [p['vault_id'], a_actor])
+        if not a_chk or not a_chk.value:
+            self._err(f"{signer} is not a member of this safe")
+            return
+        if not a_chk.value.get('share_committed', False):
+            self._err(
+                f"{signer} hasn't committed their key share yet.")
+            return
+
         self._info(
             f"Authorizing unlock for request #{p['req_id']} "
             f"on vault #{p['vault_id']}...")
@@ -4731,6 +4856,21 @@ class LaudCLI:
                 except ValueError:
                     return
                 signer = self._prompt_account("Approve as")
+                # Pre-validate membership and share commitment
+                a_actor = self._actor_id(signer)
+                a_chk = self._safe_query(
+                    "Vault", "VaultMembers",
+                    [vault_id, a_actor])
+                if not a_chk or not a_chk.value:
+                    self._err(
+                        f"{signer} is not a member of this safe")
+                    return
+                if not a_chk.value.get(
+                        'share_committed', False):
+                    self._err(
+                        f"{signer} hasn't committed their "
+                        "key share yet.")
+                    return
                 receipt = self._submit("Vault", "authorize_unlock", {
                     "request_id": req_id,
                 }, signer)
