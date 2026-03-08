@@ -1150,8 +1150,7 @@ fn expired_unlock_cleaned_on_new_request() {
 
         // New request exists
         let new_req_id = UnlockRequestId::new(1);
-        let new_req = Vault::unlock_requests(new_req_id)
-            .expect("new request should exist");
+        let new_req = Vault::unlock_requests(new_req_id).expect("new request should exist");
         assert_eq!(new_req.requester, account_to_actor(2));
     });
 }
@@ -1182,10 +1181,7 @@ fn complete_unlock_cleans_approvals() {
         assert!(Vault::unlock_approvals(req_id, account_to_actor(1)).is_some());
 
         // Second approval triggers completion
-        assert_ok!(Vault::authorize_unlock(
-            RuntimeOrigin::signed(2),
-            req_id,
-        ));
+        assert_ok!(Vault::authorize_unlock(RuntimeOrigin::signed(2), req_id,));
 
         // Approvals should be cleaned after completion
         assert!(Vault::unlock_approvals(req_id, account_to_actor(1)).is_none());
@@ -1357,10 +1353,7 @@ fn initiate_recovery_requires_committed_share() {
             vault_id,
             H256([50u8; 32]),
         ));
-        assert_ok!(Vault::initiate_recovery(
-            RuntimeOrigin::signed(1),
-            vault_id
-        ));
+        assert_ok!(Vault::initiate_recovery(RuntimeOrigin::signed(1), vault_id));
     });
 }
 
@@ -1377,10 +1370,7 @@ fn initiate_recovery_participant_rejected() {
         );
 
         // Owner (account 1) should succeed
-        assert_ok!(Vault::initiate_recovery(
-            RuntimeOrigin::signed(1),
-            vault_id
-        ));
+        assert_ok!(Vault::initiate_recovery(RuntimeOrigin::signed(1), vault_id));
     });
 }
 
@@ -1460,10 +1450,7 @@ fn completed_unlock_request_removed() {
         assert!(Vault::unlock_requests(req_id).is_some());
 
         // Complete the unlock
-        assert_ok!(Vault::authorize_unlock(
-            RuntimeOrigin::signed(2),
-            req_id,
-        ));
+        assert_ok!(Vault::authorize_unlock(RuntimeOrigin::signed(2), req_id,));
 
         // Request should be removed, not just marked completed
         assert!(Vault::unlock_requests(req_id).is_none());
@@ -1479,10 +1466,7 @@ fn dissolve_recovering_vault_decrements_active_count() {
         assert_eq!(Vault::get_total_active_vaults(), 1);
 
         // Put vault into Recovering state
-        assert_ok!(Vault::initiate_recovery(
-            RuntimeOrigin::signed(1),
-            vault_id
-        ));
+        assert_ok!(Vault::initiate_recovery(RuntimeOrigin::signed(1), vault_id));
         let vault = Vault::vaults(vault_id).expect("vault");
         assert_eq!(vault.status, VaultStatus::Recovering);
 
@@ -1554,19 +1538,13 @@ fn threshold_equals_ring_size() {
         let req_id = UnlockRequestId::new(0);
 
         // 2nd approval — not enough yet (need 3)
-        assert_ok!(Vault::authorize_unlock(
-            RuntimeOrigin::signed(2),
-            req_id,
-        ));
+        assert_ok!(Vault::authorize_unlock(RuntimeOrigin::signed(2), req_id,));
         let req = Vault::unlock_requests(req_id).expect("still pending");
         assert_eq!(req.approvals, 2);
         assert!(!req.completed);
 
         // 3rd approval — threshold met, request removed
-        assert_ok!(Vault::authorize_unlock(
-            RuntimeOrigin::signed(3),
-            req_id,
-        ));
+        assert_ok!(Vault::authorize_unlock(RuntimeOrigin::signed(3), req_id,));
         assert!(Vault::unlock_requests(req_id).is_none());
     });
 }
@@ -1597,20 +1575,14 @@ fn recovery_expiration_cleanup() {
         let vault_id = create_active_vault_with_shares(1, &[1, 2]);
 
         // Start recovery
-        assert_ok!(Vault::initiate_recovery(
-            RuntimeOrigin::signed(1),
-            vault_id
-        ));
+        assert_ok!(Vault::initiate_recovery(RuntimeOrigin::signed(1), vault_id));
         assert!(Vault::is_recovery_active(vault_id));
 
         // Advance past recovery expiry (RecoveryPeriodBlocks = 100)
         System::set_block_number(200);
 
         // New recovery should clean up the expired one and succeed
-        assert_ok!(Vault::initiate_recovery(
-            RuntimeOrigin::signed(1),
-            vault_id
-        ));
+        assert_ok!(Vault::initiate_recovery(RuntimeOrigin::signed(1), vault_id));
         assert!(Vault::is_recovery_active(vault_id));
     });
 }

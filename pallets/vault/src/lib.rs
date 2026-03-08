@@ -756,14 +756,13 @@ pub mod pallet {
                 vault.status == VaultStatus::Active,
                 Error::<T>::VaultNotActive
             );
-            let member = VaultMembers::<T>::get(vault_id, actor)
-                .ok_or(Error::<T>::NotVaultMember)?;
+            let member =
+                VaultMembers::<T>::get(vault_id, actor).ok_or(Error::<T>::NotVaultMember)?;
 
             // Only Owner or Guardian with a committed share may
             // initiate recovery — prevents griefing by Participants.
             ensure!(
-                member.role == MemberRole::Owner
-                    || member.role == MemberRole::Guardian,
+                member.role == MemberRole::Owner || member.role == MemberRole::Guardian,
                 Error::<T>::NotVaultOwner
             );
             ensure!(member.share_committed, Error::<T>::InsufficientShares);
@@ -886,9 +885,7 @@ pub mod pallet {
                 ensure!(
                     matches!(
                         v.status,
-                        VaultStatus::Creating
-                            | VaultStatus::Locked
-                            | VaultStatus::Recovering
+                        VaultStatus::Creating | VaultStatus::Locked | VaultStatus::Recovering
                     ),
                     Error::<T>::CannotDissolvActiveVault
                 );
@@ -896,9 +893,7 @@ pub mod pallet {
                 // Decrement ActiveVaultCount when dissolving from
                 // Recovering (was incremented at activation).
                 if v.status == VaultStatus::Recovering {
-                    ActiveVaultCount::<T>::mutate(|c| {
-                        *c = c.saturating_sub(1)
-                    });
+                    ActiveVaultCount::<T>::mutate(|c| *c = c.saturating_sub(1));
                 }
 
                 v.status = VaultStatus::Dissolved;
@@ -922,15 +917,9 @@ pub mod pallet {
                 VaultFileCount::<T>::remove(vault_id);
 
                 // Clean up unlock state
-                for (_enc_hash, request_id) in
-                    ActiveUnlocks::<T>::drain_prefix(vault_id)
-                {
+                for (_enc_hash, request_id) in ActiveUnlocks::<T>::drain_prefix(vault_id) {
                     UnlockRequests::<T>::remove(request_id);
-                    let _ = UnlockApprovals::<T>::clear_prefix(
-                        request_id,
-                        u32::MAX,
-                        None,
-                    );
+                    let _ = UnlockApprovals::<T>::clear_prefix(request_id, u32::MAX, None);
                 }
 
                 // Clean up recovery requests
@@ -1035,8 +1024,8 @@ pub mod pallet {
             );
 
             let actor = Self::account_to_actor(who);
-            let member = VaultMembers::<T>::get(vault_id, actor)
-                .ok_or(Error::<T>::NotVaultMember)?;
+            let member =
+                VaultMembers::<T>::get(vault_id, actor).ok_or(Error::<T>::NotVaultMember)?;
 
             // Requester must have committed their share (INV69)
             ensure!(member.share_committed, Error::<T>::InsufficientShares);
@@ -1048,20 +1037,12 @@ pub mod pallet {
 
             // Clean expired unlock before checking for active
             let block_number = frame_system::Pallet::<T>::block_number();
-            if let Some(existing_id) =
-                ActiveUnlocks::<T>::get(vault_id, file_enc_hash)
-            {
+            if let Some(existing_id) = ActiveUnlocks::<T>::get(vault_id, file_enc_hash) {
                 if let Some(existing_req) = UnlockRequests::<T>::get(existing_id) {
-                    if block_number > existing_req.expires_at
-                        && !existing_req.completed
-                    {
+                    if block_number > existing_req.expires_at && !existing_req.completed {
                         ActiveUnlocks::<T>::remove(vault_id, file_enc_hash);
                         UnlockRequests::<T>::remove(existing_id);
-                        let _ = UnlockApprovals::<T>::clear_prefix(
-                            existing_id,
-                            u32::MAX,
-                            None,
-                        );
+                        let _ = UnlockApprovals::<T>::clear_prefix(existing_id, u32::MAX, None);
                     }
                 }
             }
@@ -1135,8 +1116,8 @@ pub mod pallet {
             );
 
             let actor = Self::account_to_actor(who);
-            let member = VaultMembers::<T>::get(vault_id, actor)
-                .ok_or(Error::<T>::NotVaultMember)?;
+            let member =
+                VaultMembers::<T>::get(vault_id, actor).ok_or(Error::<T>::NotVaultMember)?;
 
             // Approver must have committed their share (INV69)
             ensure!(member.share_committed, Error::<T>::InsufficientShares);
@@ -1207,11 +1188,7 @@ pub mod pallet {
             // to prevent state accumulation (MEDIUM-1).
             UnlockRequests::<T>::remove(request_id);
             ActiveUnlocks::<T>::remove(vault_id, file_enc_hash);
-            let _ = UnlockApprovals::<T>::clear_prefix(
-                request_id,
-                u32::MAX,
-                None,
-            );
+            let _ = UnlockApprovals::<T>::clear_prefix(request_id, u32::MAX, None);
             Self::deposit_event(Event::FileUnlockCompleted {
                 vault_id,
                 request_id,

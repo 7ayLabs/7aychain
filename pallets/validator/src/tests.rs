@@ -972,10 +972,7 @@ fn stake_ratio_enforced_at_3_plus_validators() {
 
         // Fourth with huge stake: 100000 / 103000 = 97% > 33%
         assert_noop!(
-            Validator::register_validator(
-                RuntimeOrigin::signed(4),
-                100000
-            ),
+            Validator::register_validator(RuntimeOrigin::signed(4), 100000),
             Error::<Test>::StakeTooHigh
         );
     });
