@@ -11,6 +11,7 @@ use frame_support::{
 pub trait WeightInfo {
     fn register_validator() -> Weight;
     fn activate_validator() -> Weight;
+    fn force_activate_validator() -> Weight;
     fn deactivate_validator() -> Weight;
     fn withdraw_stake() -> Weight;
     fn increase_stake() -> Weight;
@@ -29,6 +30,12 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
     }
 
     fn activate_validator() -> Weight {
+        Weight::from_parts(30_000_000, 0)
+            .saturating_add(T::DbWeight::get().reads(2))
+            .saturating_add(T::DbWeight::get().writes(2))
+    }
+
+    fn force_activate_validator() -> Weight {
         Weight::from_parts(30_000_000, 0)
             .saturating_add(T::DbWeight::get().reads(2))
             .saturating_add(T::DbWeight::get().writes(2))
@@ -79,6 +86,12 @@ impl WeightInfo for () {
     }
 
     fn activate_validator() -> Weight {
+        Weight::from_parts(30_000_000, 0)
+            .saturating_add(RocksDbWeight::get().reads(2))
+            .saturating_add(RocksDbWeight::get().writes(2))
+    }
+
+    fn force_activate_validator() -> Weight {
         Weight::from_parts(30_000_000, 0)
             .saturating_add(RocksDbWeight::get().reads(2))
             .saturating_add(RocksDbWeight::get().writes(2))

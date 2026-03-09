@@ -32,9 +32,11 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
     }
 
     fn add_member() -> Weight {
+        // Reads: Vaults, VaultMembers(exists_check), VaultCountPerActor
+        // Writes: Vaults, VaultMembers, ActorVaults, VaultCountPerActor
         Weight::from_parts(30_000_000, 0)
-            .saturating_add(T::DbWeight::get().reads(2))
-            .saturating_add(T::DbWeight::get().writes(3))
+            .saturating_add(T::DbWeight::get().reads(3))
+            .saturating_add(T::DbWeight::get().writes(4))
     }
 
     fn activate_vault() -> Weight {
@@ -50,8 +52,10 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
     }
 
     fn initiate_recovery() -> Weight {
+        // Reads: Vaults, RecoveryRequests, VaultMembers
+        // Writes: RecoveryRequests, Vaults
         Weight::from_parts(30_000_000, 0)
-            .saturating_add(T::DbWeight::get().reads(2))
+            .saturating_add(T::DbWeight::get().reads(3))
             .saturating_add(T::DbWeight::get().writes(2))
     }
 
@@ -62,15 +66,18 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
     }
 
     fn lock_vault() -> Weight {
+        // Reads: Vaults, ActiveVaultCount
+        // Writes: Vaults, ActiveVaultCount
         Weight::from_parts(25_000_000, 0)
-            .saturating_add(T::DbWeight::get().reads(1))
-            .saturating_add(T::DbWeight::get().writes(1))
+            .saturating_add(T::DbWeight::get().reads(2))
+            .saturating_add(T::DbWeight::get().writes(2))
     }
 
     fn dissolve_vault() -> Weight {
-        Weight::from_parts(25_000_000, 0)
-            .saturating_add(T::DbWeight::get().reads(1))
-            .saturating_add(T::DbWeight::get().writes(2))
+        // Drains members, shares, files, unlocks, approvals, recovery
+        Weight::from_parts(100_000_000, 0)
+            .saturating_add(T::DbWeight::get().reads(10))
+            .saturating_add(T::DbWeight::get().writes(30))
     }
 
     fn register_file() -> Weight {
@@ -80,15 +87,18 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
     }
 
     fn request_unlock() -> Weight {
-        Weight::from_parts(35_000_000, 0)
-            .saturating_add(T::DbWeight::get().reads(3))
-            .saturating_add(T::DbWeight::get().writes(4))
+        // May clean expired request: +2 reads, +3 writes
+        Weight::from_parts(45_000_000, 0)
+            .saturating_add(T::DbWeight::get().reads(5))
+            .saturating_add(T::DbWeight::get().writes(7))
     }
 
     fn authorize_unlock() -> Weight {
+        // Reads: UnlockRequests, Vaults, VaultMembers, UnlockApprovals
+        // Writes: UnlockApprovals, UnlockRequests, (complete: +3)
         Weight::from_parts(35_000_000, 0)
-            .saturating_add(T::DbWeight::get().reads(3))
-            .saturating_add(T::DbWeight::get().writes(3))
+            .saturating_add(T::DbWeight::get().reads(4))
+            .saturating_add(T::DbWeight::get().writes(5))
     }
 }
 
@@ -101,8 +111,8 @@ impl WeightInfo for () {
 
     fn add_member() -> Weight {
         Weight::from_parts(30_000_000, 0)
-            .saturating_add(RocksDbWeight::get().reads(2))
-            .saturating_add(RocksDbWeight::get().writes(3))
+            .saturating_add(RocksDbWeight::get().reads(3))
+            .saturating_add(RocksDbWeight::get().writes(4))
     }
 
     fn activate_vault() -> Weight {
@@ -119,7 +129,7 @@ impl WeightInfo for () {
 
     fn initiate_recovery() -> Weight {
         Weight::from_parts(30_000_000, 0)
-            .saturating_add(RocksDbWeight::get().reads(2))
+            .saturating_add(RocksDbWeight::get().reads(3))
             .saturating_add(RocksDbWeight::get().writes(2))
     }
 
@@ -131,14 +141,14 @@ impl WeightInfo for () {
 
     fn lock_vault() -> Weight {
         Weight::from_parts(25_000_000, 0)
-            .saturating_add(RocksDbWeight::get().reads(1))
-            .saturating_add(RocksDbWeight::get().writes(1))
+            .saturating_add(RocksDbWeight::get().reads(2))
+            .saturating_add(RocksDbWeight::get().writes(2))
     }
 
     fn dissolve_vault() -> Weight {
-        Weight::from_parts(25_000_000, 0)
-            .saturating_add(RocksDbWeight::get().reads(1))
-            .saturating_add(RocksDbWeight::get().writes(2))
+        Weight::from_parts(100_000_000, 0)
+            .saturating_add(RocksDbWeight::get().reads(10))
+            .saturating_add(RocksDbWeight::get().writes(30))
     }
 
     fn register_file() -> Weight {
@@ -148,14 +158,14 @@ impl WeightInfo for () {
     }
 
     fn request_unlock() -> Weight {
-        Weight::from_parts(35_000_000, 0)
-            .saturating_add(RocksDbWeight::get().reads(3))
-            .saturating_add(RocksDbWeight::get().writes(4))
+        Weight::from_parts(45_000_000, 0)
+            .saturating_add(RocksDbWeight::get().reads(5))
+            .saturating_add(RocksDbWeight::get().writes(7))
     }
 
     fn authorize_unlock() -> Weight {
         Weight::from_parts(35_000_000, 0)
-            .saturating_add(RocksDbWeight::get().reads(3))
-            .saturating_add(RocksDbWeight::get().writes(3))
+            .saturating_add(RocksDbWeight::get().reads(4))
+            .saturating_add(RocksDbWeight::get().writes(5))
     }
 }

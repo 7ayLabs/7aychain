@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-LAUD NETWORKS - PoP Protocol Testing Suite
-Interactive CLI for testing all 7aychain features.
+LAUD NETWORKS 7ayLabs - Proof of Presence Protocol
+Interactive CLI for the 7aychain network.
 
 Usage:
     python3 laud-cli.py [--url ws://host:port]
@@ -10,7 +10,7 @@ Requirements:
     pip install substrate-interface
 """
 
-import sys, os, time, json, hashlib, secrets, argparse, pathlib, re
+import sys, os, time, json, hashlib, secrets, argparse, pathlib, re, shutil
 from datetime import datetime
 
 _ANSI_RE = re.compile(r'\033\[[0-9;]*m')
@@ -38,6 +38,7 @@ from laud_files import (
     add_to_index, get_vault_files, verify_file as verify_vault_file,
     store_share, load_share, load_all_shares,
     export_share_hex, import_share_hex, secure_zero,
+    anonymize_existing_index, migrate_shares_to_per_file,
 )
 from laud_crypto import (
     ShamirScheme, key_fingerprint, generate_fek,
@@ -45,27 +46,195 @@ from laud_crypto import (
 )
 
 
+def _term_width():
+    try:
+        return shutil.get_terminal_size((80, 24)).columns
+    except Exception:
+        return 80
+
+
 class C:
-    B   = "\033[94m"
-    BB  = "\033[1;94m"
-    G   = "\033[92m"
-    Y   = "\033[93m"
-    RED = "\033[91m"
-    CY  = "\033[96m"
-    W   = "\033[1;97m"
-    DIM = "\033[2m"
-    R   = "\033[0m"
+    R     = "\033[0m"
+    B     = "\033[1m"
+    DIM   = "\033[2m"
+    IT    = "\033[3m"
+    UL    = "\033[4m"
+    WHITE = "\033[97m"
+    GRAY  = "\033[90m"
+    CYAN  = "\033[96m"
+    GREEN = "\033[92m"
+    AMBER = "\033[93m"
+    RED   = "\033[91m"
+    BLUE  = "\033[94m"
+    BW    = "\033[1;97m"
+    BC    = "\033[1;96m"
+    BG    = "\033[1;92m"
+    BA    = "\033[1;93m"
+    BR    = "\033[1;91m"
+    # Backward-compatible aliases
+    BB = BC; G = GREEN; Y = AMBER; CY = CYAN; W = BW
 
 
 class LaudCLI:
 
     MODE_CONFIG_FILE = os.path.expanduser('~/.laud_config.json')
 
+    # Map technical terms to human-friendly labels
+    FRIENDLY_TERMS = {
+        'epoch': 'session', 'Epoch': 'Session',
+        'presence': 'check-in', 'Presence': 'Check-In',
+        'validator': 'verifier', 'Validator': 'Verifier',
+        'actor': 'participant', 'Actor': 'Participant',
+        'declare_presence': 'check in',
+        'vote_presence': 'approve presence',
+        'finalize_presence': 'confirm check-in',
+        'quorum': 'enough votes',
+        'slash': 'penalty',
+    }
+
+    # Friendly action labels for _submit output
+    ACTION_LABELS = {
+        'declare_presence': 'Checking in',
+        'declare_presence_with_commitment': 'Checking in (private)',
+        'reveal_commitment': 'Revealing check-in',
+        'vote_presence': 'Approving presence',
+        'finalize_presence': 'Confirming check-in',
+        'register_validator': 'Registering verifier',
+        'force_activate_validator': 'Activating verifier',
+        'activate_validator': 'Activating verifier',
+        'deactivate_validator': 'Deactivating verifier',
+        'schedule_epoch': 'Scheduling session',
+        'start_epoch': 'Starting session',
+        'close_epoch': 'Closing session',
+        'set_quorum_config': 'Setting approval threshold',
+        'set_validator_position': 'Setting position',
+        'create_vault': 'Creating document safe',
+        'register_device': 'Registering device',
+    }
+
+    # Normal-mode error messages (user-friendly)
+    NORMAL_ERRORS = {
+        'EpochNotActive':
+            'No session is running right now.',
+        'EpochNotFound':
+            'That session does not exist.',
+        'EpochAlreadyActive':
+            'A session is already running.',
+        'DuplicatePresence':
+            'You already checked in for this session. '
+            'You can check in again when a new session starts.',
+        'AlreadyDeclared':
+            'You already checked in for this session.',
+        'DuplicateVote':
+            'You already approved this person for this session.',
+        'DuplicateAttestation':
+            'You already confirmed this person.',
+        'PresenceImmutable':
+            'This check-in is finalized and cannot be changed.',
+        'PresenceNotFound':
+            'This person has not checked in for this session.',
+        'QuorumNotReached':
+            'Not enough approvals yet. More verifiers need to vote.',
+        'SelfAttestation':
+            'You cannot approve yourself. Ask someone else.',
+        'InsufficientAttestations':
+            'Need more confirmations from nearby verifiers.',
+        'InsufficientWitnesses':
+            'Need at least 3 witness confirmations.',
+        'PositionAlreadyClaimed':
+            'Position already set for this session.',
+        'ValidatorNotActive':
+            'This verifier is not active.',
+        'NotAValidator':
+            'This account is not a verifier.',
+        'NotAnActiveValidator':
+            'This verifier is not active.',
+        'AlreadyActive':
+            'Already active.',
+        'AlreadyRegistered':
+            'This account is already registered.',
+        'StakeTooHigh':
+            'Too much stake. Maximum for one verifier is 33% of total.',
+        'StakeTooLow':
+            'Not enough stake to register.',
+        'BondingPeriod':
+            'The waiting period has not finished yet.',
+        'BondingPeriodNotElapsed':
+            'The waiting period has not finished yet.',
+        'ValidatorNotFound':
+            'No verifier found for this account.',
+        'VaultLocked':
+            'This safe is locked right now.',
+        'InvalidRingSize':
+            'A safe needs between 3 and 10 members.',
+        'ThresholdTooLow':
+            'Need at least 2 keyholders.',
+        'BadOrigin':
+            'You do not have permission for this action.',
+        'InsufficientBalance':
+            'Not enough funds.',
+        'CallFiltered':
+            'This action is not available right now.',
+        'UnauthorizedDeclaration':
+            'Not authorized to perform this action.',
+        'InsufficientShares':
+            'You must commit your key share before requesting access.',
+        'NotVaultMember':
+            'You are not a member of this safe.',
+        'NotVaultOwner':
+            'Only the safe owner can do this.',
+        'VaultNotFound':
+            'Safe not found.',
+        'VaultNotActive':
+            'This safe is not active right now.',
+        'VaultAlreadyActive':
+            'This safe is already active.',
+        'ShareAlreadyCommitted':
+            'Your share is already committed.',
+        'FileAlreadyRegistered':
+            'This document is already registered.',
+        'FileNotFound':
+            'Document not found on-chain.',
+        'UnlockAlreadyActive':
+            'An access request is already pending for this document.',
+        'AlreadyApproved':
+            'You already approved this request.',
+        'UnlockExpired':
+            'This access request has expired. Submit a new one.',
+        'MaxFilesReached':
+            'Maximum documents reached for this safe.',
+        'UnlockNotFound':
+            'Access request not found.',
+        'UnlockAlreadyCompleted':
+            'This access request was already completed.',
+        'MemberAlreadyExists':
+            'This person is already a member.',
+        'MaxVaultsReached':
+            'Maximum safes reached for this account.',
+    }
+
+    # Friendly breadcrumb names for navigation stack
+    NAV_LABELS = {
+        'presence': 'Check-In',
+        'epoch': 'Sessions',
+        'validator': 'Verifiers',
+        'dispute': 'Challenges',
+        'vault': 'Document Safe',
+        'device': 'Devices',
+        'semantic': 'Trust',
+        'governance': 'Permissions',
+        'pbt': 'Location',
+        'dashboard': 'Dashboard',
+        'chain': 'Network',
+        'accounts': 'Accounts',
+    }
+
     def __init__(self, url="ws://127.0.0.1:9944", mode=None):
         self.url = url
         self.substrate = None
         self.keypairs = {}
         self.connected = False
+        self._last_known_epoch = 0
         self._ctx_epoch = None
         self._ctx_account = 'alice'
         self._nav_stack = []
@@ -115,7 +284,7 @@ class LaudCLI:
         url = url or self.url
         if not SUBSTRATE_OK:
             self._err("substrate-interface not installed")
-            print(f"  Run: {C.Y}pip install substrate-interface{C.R}")
+            print(f"    {C.AMBER}pip install substrate-interface{C.R}")
             return False
         try:
             self._info(f"Connecting to {url}...")
@@ -133,6 +302,9 @@ class LaudCLI:
             ver = self.substrate.rpc_request("system_version", [])['result']
             self._ok(f"Connected to {C.W}{chain}{C.R} v{ver}")
             return True
+        except (ConnectionError, BrokenPipeError, OSError) as e:
+            self._err(f"Connection failed: {e}")
+            return False
         except Exception as e:
             self._err(f"Connection failed: {e}")
             return False
@@ -141,8 +313,12 @@ class LaudCLI:
         try:
             self.substrate.rpc_request("system_chain", [])
             return True
+        except (ConnectionError, BrokenPipeError, OSError):
+            if self._mode == 'dev':
+                self._info("Connection check failed, attempting reconnect")
         except Exception:
-            pass
+            if self._mode == 'dev':
+                self._info("Connection check failed, attempting reconnect")
         try:
             self._info("Reconnecting...")
             self.substrate = SubstrateInterface(
@@ -152,6 +328,10 @@ class LaudCLI:
             )
             self.connected = True
             return True
+        except (ConnectionError, BrokenPipeError, OSError) as e:
+            self._err(f"Reconnect failed: {e}")
+            self.connected = False
+            return False
         except Exception as e:
             self._err(f"Reconnect failed: {e}")
             self.connected = False
@@ -203,6 +383,8 @@ class LaudCLI:
                 prefix = text.lower()
                 candidates = [s + ' ' for s in subs if s.startswith(prefix)]
             return candidates[state] if state < len(candidates) else None
+        except (IndexError, ValueError, TypeError):
+            return None
         except Exception:
             return None
 
@@ -238,10 +420,16 @@ class LaudCLI:
                 kp = self.keypairs[signer]
                 ext = self.substrate.create_signed_extrinsic(
                     call=call, keypair=kp)
-                tag = f"{C.DIM}[admin]{C.R} " if sudo else ""
-                self._info(
-                    f"{tag}{C.W}{module}.{fn}{C.R} "
-                    f"{C.DIM}as{C.R} {C.Y}{signer}{C.R}")
+                if self._mode == 'normal':
+                    friendly = self.ACTION_LABELS.get(fn, fn)
+                    self._info(
+                        f"{friendly} as "
+                        f"{C.W}{signer}{C.R}...")
+                else:
+                    tag = f"{C.DIM}[admin]{C.R} " if sudo else ""
+                    self._info(
+                        f"{tag}{C.W}{module}.{fn}{C.R} "
+                        f"{C.DIM}as{C.R} {C.Y}{signer}{C.R}")
                 receipt = self.substrate.submit_extrinsic(
                     ext, wait_for_inclusion=True)
                 if receipt.is_success:
@@ -253,6 +441,7 @@ class LaudCLI:
                     except Exception:
                         blk_num = str(receipt.block_hash)[:16]
                     pallet_events = []
+                    sudo_failed = False
                     for ev in receipt.triggered_events:
                         ev_val = ev.value
                         if isinstance(ev_val, dict) and 'event' in ev_val:
@@ -264,24 +453,52 @@ class LaudCLI:
                                     and eid == 'ExtrinsicFailed'):
                                 pallet_events.append(
                                     f"{C.RED}{mid}.{eid}{C.R}")
+                            elif mid == 'Sudo' and eid == 'Sudid':
+                                attrs = edata.get('attributes', {})
+                                sr = (attrs.get('sudo_result')
+                                      or attrs.get('result'))
+                                if isinstance(sr, dict) and 'Err' in sr:
+                                    sudo_failed = True
+                                    inner = sr['Err']
+                                    if isinstance(inner, dict):
+                                        nm = inner.get('Module', {})
+                                        if isinstance(nm, dict):
+                                            inner = nm.get(
+                                                'error_name',
+                                                nm.get('name', inner))
+                                    pallet_events.append(
+                                        f"{C.RED}inner: {inner}{C.R}")
+                                else:
+                                    pallet_events.append(f"{mid}.{eid}")
                             elif mid not in ('System',
                                              'TransactionPayment',
                                              'Balances', 0):
                                 pallet_events.append(f"{mid}.{eid}")
                     ev_str = (f" {C.DIM}({', '.join(pallet_events)}){C.R}"
                               if pallet_events else "")
-                    self._ok(f"Block {blk_num}{ev_str}")
+                    if sudo_failed:
+                        if self._mode == 'normal':
+                            self._err("Failed")
+                        else:
+                            self._err(f"Block {blk_num}{ev_str}")
+                        receipt._is_success = False
+                    else:
+                        if self._mode == 'normal':
+                            self._ok("Done")
+                        else:
+                            self._ok(f"Block {blk_num}{ev_str}")
                 else:
-                    self._err(f"{receipt.error_message}")
-                    if (hasattr(receipt, 'error_message')
-                            and receipt.error_message):
-                        err = receipt.error_message
-                        if isinstance(err, dict):
-                            print(f"       {C.RED}Detail: "
-                                  f"{json.dumps(err, indent=2)}{C.R}")
-                    hint = self._error_hint(receipt.error_message)
-                    if hint:
-                        print(f"       {C.Y}Hint: {hint}{C.R}")
+                    err = receipt.error_message
+                    err_name = self._extract_error_name(err)
+                    if self._mode == 'normal':
+                        friendly = self.NORMAL_ERRORS.get(
+                            err_name, err_name)
+                        self._err(friendly)
+                    else:
+                        self._err(err_name)
+                        hint = self._error_hint(err)
+                        if hint:
+                            print(f"       {C.Y}{hint}{C.R}")
                 # Always wait for next slot after any submission.
                 self._slot_wait()
                 return receipt
@@ -329,6 +546,19 @@ class LaudCLI:
                         continue
                 self._err(f"{module}.{fn}: {e}")
                 return None
+
+    def _safe_query(self, module, fn, params=None, fallback=None):
+        """Query with graceful error handling."""
+        try:
+            result = self.substrate.query(module, fn, params or [])
+            return result
+        except (ConnectionError, BrokenPipeError, OSError):
+            self._err("Connection lost")
+            return fallback
+        except Exception as e:
+            if self._mode == 'dev':
+                self._info(f"Query {module}.{fn} unavailable: {e}")
+            return fallback
 
     def _query_map(self, module, fn):
         if not self._ensure():
@@ -386,19 +616,38 @@ class LaudCLI:
             print(f"    {C.W}{val}{C.R}")
 
     def _ok(self, msg):
-        print(f"  {C.G}[OK]{C.R} {msg}")
+        print(f"  {C.BG}\u2713{C.R} {msg}")
 
     def _err(self, msg):
-        print(f"  {C.RED}[ERR]{C.R} {msg}")
+        if self._mode == 'normal':
+            friendly = self._friendly_error(msg)
+            print(f"  {C.BR}\u2717{C.R} {friendly}")
+        else:
+            print(f"  {C.BR}\u2717{C.R} {msg}")
+
+    def _friendly_error(self, msg):
+        """Convert technical error to user-friendly message."""
+        msg_lower = str(msg).lower()
+        if 'connection' in msg_lower or 'websocket' in msg_lower:
+            return "Can't reach the network. Make sure the node is running."
+        if 'pool' in msg_lower or 'priority' in msg_lower:
+            return "The network is busy. Please try again in a moment."
+        if 'not found' in msg_lower:
+            return "The requested item was not found."
+        if 'insufficient' in msg_lower:
+            return "Not enough funds or permissions for this action."
+        # Strip hex values and technical identifiers for normal mode
+        cleaned = re.sub(r'0x[0-9a-fA-F]{8,}', '[hash]', str(msg))
+        return cleaned
 
     def _info(self, msg):
-        print(f"  {C.CY}[..]{C.R} {msg}")
+        print(f"  {C.DIM}\u00b7{C.R} {msg}")
 
     def _progress(self, step, total, msg):
-        bar_len = 20
-        filled = int(bar_len * step / total)
-        bar = f"{C.G}{'█' * filled}{C.DIM}{'░' * (bar_len - filled)}{C.R}"
-        print(f"  {bar} {C.DIM}[{step}/{total}]{C.R} {msg}")
+        bar_len = 24
+        filled = int(bar_len * step / total) if total else 0
+        bar = f"{C.BC}{'━' * filled}{C.DIM}{'━' * (bar_len - filled)}{C.R}"
+        print(f"  {C.BC}▸{C.R} {bar} {C.DIM}{step}/{total}{C.R} {msg}")
 
     _STATE_COLORS = {
         'Finalized': C.G, 'Validated': C.G,
@@ -415,22 +664,25 @@ class LaudCLI:
             return f"{color}{s}{C.R}"
         return f"{C.W}{s}{C.R}"
 
-    def _val(self, key, val):
+    def _kv(self, key, val):
         v = val.value if hasattr(val, 'value') else val
         if isinstance(v, dict):
-            print(f"  {C.CY}{key}{C.R}:")
+            print(f"  {C.W}{key}{C.R}")
             for k2, v2 in v.items():
                 display = (self._colorize_state(v2)
                            if k2 in ('state', 'status')
                            else f"{C.W}{v2}{C.R}")
-                print(f"    {C.DIM}{k2:>22}:{C.R} {display}")
+                print(f"    {C.DIM}{k2:>20}{C.R}  {display}")
         else:
             display = (self._colorize_state(v)
                        if key.lower() in ('state', 'status', 'final state')
                        else f"{C.W}{v}{C.R}")
-            print(f"  {C.CY}{key}:{C.R} {display}")
+            print(f"  {C.DIM}{key:>20}{C.R}  {display}")
 
-    def _table(self, headers, rows):
+    # Backward compat alias
+    _val = _kv
+
+    def _grid(self, headers, rows):
         if not rows:
             print(f"  {C.DIM}(no data){C.R}")
             return
@@ -441,103 +693,132 @@ class LaudCLI:
                     widths[i] = max(widths[i], len(str(cell)))
         widths = [min(w, 32) for w in widths]
         hdr = "  "
-        sep = "  "
         for i, h in enumerate(headers):
             w = widths[i] if i < len(widths) else 10
-            hdr += f"{C.BB}{str(h):<{w}}{C.R}  "
-            sep += f"{C.DIM}{'─' * w}{C.R}  "
+            hdr += f"{C.DIM}{C.UL}{str(h):<{w}}{C.R}  "
         print(hdr)
-        print(sep)
         for row in rows:
             line = "  "
             for i, cell in enumerate(row):
                 w = widths[i] if i < len(widths) else 10
                 s = str(cell)
                 if len(s) > w:
-                    s = s[:w-1] + '…'
+                    s = s[:w-1] + '\u2026'
                 if i == 0:
-                    line += f"{C.CY}{s:<{w}}{C.R}  "
-                else:
                     line += f"{C.W}{s:<{w}}{C.R}  "
+                else:
+                    line += f"{s:<{w}}  "
             print(line)
         print()
 
+    # Backward compat alias
+    _table = _grid
+
+    def _panel(self, title, subtitle="", detail=""):
+        print(f"  {C.BC}\u25cf{C.R} {C.BW}{title}{C.R}")
+        if subtitle:
+            print(f"    {C.DIM}{subtitle}{C.R}")
+        if detail:
+            print(f"    {detail}")
+
+    # Backward compat alias
     def _box(self, lines, color=None, width=53):
-        c = color or C.BB
-        top = f"  {c}\u256d\u2500{'\u2500' * width}\u2500\u256e{C.R}"
-        bot = f"  {c}\u2570\u2500{'\u2500' * width}\u2500\u256f{C.R}"
-        print(top)
-        for ln in lines:
-            vis = len(_ANSI_RE.sub('', ln))
-            pad = max(0, width - vis)
-            print(f"  {c}\u2502{C.R} {ln}{' ' * pad} {c}\u2502{C.R}")
-        print(bot)
+        if lines:
+            self._panel(
+                _ANSI_RE.sub('', lines[0]).strip(),
+                _ANSI_RE.sub('', lines[1]).strip() if len(lines) > 1 else "",
+            )
+            for ln in lines[2:]:
+                text = ln.strip()
+                if text:
+                    print(f"    {text}")
 
-    def _separator_line(self, label="", width=53):
-        total = width + 4
+    def _section(self, label=""):
         if label:
-            dash_len = max(0, total - len(label) - 4)
-            print(f"  {C.DIM}\u2500\u2500 {C.B}{label}{C.DIM} "
-                  f"{'\u2500' * dash_len}{C.R}")
+            print(f"  {C.DIM}{C.B}{label.upper()}{C.R}")
         else:
-            print(f"  {C.DIM}{'\u2500' * total}{C.R}")
+            print()
 
-    def _header(self, title):
+    # Backward compat aliases
+    _separator_line = _section
+
+    def _heading(self, title):
         print()
-        self._separator_line(title)
+        w = min(_term_width() - 4, 60)
+        print(f"  {C.BC}{title}{C.R}")
+        print(f"  {C.DIM}{'━' * w}{C.R}")
+
+    # Backward compat alias
+    _header = _heading
+
+    def _menu_cell(self, key, label, hint=""):
+        if hint:
+            print(f"   {C.BA}{key:>2}{C.R}  {label:<20} {C.DIM}{hint}{C.R}")
+        else:
+            print(f"   {C.BA}{key:>2}{C.R}  {label}")
 
     def _menu_display(self, title, options, domain=None):
-        # Box header with summary
+        print()
         if domain and domain.help_summary:
-            print()
-            self._box([
-                f"{C.BB}{title}{C.R}",
-                f"{C.DIM}{domain.help_summary[:51]}{C.R}",
-            ], color=C.BB)
+            self._panel(title, domain.help_summary)
         else:
-            print()
-            self._separator_line(title)
+            print(f"  {C.BC}{title}{C.R}")
+        print()
 
-        # Build command lookup for help_text
         cmd_info = {}
         if domain:
             for cmd in domain.commands:
                 cmd_info[cmd.key] = cmd
 
+        # Collect items (skip separators, footer keys)
+        items = []
+        current_section = None
         for key, label in options:
             if key == "\u2500" or key == "---":
-                if label:
-                    print()
-                    self._separator_line(label.upper())
-                else:
-                    print()
+                current_section = label
                 continue
             if key in ("?", "i", "0"):
-                continue  # shown in footer
-
-            # Lookup help_text
+                continue
             ci = cmd_info.get(key)
-            ht = ""
-            if ci and ci.help_text:
-                ht = ci.help_text[:30]
+            ht = ci.help_text[:30] if (ci and ci.help_text) else ""
+            items.append((key, label, ht, current_section))
 
-            if ht:
-                lbl = label[:22]
-                dot_n = max(2, 26 - len(lbl))
-                dots = '\u00b7' * dot_n
-                print(f"   {C.Y}{key:>2}{C.R}  "
-                      f"{lbl:<22}"
-                      f"{C.DIM}{dots}{C.R} "
-                      f"{C.DIM}{ht}{C.R}")
-            else:
-                print(f"   {C.Y}{key:>2}{C.R}  {label}")
+        # Render in 2-column grid if terminal is wide enough
+        tw = _term_width()
+        if tw >= 72 and len(items) >= 4:
+            prev_sec = None
+            for idx in range(0, len(items), 2):
+                a = items[idx]
+                b = items[idx + 1] if idx + 1 < len(items) else None
+                sec = a[3]
+                if sec and sec != prev_sec:
+                    print()
+                    self._section(sec)
+                    prev_sec = sec
+                col_w = (tw - 8) // 2
+                left = f" {C.BA}{a[0]:>2}{C.R}  {a[1]:<{col_w - 6}}"
+                if b:
+                    right = f" {C.BA}{b[0]:>2}{C.R}  {b[1]}"
+                    print(f"  {left}{right}")
+                else:
+                    print(f"  {left}")
+        else:
+            prev_sec = None
+            for key, label, ht, sec in items:
+                if sec and sec != prev_sec:
+                    print()
+                    self._section(sec)
+                    prev_sec = sec
+                self._menu_cell(key, label, ht)
 
-        # Footer
         print()
-        self._separator_line()
-        print(f"    {C.DIM}i{C.R}  instructions"
-              f"    {C.DIM}?{C.R}  refresh"
-              f"    {C.DIM}0{C.R}  back")
+        if self._mode == 'normal':
+            print(f"  {C.DIM}Type 'back' to return, "
+                  f"'help' for info{C.R}")
+        else:
+            print(f"  {C.DIM}i{C.R} instructions  "
+                  f"{C.DIM}?{C.R} refresh  "
+                  f"{C.DIM}back{C.R} return")
         print()
 
     # ------------------------------------------------------------------
@@ -545,9 +826,9 @@ class LaudCLI:
     # ------------------------------------------------------------------
 
     def _prompt(self, text, default=None):
-        suffix = f" [{C.DIM}{default}{C.R}]" if default else ""
+        suffix = f" {C.DIM}({default}){C.R}" if default else ""
         try:
-            val = input(f"  {C.CY}>{C.R} {text}{suffix}: ").strip()
+            val = input(f"  {C.BC}▸{C.R} {text}{suffix} ").strip()
             return val if val else (default or "")
         except (EOFError, KeyboardInterrupt):
             print()
@@ -615,64 +896,116 @@ class LaudCLI:
 
     def _prompt_enum(self, label, options):
         for i, opt in enumerate(options, 1):
-            print(f"    {C.Y}{i}{C.R} {opt}")
+            print(f"    {C.BA}{i}{C.R} {opt}")
         idx = self._prompt_int(label, 1) - 1
         return options[max(0, min(idx, len(options) - 1))]
 
+    def _domain_hash(self, domain, data):
+        """Replicate on-chain hash_with_domain: LE32(len) || domain || data."""
+        d = domain.encode() if isinstance(domain, str) else domain
+        prefix = len(d).to_bytes(4, 'little')
+        payload = prefix + d + data
+        return '0x' + hashlib.blake2b(
+            payload, digest_size=32).hexdigest()
+
     def _actor_id(self, name):
         kp = self.keypairs[name]
-        return '0x' + hashlib.blake2b(
-            kp.public_key, digest_size=32).hexdigest()
+        return self._domain_hash(b"7ay:actor:v1", kp.public_key)
 
     def _validator_id(self, name):
-        return self._actor_id(name)
+        kp = self.keypairs[name]
+        return self._domain_hash(
+            b"7ay:validator:v1", kp.public_key)
 
-    def _pause(self):
-        print(f"  {C.DIM}{'\u2500' * 40}{C.R}")
+    def _divider(self):
+        print()
+
+    # Backward compat alias
+    _pause = _divider
 
     # ------------------------------------------------------------------
     # Error hints
     # ------------------------------------------------------------------
 
     ERROR_HINTS = {
+        # Epoch
         'EpochNotActive':
-            'The time period is not active yet. '
-            'Type "bootstrap" to set up the network.',
-        'NotAValidator':
-            'This account is not a validator. '
-            'Type "bootstrap" to register all test validators.',
-        'NotAnActiveValidator':
-            'This validator is not active. '
-            'Type "bootstrap" to register and activate validators.',
-        'PositionAlreadyClaimed':
-            'You already claimed a position this period. '
-            'Try "use epoch <N>" to switch periods.',
-        'DuplicateAttestation':
-            'This witness already confirmed this period. '
-            'Use a different witness account.',
+            'No active session right now. Run "bootstrap" to set up.',
+        'EpochNotFound':
+            'That session does not exist yet.',
+        'EpochAlreadyActive':
+            'A session is already running.',
+        # Presence
         'DuplicatePresence':
-            'Already declared this period. '
-            'Try "use epoch <N>" to switch periods.',
-        'DuplicateVote':
-            'Already voted this period. '
-            'Try "use epoch <N>" to switch periods.',
-        'PresenceImmutable':
-            'This presence is already finalized and cannot be changed.',
-        'SelfAttestation':
-            'You cannot attest for yourself. '
-            'Use a different witness account.',
-        'InsufficientAttestations':
-            'Not enough witnesses yet. '
-            'Need at least 3 attestations first.',
-        'InsufficientWitnesses':
-            'Not enough witnesses yet. '
-            'Need at least 3 attestations before verifying.',
+            'Already checked in this session. '
+            'Start a new session or use a different account.',
         'AlreadyDeclared':
-            'Already declared presence this period.',
+            'Already checked in this session.',
+        'DuplicateVote':
+            'Already voted for this person in this session.',
+        'DuplicateAttestation':
+            'Already confirmed this person. Use a different account.',
+        'PresenceImmutable':
+            'This record is finalized and cannot be changed.',
+        'PresenceNotFound':
+            'No check-in found for this person in this session.',
         'QuorumNotReached':
-            'Not enough votes yet. '
-            'Need at least 3 validator votes to finalize.',
+            'Not enough votes yet — need at least 3 validators.',
+        'SelfAttestation':
+            'Cannot verify yourself. Ask someone else.',
+        'InsufficientAttestations':
+            'Need at least 3 nearby verifiers first.',
+        'InsufficientWitnesses':
+            'Need at least 3 witness confirmations first.',
+        'PositionAlreadyClaimed':
+            'Already claimed a position this session.',
+        # Validator
+        'ValidatorNotActive':
+            'This validator is not active. Run "bootstrap" first.',
+        'NotAValidator':
+            'This account is not a validator. Run "bootstrap" first.',
+        'NotAnActiveValidator':
+            'This validator is not active. Run "bootstrap" first.',
+        'AlreadyActive':
+            'This validator is already active.',
+        'AlreadyRegistered':
+            'This account is already registered.',
+        'StakeTooHigh':
+            'Stake exceeds the 33% concentration limit. Use less.',
+        'StakeTooLow':
+            'Stake is below the minimum required amount.',
+        'BondingPeriod':
+            'Bonding period has not elapsed yet (~4 days).',
+        'BondingPeriodNotElapsed':
+            'Bonding period has not elapsed yet (~4 days). '
+            'Use force_activate_validator via sudo for devnet.',
+        'ValidatorNotFound':
+            'No validator found for this account.',
+        # Vault
+        'VaultLocked':
+            'This vault is locked right now.',
+        'InvalidRingSize':
+            'Vault needs between 3 and 10 members.',
+        'ThresholdTooLow':
+            'Need at least 2 key holders.',
+        # General
+        'BadOrigin':
+            'Permission denied. This requires sudo or root access.',
+        'InsufficientBalance':
+            'Not enough balance for this operation.',
+        'CallFiltered':
+            'This call is not allowed in the current context.',
     }
+
+    @staticmethod
+    def _extract_error_name(err):
+        """Pull a clean name from the pallet error dict."""
+        if isinstance(err, dict):
+            name = err.get('name', '')
+            if name:
+                return name
+            return err.get('type', 'Unknown error')
+        return str(err)
 
     def _error_hint(self, err):
         err_str = str(err)
@@ -697,7 +1030,11 @@ class LaudCLI:
             if cmd.action == "separator":
                 opts.append(("---", cmd.label))
             else:
-                opts.append((cmd.key, cmd.label))
+                label = (cmd.normal_label
+                         if (self._mode == 'normal'
+                             and cmd.normal_label)
+                         else cmd.label)
+                opts.append((cmd.key, label))
         opts.append(("i", "Instructions"))
         opts.append(("?", "Show options"))
         opts.append(("0", "Back"))
@@ -715,7 +1052,7 @@ class LaudCLI:
             else:
                 c = self._prompt("", "0")
 
-            if c in ("0", "back"):
+            if c in ("0", "back", "b", "done", "..", "exit"):
                 self._nav_stack.pop()
                 break
             if c == "?":
@@ -778,6 +1115,14 @@ class LaudCLI:
             elif p.kind == "account":
                 signer = self._prompt_account(p.label)
                 has_account_param = True
+            elif p.kind == "self_actor":
+                # Auto-derive actor from signer — ask account first
+                signer = self._prompt_account("Your account")
+                has_account_param = True
+                params[p.name] = self._actor_id(signer)
+                if self._mode == 'dev':
+                    print(f"  {C.DIM}ID: "
+                          f"{params[p.name][:20]}...{C.R}")
             elif p.kind == "actor":
                 params[p.name] = self._prompt_actor(p.label)
             elif p.kind == "h256":
@@ -813,38 +1158,33 @@ class LaudCLI:
 
     def _show_domain_instructions(self, domain):
         print()
-        self._box([
-            f"{C.BB}About: {domain.title}{C.R}",
-        ], color=C.CY)
+        self._panel(domain.title)
         if domain.instructions:
             print(domain.instructions)
         elif domain.help_summary:
-            print(f"  {domain.help_summary}")
+            print(f"    {C.DIM}{domain.help_summary}{C.R}")
         print()
-        self._separator_line("COMMANDS")
+        self._section("COMMANDS")
         for cmd in domain.commands:
             if cmd.action == "separator":
                 continue
-            print(f"   {C.Y}{cmd.key:>2}{C.R}  "
-                  f"{C.W}{cmd.label}{C.R}")
+            print(f"   {C.BA}{cmd.key:>2}{C.R}  {C.W}{cmd.label}{C.R}")
             if cmd.help_text:
                 print(f"       {C.DIM}{cmd.help_text}{C.R}")
         print()
 
     def _show_command_instructions(self, cmd):
         print()
-        self._box([
-            f"{C.BB}{cmd.label}{C.R}",
-        ], color=C.CY)
+        self._panel(cmd.label)
         if cmd.instructions:
             print(cmd.instructions)
         elif cmd.help_text:
-            print(f"  {cmd.help_text}")
+            print(f"    {C.DIM}{cmd.help_text}{C.R}")
         else:
-            print(f"  {C.DIM}No detailed instructions "
+            print(f"    {C.DIM}No detailed instructions "
                   f"for this command.{C.R}")
         if cmd.aliases:
-            print(f"\n  {C.DIM}Shortcuts: "
+            print(f"\n    {C.DIM}Shortcuts: "
                   f"{', '.join(cmd.aliases)}{C.R}")
         print()
 
@@ -882,23 +1222,30 @@ class LaudCLI:
                 "Try: use epoch 5, use bob, use clear")
 
     def _show_status(self):
-        parts = [f"{C.BB}laud{C.R}"]
+        print()
+        # Connection line
         if self.connected:
-            parts.append(f"{C.DIM}{self.url}{C.R}")
+            blk_str = ""
             try:
                 blk = self.substrate.get_block_header(
                 )['header']['number']
-                parts.append(f"{C.G}block #{blk}{C.R}")
+                blk_str = f" {C.DIM}\u00b7{C.R} block {C.W}#{blk}{C.R}"
+            except (ConnectionError, BrokenPipeError, OSError):
+                if self._mode == 'dev':
+                    self._info("Block header fetch failed (connection)")
             except Exception:
-                parts.append(f"{C.G}connected{C.R}")
+                if self._mode == 'dev':
+                    self._info("Block header fetch failed")
+            print(f"  {C.BG}\u2713{C.R} {C.DIM}{self.url}{C.R}{blk_str}")
         else:
-            parts.append(f"{C.RED}offline{C.R}")
-        if self._ctx_epoch is not None:
-            parts.append(f"{C.Y}epoch {self._ctx_epoch}{C.R}")
+            print(f"  {C.BR}\u2717{C.R} {C.DIM}offline{C.R}")
+
+        # Context
         acct = self._ctx_account
-        admin_tag = (f" {C.DIM}(admin){C.R}" if acct == 'alice' else "")
-        parts.append(f"account: {C.W}{acct}{C.R}{admin_tag}")
-        print(f"  {'  '.join(parts)}")
+        admin = f" {C.DIM}(admin){C.R}" if acct == 'alice' else ""
+        self._kv("account", f"{acct}{admin}")
+        if self._ctx_epoch is not None:
+            self._kv("epoch", self._ctx_epoch)
 
         # Epoch dashboard
         status = self._fetch_epoch_status()
@@ -911,6 +1258,7 @@ class LaudCLI:
             end_blk = status.get('end_block', 0)
             pc = status.get('participant_count', 0)
 
+            print()
             if self._mode == 'normal':
                 state_labels = {
                     'None': 'No Session', 'Scheduled': 'Upcoming',
@@ -918,13 +1266,17 @@ class LaudCLI:
                     'Finalized': 'Complete',
                 }
                 sl = state_labels.get(state, state)
-                print(f"  Session: {C.W}E{eid}{C.R}  "
-                      f"State: {C.W}{sl}{C.R}  "
-                      f"Participants: {C.W}{pc}{C.R}")
+                self._kv("session", f"E{eid}")
+                self._kv("state", sl)
             else:
-                print(f"  Epoch: {C.W}{eid}{C.R}  "
-                      f"State: {C.W}{state}{C.R}  "
-                      f"Participants: {C.W}{pc}{C.R}")
+                self._kv("epoch", eid)
+                self._kv("state", state)
+            dc = status.get('declared_count', 0)
+            if dc > 0 or pc > 0:
+                self._kv("checked in", f"{dc} of "
+                         f"{len(self.keypairs)} accounts")
+            else:
+                self._kv("checked in", "none yet")
 
             # Progress bar for active epoch
             if state == 'Active' and end_blk > 0:
@@ -934,47 +1286,376 @@ class LaudCLI:
                         (cur_blk - start) /
                         (end_blk - start) * 100)))
                     remaining = max(0, end_blk - cur_blk)
-                    bar_len = 20
+                    bar_len = 24
                     filled = int(bar_len * pct / 100)
-                    bar = ('█' * filled +
-                           '░' * (bar_len - filled))
-                    print(f"  {C.G}{bar}{C.R} {pct}%  "
-                          f"{C.DIM}~{remaining} blocks left{C.R}")
+                    bar = (f"{C.BC}{'━' * filled}"
+                           f"{C.DIM}{'━' * (bar_len - filled)}{C.R}")
+                    print(f"  {C.BC}▸{C.R} {bar} "
+                          f"{C.DIM}{pct}% \u00b7 "
+                          f"~{remaining} blocks left{C.R}")
 
             # Participation status
             if pres == 'Finalized':
-                print(f"  You: {C.W}Verified{C.R}")
+                print(f"  {C.BG}\u2713{C.R} Verified")
             elif pres == 'Slashed':
-                print(f"  You: {C.RED}Slashed{C.R}")
+                print(f"  {C.BR}\u2717{C.R} Slashed")
             elif pres == 'Validated':
-                print(f"  You: {C.BB}Validated{C.R}")
+                print(f"  {C.BC}\u2713{C.R} Validated")
             elif pres == 'Declared':
                 vc = status.get('vote_count', 0)
                 qt = status.get('quorum_threshold', 2)
-                print(f"  You: {C.CY}Declared "
-                      f"({vc}/{qt} votes){C.R}")
+                print(f"  {C.DIM}\u00b7{C.R} Declared "
+                      f"{C.DIM}({vc}/{qt} votes){C.R}")
             elif is_part:
-                print(f"  You: {C.G}Registered{C.R}")
+                print(f"  {C.BG}\u00b7{C.R} Registered")
             elif state not in ('None', 'Finalized'):
-                print(f"  You: {C.DIM}Not participating{C.R}")
+                print(f"  {C.DIM}\u00b7 Not participating{C.R}")
 
-            print(f"  {C.DIM}Tip: type 'flow' for next steps{C.R}")
+            print(f"\n  {C.DIM}type{C.R} flow "
+                  f"{C.DIM}for next steps{C.R}")
+
+    # ------------------------------------------------------------------
+    # Quick commands — top-level shortcuts
+    # ------------------------------------------------------------------
+
+    def _colorize_votes(self, current, threshold):
+        if current >= threshold:
+            return f"{C.BG}{current}/{threshold}{C.R}"
+        elif current > 0:
+            return f"{C.BA}{current}/{threshold}{C.R}"
+        return f"{C.DIM}0/{threshold}{C.R}"
+
+    def _cmd_who(self):
+        """Show all accounts with validator + presence status."""
+        if not self._ensure():
+            return
+        if self._mode == 'normal':
+            self._ensure_bootstrapped()
+        status = self._fetch_epoch_status()
+        eid = status.get('epoch_id', 0) if status else 0
+        qt = status.get('quorum_threshold', 3) if status else 3
+        print()
+        self._heading("ACCOUNTS")
+        hdr = (f"  {C.DIM}{'Name':<10} {'Validator':<12} "
+               f"{'Presence E' + str(eid):<16} {'Votes'}{C.R}")
+        print(hdr)
+        print(f"  {C.DIM}{'─' * 52}{C.R}")
+        for name in self.keypairs:
+            vid = self._validator_id(name)
+            aid = self._actor_id(name)
+            # Validator status
+            v_info = self._safe_query(
+                "Validator", "Validators", [vid])
+            if v_info and v_info.value:
+                vs = v_info.value.get('status', '?')
+                if vs == 'Active':
+                    vs_str = f"{C.BG}Active{C.R}"
+                elif vs == 'Bonding':
+                    vs_str = f"{C.BA}Bonding{C.R}"
+                else:
+                    vs_str = f"{C.DIM}{vs}{C.R}"
+            else:
+                vs_str = f"{C.DIM}--{C.R}"
+            # Presence status
+            p_info = self._safe_query(
+                "Presence", "Presences", [eid, aid]) if eid else None
+            if p_info and p_info.value:
+                ps = p_info.value.get('state', 'None')
+                if ps == 'Finalized':
+                    ps_str = f"{C.BG}Finalized{C.R}"
+                elif ps in ('Declared', 'Validated'):
+                    ps_str = f"{C.BC}{ps}{C.R}"
+                elif ps == 'Slashed':
+                    ps_str = f"{C.BR}Slashed{C.R}"
+                else:
+                    ps_str = f"{C.DIM}{ps}{C.R}"
+            else:
+                ps_str = f"{C.DIM}--{C.R}"
+            # Vote count
+            vc_r = self._safe_query(
+                "Presence", "VoteCount", [eid, aid]) if eid else None
+            vc = vc_r.value if vc_r and vc_r.value else 0
+            vc_str = self._colorize_votes(vc, qt) if vc else f"{C.DIM}--{C.R}"
+            # Use raw name width for alignment (strip ANSI for display)
+            nm = f"{C.W}{name}{C.R}"
+            print(f"  {nm:<22} {vs_str:<24} {ps_str:<28} {vc_str}")
+        print()
+
+    def _cmd_validators(self):
+        """Show validator summary table."""
+        if not self._ensure():
+            return
+        if self._mode == 'normal':
+            self._ensure_bootstrapped()
+        print()
+        self._heading("VALIDATORS")
+        active = 0
+        total_stake = 0
+        rows = []
+        for name in self.keypairs:
+            vid = self._validator_id(name)
+            v_info = self._safe_query(
+                "Validator", "Validators", [vid])
+            if v_info and v_info.value:
+                vs = v_info.value.get('status', '?')
+                stake = v_info.value.get('stake', 0)
+                total_stake += stake
+                if vs == 'Active':
+                    active += 1
+                    vs_str = f"{C.BG}Active{C.R}"
+                else:
+                    vs_str = f"{C.DIM}{vs}{C.R}"
+                stake_str = f"{stake:>12,}"
+                rows.append((name, vs_str, stake_str))
+            else:
+                rows.append((name, f"{C.DIM}--{C.R}", f"{C.DIM}--{C.R}"))
+        total = len(self.keypairs)
+        print(f"  {C.DIM}{active} active of {total}{C.R}")
+        print(f"  {C.DIM}{'Name':<10} {'Status':<12} "
+              f"{'Stake':>12}{C.R}")
+        print(f"  {C.DIM}{'─' * 38}{C.R}")
+        for name, vs_str, stake_str in rows:
+            nm = f"{C.W}{name}{C.R}"
+            print(f"  {nm:<22} {vs_str:<24} {stake_str}")
+        if total_stake:
+            print(f"  {C.DIM}{'─' * 38}{C.R}")
+            print(f"  {C.DIM}Total stake:{C.R} "
+                  f"{C.W}{total_stake:>12,}{C.R}")
+        print()
+
+    def _quick_epoch(self):
+        """Quick epoch overview with inline actions."""
+        if not self._ensure():
+            return
+        if self._mode == 'normal':
+            self._ensure_bootstrapped()
+        status = self._fetch_epoch_status()
+        if not status:
+            self._info("No epoch info available")
+            return
+        eid = status.get('epoch_id', 0)
+        state = status.get('epoch_state', 'None')
+        pc = status.get('participant_count', 0)
+        cur_blk = status.get('current_block', 0)
+        end_blk = status.get('end_block', 0)
+        start_blk = status.get('start_block', 0)
+
+        state_colors = {
+            'Active': C.BG, 'Scheduled': C.BA,
+            'Closed': C.DIM, 'Finalized': C.DIM,
+        }
+        sc = state_colors.get(state, C.DIM)
+        print()
+        print(f"  {C.W}Epoch {eid}{C.R} {sc}{state}{C.R}")
+        if state == 'Active' and end_blk > start_blk:
+            remaining = max(0, end_blk - cur_blk)
+            pct = min(100, max(0, int(
+                (cur_blk - start_blk) /
+                (end_blk - start_blk) * 100)))
+            bar_len = 24
+            filled = int(bar_len * pct / 100)
+            bar = (f"{C.BC}{'━' * filled}"
+                   f"{C.DIM}{'━' * (bar_len - filled)}{C.R}")
+            print(f"  {C.BC}▸{C.R} {bar} {C.DIM}{pct}% "
+                  f"· ~{remaining} blocks left{C.R}")
+        dc = status.get('declared_count', 0)
+        self._kv("checked in", f"{dc} of "
+                 f"{len(self.keypairs)}")
+
+        print(f"\n  {C.DIM}ACTIONS{C.R}")
+        opts = []
+        if state == 'Active':
+            opts.append(("d", "Declare presence"))
+            opts.append(("v", "Vote on presence"))
+            opts.append(("n", "Next epoch (close + new)"))
+        elif state in ('Closed', 'Finalized', 'None'):
+            opts.append(("n", "Start new epoch"))
+        elif state == 'Scheduled':
+            opts.append(("s", "Start this epoch"))
+        opts.append(("i", "Full epoch info"))
+        opts.append(("0", "Cancel"))
+        for key, label in opts:
+            print(f"    {C.BC}{key}{C.R}  {label}")
+        print()
+
+        choice = self._prompt("", "0")
+        if choice == 'd':
+            self._submit("Presence", "declare_presence",
+                         {"epoch": eid})
+        elif choice == 'v':
+            target = self._prompt("Account to vote on", "eve")
+            aid = self._actor_id(target)
+            voter = self._prompt("Vote as", self._ctx_account)
+            self._submit("Presence", "vote_presence",
+                         {"actor": aid, "epoch": eid,
+                          "approve": True}, voter)
+        elif choice == 'n':
+            self._next_test_epoch()
+        elif choice == 's' and state == 'Scheduled':
+            self._submit("Epoch", "start_epoch",
+                         {"epoch_id": eid},
+                         sudo=True, _skip_confirm=True)
+        elif choice == 'i':
+            r = self._query("Epoch", "EpochInfo", [eid])
+            if r and r.value:
+                for k, v in r.value.items():
+                    self._kv(k, v)
+
+    def _quick_declare(self):
+        """Quick declare presence in current epoch."""
+        if not self._ensure():
+            return
+        if self._mode == 'normal':
+            self._ensure_bootstrapped()
+        status = self._fetch_epoch_status()
+        if not status:
+            self._info("No active epoch")
+            return
+        eid = status.get('epoch_id', 0)
+        acct = self._prompt("Account", self._ctx_account)
+        self._submit("Presence", "declare_presence",
+                     {"epoch": eid}, acct)
+
+    def _quick_vote(self):
+        """Quick vote on a presence in current epoch."""
+        if not self._ensure():
+            return
+        if self._mode == 'normal':
+            self._ensure_bootstrapped()
+        status = self._fetch_epoch_status()
+        if not status:
+            self._info("No active epoch")
+            return
+        eid = status.get('epoch_id', 0)
+        target = self._prompt("Vote for (account name)", "eve")
+        aid = self._actor_id(target)
+        voter = self._prompt("Vote as", self._ctx_account)
+        self._submit("Presence", "vote_presence",
+                     {"actor": aid, "epoch": eid,
+                      "approve": True}, voter)
+
+    def _quick_finalize(self):
+        """Quick finalize a presence in current epoch."""
+        if not self._ensure():
+            return
+        if self._mode == 'normal':
+            self._ensure_bootstrapped()
+        status = self._fetch_epoch_status()
+        if not status:
+            self._info("No active epoch")
+            return
+        eid = status.get('epoch_id', 0)
+        target = self._prompt("Finalize (account name)", "eve")
+        aid = self._actor_id(target)
+        caller = self._prompt("As", self._ctx_account)
+        self._submit("Presence", "finalize_presence",
+                     {"actor": aid, "epoch": eid}, caller)
+
+    def _cmd_recap(self):
+        """Summarize what happened in the current epoch."""
+        if not self._ensure():
+            return
+        status = self._fetch_epoch_status()
+        if not status:
+            self._info("No epoch info available")
+            return
+        eid = status.get('epoch_id', 0)
+        state = status.get('epoch_state', 'None')
+        qt = status.get('quorum_threshold', 3)
+        print()
+        self._heading(f"EPOCH {eid} RECAP")
+        self._kv("state", state)
+
+        declared = 0
+        finalized = 0
+        slashed = 0
+        pending = 0
+        for name in self.keypairs:
+            aid = self._actor_id(name)
+            p = self._safe_query("Presence", "Presences", [eid, aid])
+            if p and p.value:
+                ps = p.value.get('state', 'None')
+                vc_r = self._safe_query(
+                    "Presence", "VoteCount", [eid, aid])
+                vc = vc_r.value if vc_r and vc_r.value else 0
+                if ps == 'Finalized':
+                    finalized += 1
+                    tag = f"{C.BG}Finalized{C.R}"
+                elif ps == 'Slashed':
+                    slashed += 1
+                    tag = f"{C.BR}Slashed{C.R}"
+                elif ps in ('Declared', 'Validated'):
+                    pending += 1
+                    declared += 1
+                    votes = self._colorize_votes(vc, qt)
+                    tag = f"{C.BC}{ps}{C.R} ({votes})"
+                else:
+                    tag = f"{C.DIM}--{C.R}"
+                nm = f"{C.W}{name}{C.R}"
+                print(f"    {nm:<22} {tag}")
+            else:
+                nm = f"{C.DIM}{name}{C.R}"
+                print(f"    {nm:<22} {C.DIM}--{C.R}")
+
+        print()
+        parts = []
+        if finalized:
+            parts.append(f"{C.BG}{finalized} finalized{C.R}")
+        if pending:
+            parts.append(f"{C.BA}{pending} pending{C.R}")
+        if slashed:
+            parts.append(f"{C.BR}{slashed} slashed{C.R}")
+        not_decl = len(self.keypairs) - finalized - pending - slashed
+        if not_decl > 0:
+            parts.append(f"{C.DIM}{not_decl} not declared{C.R}")
+        print(f"  {', '.join(parts)}")
+        print()
 
     def bootstrap(self):
         self._auto_setup_validators()
+
+    def _silent_bootstrap(self):
+        """Auto-bootstrap for normal mode. Minimal output."""
+        if not self._ensure():
+            return False
+        try:
+            vc = self.substrate.query("Validator", "ValidatorCount")
+            if vc and vc.value and vc.value >= 3:
+                return True
+        except Exception:
+            pass
+        print()
+        print(f"  {C.DIM}Setting up the network "
+              f"for first use...{C.R}")
+        self._auto_setup_validators()
+        print(f"  {C.BG}\u2713{C.R} Ready")
+        print()
+        return True
 
     def _check_epoch(self):
         if not self._ensure():
             return False
         try:
-            result = self.substrate.query("Presence", "EpochActive", [1])
-            if result and result.value:
-                return True
-        except Exception:
-            pass
-        self._info("Epoch 1 is not active yet.")
+            epoch_r = self.substrate.query("Epoch", "CurrentEpoch")
+            epoch_id = epoch_r.value if epoch_r else 0
+            if epoch_id > 0:
+                info = self.substrate.query(
+                    "Epoch", "EpochInfo", [epoch_id])
+                if info and info.value:
+                    state = info.value.get('state', 'None')
+                    if state == 'Active':
+                        return True
+        except (ConnectionError, BrokenPipeError, OSError):
+            self._err("Cannot reach the network")
+            return False
+        except Exception as e:
+            if self._mode == 'dev':
+                self._info(f"Epoch check failed: {e}")
+        if self._mode == 'normal':
+            return self._silent_bootstrap()
+        self._info("No active session found.")
         if self._prompt_bool(
-                "Run bootstrap? (activates epoch + validators + positions)"):
+                "Run bootstrap? (sets up session + validators + positions)"):
             self.bootstrap()
             return True
         return False
@@ -1025,7 +1706,12 @@ class LaudCLI:
                         [epoch_id, kp.ss58_address])
                     result['is_participant'] = bool(
                         is_part and is_part.value)
-                except Exception:
+                except (ConnectionError, BrokenPipeError, OSError):
+                    result['is_participant'] = False
+                except Exception as e:
+                    if self._mode == 'dev':
+                        self._info(
+                            f"Participant query failed: {e}")
                     result['is_participant'] = False
 
                 # Check presence state
@@ -1042,8 +1728,27 @@ class LaudCLI:
                             'vote_count', 0)
                     else:
                         result['presence_state'] = None
-                except Exception:
+                except (ConnectionError, BrokenPipeError, OSError):
                     result['presence_state'] = None
+                except Exception as e:
+                    if self._mode == 'dev':
+                        self._info(
+                            f"Presence query failed: {e}")
+                    result['presence_state'] = None
+
+            # Count actual presences across known accounts
+            declared_count = 0
+            try:
+                for name in self.keypairs:
+                    aid = self._actor_id(name)
+                    p = self.substrate.query(
+                        "Presence", "Presences",
+                        [epoch_id, aid])
+                    if p and p.value:
+                        declared_count += 1
+            except Exception:
+                pass
+            result['declared_count'] = declared_count
 
             # Quorum config
             try:
@@ -1054,25 +1759,39 @@ class LaudCLI:
                         'threshold', 2)
                 else:
                     result['quorum_threshold'] = 2
-            except Exception:
+            except (ConnectionError, BrokenPipeError, OSError):
+                result['quorum_threshold'] = 2
+            except Exception as e:
+                if self._mode == 'dev':
+                    self._info(f"Quorum query failed: {e}")
                 result['quorum_threshold'] = 2
 
             # Current block
             try:
                 header = self.substrate.get_block_header()['header']
                 result['current_block'] = int(header['number'])
-            except Exception:
+            except (ConnectionError, BrokenPipeError, OSError):
+                result['current_block'] = 0
+            except Exception as e:
+                if self._mode == 'dev':
+                    self._info(
+                        f"Block header query failed: {e}")
                 result['current_block'] = 0
 
             result['_ts'] = now
             self._epoch_cache = result
             return result
 
-        except Exception:
+        except (ConnectionError, BrokenPipeError, OSError):
+            self._err("Connection lost")
+            return None
+        except Exception as e:
+            if self._mode == 'dev':
+                self._info(f"Epoch status fetch failed: {e}")
             return None
 
     def _epoch_status_tag(self):
-        """Build colorized epoch status tag for the prompt."""
+        """Build compact epoch status tag for the prompt."""
         status = self._fetch_epoch_status()
         if not status:
             return ""
@@ -1081,36 +1800,38 @@ class LaudCLI:
         state = status.get('epoch_state', 'None')
 
         if state == 'None' and eid == 0:
-            return f" {C.DIM}[no epoch]{C.R}"
+            return f" {C.DIM}no epoch{C.R}"
 
         state_map = {
-            'Scheduled': (C.Y, 'SCHED'),
-            'Active': (C.G, 'ACTIVE'),
-            'Closed': (C.DIM, 'CLOSED'),
-            'Finalized': (C.DIM, 'FINAL'),
+            'Scheduled': (C.AMBER, 'sched'),
+            'Active': (C.GREEN, 'active'),
+            'Closed': (C.GRAY, 'closed'),
+            'Finalized': (C.GRAY, 'final'),
         }
-        color, label = state_map.get(state, (C.DIM, state[:6]))
+        color, label = state_map.get(state, (C.GRAY, state[:6].lower()))
 
-        # Participation tag
         pres = status.get('presence_state')
         is_part = status.get('is_participant', False)
 
         if pres == 'Finalized':
-            ptag = f"{C.W}DONE"
+            ptag = f"{C.BG}\u2713"
         elif pres == 'Slashed':
-            ptag = f"{C.RED}SLASHED"
+            ptag = f"{C.BR}\u2717"
         elif pres == 'Validated':
-            ptag = f"{C.BB}VALID"
+            ptag = f"{C.BC}\u2713"
         elif pres == 'Declared':
             vc = status.get('vote_count', 0)
             qt = status.get('quorum_threshold', 2)
-            ptag = f"{C.CY}DECL {vc}/{qt}"
+            ptag = f"{C.CYAN}{vc}/{qt}"
         elif is_part:
-            ptag = f"{C.G}REG"
+            ptag = f"{C.GREEN}\u00b7"
         else:
-            ptag = f"{C.DIM}--"
+            ptag = ""
 
-        return f" [{color}E{eid}:{label}{C.R}|{ptag}{C.R}]"
+        tag = f" {color}E{eid}:{label}{C.R}"
+        if ptag:
+            tag += f" {ptag}{C.R}"
+        return tag
 
     def _show_epoch_flow(self):
         """Show contextual actions based on epoch state and participation."""
@@ -1136,9 +1857,9 @@ class LaudCLI:
                 'Finalized': 'Complete',
             }
             sl = state_labels.get(state, state)
-            self._header(f"SESSION {eid}  [{sl}]")
+            self._heading(f"Session {eid} \u00b7 {sl}")
         else:
-            self._header(f"EPOCH {eid}  [{state}]")
+            self._heading(f"Epoch {eid} \u00b7 {state}")
 
         # Progress
         if state == 'Active' and end_blk > 0:
@@ -1147,43 +1868,37 @@ class LaudCLI:
                 pct = min(100, max(0, int(
                     (cur_blk - start) / (end_blk - start) * 100)))
                 remaining = max(0, end_blk - cur_blk)
-                bar_len = 20
+                bar_len = 24
                 filled = int(bar_len * pct / 100)
-                bar = f"{'█' * filled}{'░' * (bar_len - filled)}"
-                print(f"  {C.G}{bar}{C.R} {pct}%  "
-                      f"{C.DIM}~{remaining} blocks left{C.R}")
+                bar = (f"{C.BC}{'━' * filled}"
+                       f"{C.DIM}{'━' * (bar_len - filled)}{C.R}")
+                print(f"  {C.BC}▸{C.R} {bar} "
+                      f"{C.DIM}{pct}% \u00b7 "
+                      f"~{remaining} blocks left{C.R}")
                 print()
 
         # Participation summary
-        pc = status.get('participant_count', 0)
-        if self._mode == 'normal':
-            print(f"  Participants: {C.W}{pc}{C.R}    "
-                  f"Your status: ", end="")
-        else:
-            print(f"  Participants: {C.W}{pc}{C.R}  |  "
-                  f"Presence: ", end="")
+        dc = status.get('declared_count', 0)
+        self._kv("checked in", f"{dc} of {len(self.keypairs)}")
 
         if pres == 'Finalized':
-            print(f"{C.W}Verified and locked{C.R}")
+            print(f"  {C.BG}\u2713{C.R} Verified and locked")
         elif pres == 'Slashed':
-            print(f"{C.RED}Rejected{C.R}")
+            print(f"  {C.BR}\u2717{C.R} Rejected")
         elif pres == 'Validated':
-            print(f"{C.BB}Confirmed, ready to finalize{C.R}")
+            print(f"  {C.BC}\u2713{C.R} Confirmed, ready to finalize")
         elif pres == 'Declared':
             needed = max(0, qt - vc)
-            print(f"{C.CY}Checked in, need {needed} more "
-                  f"vote(s) ({vc}/{qt}){C.R}")
+            print(f"  {C.DIM}\u00b7{C.R} Checked in, need {needed} more "
+                  f"vote(s) {C.DIM}({vc}/{qt}){C.R}")
         elif is_part:
-            print(f"{C.G}Registered, not yet checked in{C.R}")
+            print(f"  {C.BG}\u00b7{C.R} Registered, not yet checked in")
         else:
-            print(f"{C.DIM}Not participating{C.R}")
+            print(f"  {C.DIM}\u00b7 Not participating{C.R}")
         print()
 
         # Actions
-        if self._mode == 'normal':
-            print(f"  {C.BB}WHAT TO DO NEXT:{C.R}")
-        else:
-            print(f"  {C.BB}AVAILABLE ACTIONS:{C.R}")
+        self._section("NEXT STEPS")
 
         actions = []
 
@@ -1278,33 +1993,65 @@ class LaudCLI:
 
         for actionable, label, shortcut in actions:
             if actionable and shortcut:
-                print(f"    {C.G}>{C.R} {label}")
-                print(f"      {C.DIM}run: {shortcut}{C.R}")
+                print(f"    {C.BC}▸{C.R} {label}")
+                print(f"      {C.DIM}{shortcut}{C.R}")
             elif not actionable and shortcut:
-                print(f"    {C.CY}>{C.R} {label}")
-                print(f"      {C.DIM}run: {shortcut}{C.R}")
+                print(f"    {C.DIM}\u00b7{C.R} {label}")
+                print(f"      {C.DIM}{shortcut}{C.R}")
             else:
-                print(f"    {C.DIM}  {label}{C.R}")
+                print(f"    {C.DIM}\u00b7 {label}{C.R}")
         print()
 
     def _next_test_epoch(self):
-        for e in range(2, 1000):
+        """Get or create an active epoch for testing.
+
+        If there's already an active epoch, use it. Otherwise close the
+        current one and schedule+start the next sequential epoch.
+        """
+        try:
+            cur_r = self.substrate.query("Epoch", "CurrentEpoch")
+            cur_id = cur_r.value if cur_r else 0
+        except Exception:
+            cur_id = 0
+
+        # Check if current epoch is already active
+        if cur_id > 0:
             try:
-                result = self.substrate.query(
-                    "Presence", "EpochActive", [e])
-                if not (result and result.value):
-                    self._info(f"Activating fresh epoch {e}")
-                    self._submit("Presence", "set_epoch_active",
-                                 {"epoch": e, "active": True},
-                                 sudo=True, _skip_confirm=True)
-                    return e
+                info = self.substrate.query(
+                    "Epoch", "EpochInfo", [cur_id])
+                if info and info.value:
+                    state = info.value.get('state', 'None')
+                    if state == 'Active':
+                        self._info(
+                            f"Using active epoch {cur_id}")
+                        return cur_id
+                    # Close it if not already closed/finalized
+                    if state not in ('Closed', 'Finalized'):
+                        self._info(
+                            f"Closing epoch {cur_id} ({state})")
+                        self._submit("Epoch", "close_epoch",
+                                     {"epoch_id": cur_id},
+                                     sudo=True, _skip_confirm=True)
             except Exception:
-                self._info(f"Activating fresh epoch {e}")
-                self._submit("Presence", "set_epoch_active",
-                             {"epoch": e, "active": True},
-                             sudo=True, _skip_confirm=True)
-                return e
-        return 2
+                pass
+
+        # Schedule and start the next epoch
+        next_id = cur_id + 1
+        try:
+            header = self.substrate.get_block_header()['header']
+            current_block = int(header['number'])
+        except Exception:
+            current_block = 10
+
+        self._info(f"Scheduling session {next_id}")
+        self._submit("Epoch", "schedule_epoch",
+                     {"start_block": current_block + 3, "duration": 200},
+                     sudo=True, _skip_confirm=True)
+        self._info(f"Starting session {next_id}")
+        self._submit("Epoch", "start_epoch",
+                     {"epoch_id": next_id},
+                     sudo=True, _skip_confirm=True)
+        return next_id
 
     # ------------------------------------------------------------------
     # Custom handlers: Presence
@@ -1360,28 +2107,140 @@ class LaudCLI:
             'eve':     {"x": -50000, "y": 0,      "z": 0},
             'ferdie':  {"x": -25000, "y": -43301, "z": 0},
         }
-        total = 1 + len(positions) * 2
+        # Steps: schedule + start + quorum + N*(register + activate + position)
+        # + N*(claim) + N*3*(attest) + N*(verify)  [PBT flow]
+        n = len(positions)
+        total = 3 + n * 3 + n + n * 3 + n
         step = 0
+
+        # Step 1: Get current block for scheduling
+        try:
+            header = self.substrate.get_block_header()['header']
+            current_block = int(header['number'])
+        except (ConnectionError, BrokenPipeError, OSError):
+            self._err("Connection lost")
+            current_block = 1
+        except Exception as e:
+            if self._mode == 'dev':
+                self._info(f"Block header query failed: {e}")
+            current_block = 1
+
+        # Step 2-3: Schedule + start epoch 1 (skip if genesis already active)
+        epoch_active = False
+        try:
+            info = self.substrate.query("Epoch", "EpochInfo", [1])
+            if info and info.value:
+                state = info.value.get('state', '')
+                if state == 'Active':
+                    epoch_active = True
+        except Exception:
+            pass
+
+        if epoch_active:
+            step += 2
+            self._info("Session 1 already active from genesis")
+        else:
+            step += 1
+            self._progress(step, total, "Scheduling session 1")
+            self._submit("Epoch", "schedule_epoch",
+                         {"start_block": current_block + 3,
+                          "duration": 200},
+                         sudo=True, _skip_confirm=True)
+            step += 1
+            self._progress(step, total, "Starting session 1")
+            self._submit("Epoch", "start_epoch",
+                         {"epoch_id": 1},
+                         sudo=True, _skip_confirm=True)
+
+        # Step 4: Set quorum config
         step += 1
-        self._progress(step, total, "Activating time period 1")
-        self._submit("Presence", "set_epoch_active",
-                     {"epoch": 1, "active": True},
+        self._progress(step, total, "Setting approval threshold (2 of 3)")
+        self._submit("Presence", "set_quorum_config",
+                     {"threshold": 2, "total": 3},
                      sudo=True, _skip_confirm=True)
+
+        # Step 5: Register, force-activate, and position each validator
+        failed = False
         for name, pos in positions.items():
             vid = self._validator_id(name)
+            kp = self.keypairs[name]
+
             step += 1
             self._progress(step, total,
                            f"Register {C.W}{name}{C.R}")
-            self._submit("Presence", "set_validator_status",
-                         {"validator": vid, "active": True},
-                         sudo=True, _skip_confirm=True)
+            r = self._submit("Validator", "register_validator",
+                             {"stake": 1000000},
+                             name, _skip_confirm=True)
+            if r is None or not r.is_success:
+                self._err(f"Registration failed for {name}, "
+                          "aborting bootstrap")
+                failed = True
+                break
+
+            step += 1
+            self._progress(step, total,
+                           f"Activate {C.W}{name}{C.R}")
+            r = self._submit("Validator", "force_activate_validator",
+                             {"controller": kp.ss58_address},
+                             sudo=True, _skip_confirm=True)
+            if r is None or not r.is_success:
+                self._err(f"Activation failed for {name}, "
+                          "aborting bootstrap")
+                failed = True
+                break
+
             step += 1
             self._progress(step, total,
                            f"Position {C.W}{name}{C.R} "
                            f"({pos['x']}, {pos['y']}, {pos['z']})")
             self._submit("Presence", "set_validator_position",
-                         {"validator": vid, "position": pos}, name)
-        self._ok("Bootstrap complete — 6 validators in hexagonal formation")
+                         {"validator": vid, "position": pos},
+                         sudo=True, _skip_confirm=True)
+
+        if not failed:
+            self._ok("Validators registered — setting up positions")
+
+            # PBT: Create verified position claims for all validators
+            names = list(positions.keys())
+            for name in names:
+                step += 1
+                self._progress(step, total,
+                               f"Position claim {C.W}{name}{C.R}")
+                aid = self._actor_id(name)
+                self._submit("Presence", "claim_position",
+                             {"epoch": 1,
+                              "position": positions[name]},
+                             name, _skip_confirm=True)
+
+            # Cross-attest: each validator attested by 3 others
+            for i, name in enumerate(names):
+                aid = self._actor_id(name)
+                witnesses = [n for n in names if n != name][:3]
+                for w in witnesses:
+                    step += 1
+                    self._progress(step, total,
+                                   f"{C.W}{w}{C.R} attests "
+                                   f"{C.W}{name}{C.R}")
+                    self._submit(
+                        "Presence", "submit_witness_attestation",
+                        {"target": aid, "epoch": 1,
+                         "latency_ms": 10,
+                         "direct_connection": True},
+                        w, _skip_confirm=True)
+
+            # Verify all positions
+            for i, name in enumerate(names):
+                step += 1
+                self._progress(step, total,
+                               f"Verify {C.W}{name}{C.R}")
+                aid = self._actor_id(name)
+                verifier = [n for n in names if n != name][0]
+                self._submit("Presence", "verify_position",
+                             {"target": aid, "epoch": 1},
+                             verifier, _skip_confirm=True)
+
+            self._ok("Bootstrap complete — 6 validators with "
+                     "verified positions")
 
     def _auto_pbt_test(self):
         if not self._ensure():
@@ -2255,7 +3114,13 @@ class LaudCLI:
         uri = self._prompt("URI (e.g. //Alice or mnemonic)", "//Alice")
         try:
             kp = Keypair.create_from_uri(uri)
-        except Exception:
+        except (ValueError, TypeError) as e:
+            if self._mode == 'dev':
+                self._info(f"URI parse failed, trying mnemonic: {e}")
+            kp = Keypair.create_from_mnemonic(uri)
+        except Exception as e:
+            if self._mode == 'dev':
+                self._info(f"URI parse failed, trying mnemonic: {e}")
             kp = Keypair.create_from_mnemonic(uri)
         self._val("Public Key", f"0x{kp.public_key.hex()}")
         self._val("SS58 Address", kp.ss58_address)
@@ -2337,13 +3202,15 @@ class LaudCLI:
         value = self._prompt("Value", "42")
         try:
             val = int(value) if value.isdigit() else value
-        except Exception:
+        except (ValueError, TypeError):
             val = value
         try:
             obj = self.substrate.runtime_config.create_scale_object(
                 type_str)
             obj.encode(val)
             self._val("Encoded", f"0x{obj.data.to_hex()}")
+        except (ValueError, TypeError) as e:
+            self._err(f"SCALE encode: {e}")
         except Exception as e:
             self._err(f"SCALE encode: {e}")
 
@@ -2359,6 +3226,8 @@ class LaudCLI:
                 type_str)
             obj.decode(ScaleBytes(hex_data))
             self._val("Decoded", obj.value)
+        except (ValueError, TypeError) as e:
+            self._err(f"SCALE decode: {e}")
         except Exception as e:
             self._err(f"SCALE decode: {e}")
 
@@ -2394,6 +3263,8 @@ class LaudCLI:
                 self._ok("Signature is VALID")
             else:
                 self._err("Signature is INVALID")
+        except (ValueError, TypeError) as e:
+            self._err(f"Verify failed: {e}")
         except Exception as e:
             self._err(f"Verify failed: {e}")
 
@@ -2631,14 +3502,25 @@ class LaudCLI:
         self._val("Peers", h.get('peers', 0))
         self._val("Syncing", h.get('isSyncing', False))
         try:
-            epoch = self.substrate.query("Presence", "CurrentEpoch")
-            self._val("Current Epoch", epoch)
+            epoch = self.substrate.query("Epoch", "CurrentEpoch")
+            self._val("Current Session", epoch)
+            info = self.substrate.query(
+                "Epoch", "EpochInfo",
+                [epoch.value if epoch else 0])
+            if info and info.value:
+                state = info.value.get('state', 'Unknown')
+                self._val("Session Status",
+                          self._colorize_state(state))
             vc = self.substrate.query("Validator", "ValidatorCount")
             self._val("Validators", vc)
             ts = self.substrate.query("Validator", "TotalStake")
             self._val("Total Stake", ts)
-        except Exception:
-            pass
+        except (ConnectionError, BrokenPipeError, OSError):
+            self._err("Connection lost")
+        except Exception as e:
+            self._info("Could not fetch session data")
+            if self._mode == 'dev':
+                self._info(f"Detail: {e}")
 
     def _dashboard_my_status(self):
         if not self._ensure():
@@ -2654,17 +3536,18 @@ class LaudCLI:
                       f"{data.get('free', 0) / 1e12:.4f} UNIT")
         aid = self._actor_id(name)
         try:
-            epoch_r = self.substrate.query(
-                "Presence", "CurrentEpoch")
+            epoch_r = self.substrate.query("Epoch", "CurrentEpoch")
             epoch = epoch_r.value if epoch_r else 1
             pres = self.substrate.query(
                 "Presence", "Presences", [epoch, aid])
             if pres and pres.value:
-                self._val("Presence (epoch " + str(epoch) + ")", pres)
+                self._val(f"Check-in (session {epoch})", pres)
             else:
-                self._info(f"No presence record in epoch {epoch}")
+                self._info(f"Not checked in for session {epoch}")
+        except (ConnectionError, BrokenPipeError, OSError):
+            self._err("Connection lost")
         except Exception:
-            pass
+            self._info("Could not fetch check-in status")
         try:
             vid = self._validator_id(name)
             val_info = self.substrate.query(
@@ -2702,11 +3585,12 @@ class LaudCLI:
     # Custom handlers: Vault Secure Documents
     # ------------------------------------------------------------------
 
-    def _vault_secure_file(self):
+    def _vault_secure_file(self, prefill_vault=None):
         """Encrypt a file with AES-256-GCM, split key via Shamir, register on-chain."""
         if not self._ensure():
             return
-        vault_id = self._prompt_int("Vault ID", 0)
+        vault_id = (prefill_vault if prefill_vault is not None
+                    else self._prompt_int("Vault ID", 0))
         vault_info = self._query("Vault", "Vaults", [vault_id])
         if not vault_info or not vault_info.value:
             self._err("Vault not found")
@@ -2729,6 +3613,10 @@ class LaudCLI:
         if size > 100 * 1024 * 1024:
             self._err(f"File too large: {size:,} bytes (max 100 MB)")
             return
+        privacy = self._prompt_bool(
+            "Hide filename for privacy? "
+            "(recommended for sensitive documents)",
+            default=True)
         self._info(f"Securing {path.name} ({size:,} bytes)...")
         self._info(f"Protection: {threshold}-of-{ring_size} threshold")
 
@@ -2753,9 +3641,9 @@ class LaudCLI:
             self._err("Shamir split failed")
             return
 
-        # Store shares locally
+        # Store shares locally (namespaced by file enc_hash)
         for idx, value in shares:
-            store_share(vault_id, idx, value)
+            store_share(vault_id, idx, value, enc_hash=enc_hash)
 
         self._val("Encrypted hash", f"0x{enc_hash[:32]}...")
         self._val("Plaintext hash", f"0x{pt_hash[:32]}...")
@@ -2782,7 +3670,7 @@ class LaudCLI:
             return
 
         self._info("Storing proof in Storage pallet...")
-        self._submit("Storage", "store_data", {
+        storage_receipt = self._submit("Storage", "store_data", {
             "epoch": epoch,
             "key": f"0x{enc_hash}",
             "data_hash": f"0x{enc_hash}",
@@ -2790,6 +3678,8 @@ class LaudCLI:
             "size_bytes": sz,
             "retention": "Persistent",
         }, signer)
+        if not (storage_receipt and storage_receipt.is_success):
+            self._info("Storage proof skipped (no active session)")
 
         # Commit only the signer's own share (one commit per member)
         self._info("Committing signer's share hash on-chain...")
@@ -2799,6 +3689,24 @@ class LaudCLI:
             "vault_id": vault_id,
             "commitment": f"0x{commitment.hex()}",
         }, signer)
+
+        # Presence binding — only prompt if a verified position exists
+        bound_pos = None
+        pos_tolerance = None
+        bound_pos, pos_tolerance = self._get_verified_position(
+            epoch, signer)
+        if bound_pos:
+            bind_choice = self._prompt(
+                f"Bind to location ({bound_pos['x']}, "
+                f"{bound_pos['y']}, {bound_pos['z']})? (y/n)", "y")
+            if bind_choice.lower() != 'y':
+                bound_pos = None
+                pos_tolerance = None
+            else:
+                self._ok(
+                    f"Bound to position "
+                    f"({bound_pos['x']}, {bound_pos['y']}, "
+                    f"{bound_pos['z']})")
 
         # Update local index
         add_to_index(
@@ -2812,24 +3720,38 @@ class LaudCLI:
             key_fingerprint_hex=fp_hex,
             threshold=threshold,
             ring_size=ring_size,
+            privacy_mode=privacy,
+            bound_position=bound_pos,
+            position_tolerance=pos_tolerance,
         )
 
         secure_zero(fek)
         self._ok(f"Document secured: {path.name}")
+        if privacy:
+            self._info(
+                "Filename is hidden. "
+                "Only the document hash is stored.")
+        if bound_pos:
+            self._info("Location-bound — unlock requires proximity")
         self._info(f"Requires {threshold} of {ring_size} shares to unlock")
 
-    def _vault_unlock_file(self):
+    def _vault_unlock_file(self, prefill_vault=None):
         """Collect shares, reconstruct FEK, decrypt and export a vault file."""
         if not self._ensure():
             return
-        vault_id = self._prompt_int("Vault ID", 0)
+        vault_id = (prefill_vault if prefill_vault is not None
+                    else self._prompt_int("Vault ID", 0))
         files = get_vault_files(vault_id)
         if not files:
             self._info("No files in this vault")
             return
 
         for i, f in enumerate(files):
-            print(f"    {C.Y}{i+1}{C.R} {f['original_name']} "
+            if f.get('name_redacted', False):
+                display = f"Document #{i+1} (private)"
+            else:
+                display = f['original_name']
+            print(f"    {C.Y}{i+1}{C.R} {display} "
                   f"{C.DIM}({f.get('enc_hash', '?')[:16]}...){C.R}")
         idx = self._prompt_int("File #", 1) - 1
         if not (0 <= idx < len(files)):
@@ -2838,23 +3760,159 @@ class LaudCLI:
         enc_hash = f.get('enc_hash', '')
         threshold = f.get('threshold', 2)
 
-        self._val("File", f['original_name'])
+        if f.get('name_redacted', False):
+            self._val("File", f"Document #{idx+1} (private)")
+        else:
+            self._val("File", f['original_name'])
         self._val("Threshold", f"{threshold} shares needed")
 
-        # Request unlock on-chain
-        signer = self._prompt_account("Signer")
-        self._info("Requesting unlock on-chain (Vault.request_unlock)...")
-        receipt = self._submit("Vault", "request_unlock", {
-            "vault_id": vault_id,
-            "file_enc_hash": f"0x{enc_hash}",
-        }, signer)
+        # Show vault members so user knows who can sign
+        vault_data = self._safe_query("Vault", "Vaults", [vault_id])
+        ring_size = (vault_data.value.get('ring_size', 3)
+                     if vault_data and vault_data.value else 3)
+        members = self._vault_get_members(vault_id, ring_size)
+        member_names = []
+        if members:
+            actor_names = {}
+            for name in self.keypairs:
+                actor_names[self._actor_id(name)] = name
+            for m in members:
+                actor = str(m.get('actor', ''))
+                name = actor_names.get(actor, actor[:12] + '..')
+                member_names.append(name)
+            self._val("Members",
+                      ", ".join(f"{C.W}{n}{C.R}"
+                                for n in member_names))
 
-        if not (receipt and receipt.is_success):
-            self._err("Unlock request failed (may need approvals first)")
+        # Presence gate — check location binding
+        if f.get('presence_bound', False):
+            signer_pre = self._prompt_account(
+                "Signer (for location check)")
+            if not self._check_presence_for_file(
+                    f, signer_pre):
+                return
+            self._ok("Presence verified — location authorized")
 
-        # Collect shares
+        # Verify file is registered on-chain
+        chain_file = self._safe_query(
+            "Vault", "VaultFiles",
+            [vault_id, f"0x{enc_hash}"])
+        if not chain_file or not chain_file.value:
+            self._err(
+                "File not registered on-chain. "
+                "Chain may have been reset since this file was secured.")
+            re_reg = self._prompt_bool(
+                "Re-register file on-chain now?", default=True)
+            if re_reg:
+                signer = self._prompt_account("Signer")
+                fp_hex = f.get('key_fingerprint', '0' * 64)
+                pt_hash = f.get('plaintext_hash', '0' * 64)
+                receipt = self._submit("Vault", "register_file", {
+                    "vault_id": vault_id,
+                    "enc_hash": f"0x{enc_hash}",
+                    "plaintext_hash": f"0x{pt_hash}",
+                    "key_fingerprint": f"0x{fp_hex}",
+                    "size_bytes": f.get('size_bytes', 0),
+                }, signer)
+                if not (receipt and receipt.is_success):
+                    self._err("Re-registration failed")
+                    return
+                self._ok("File re-registered on-chain")
+            else:
+                return
+
+        # Check for existing active unlock request
+        active_req = self._safe_query(
+            "Vault", "ActiveUnlocks",
+            [vault_id, f"0x{enc_hash}"])
+        if active_req and active_req.value is not None:
+            req_id = active_req.value
+            req_data = self._safe_query(
+                "Vault", "UnlockRequests", [req_id])
+            if req_data and req_data.value:
+                rd = req_data.value
+                approvals = rd.get('approvals', 0)
+                vt = (vault_data.value.get('threshold', 2)
+                      if vault_data and vault_data.value else 2)
+                if rd.get('completed', False):
+                    self._ok(
+                        f"Unlock already completed "
+                        f"(request #{req_id})")
+                else:
+                    self._info(
+                        f"Active unlock request #{req_id} "
+                        f"({approvals}/{vt} approvals)")
+                    if approvals < vt:
+                        approve = self._prompt_bool(
+                            "Add your approval?", default=True)
+                        if approve:
+                            signer = self._prompt_account(
+                                "Approve as"
+                                + (f" ({', '.join(member_names)})"
+                                   if member_names else ""))
+                            # Pre-validate membership + share
+                            a_actor = self._actor_id(signer)
+                            a_chk = self._safe_query(
+                                "Vault", "VaultMembers",
+                                [vault_id, a_actor])
+                            if not a_chk or not a_chk.value:
+                                self._err(
+                                    f"{signer} is not a member "
+                                    "of this safe")
+                                return
+                            if not a_chk.value.get(
+                                    'share_committed', False):
+                                self._err(
+                                    f"{signer} hasn't committed "
+                                    "their key share yet.")
+                                return
+                            self._submit(
+                                "Vault", "authorize_unlock",
+                                {"request_id": req_id}, signer)
+                        if approvals + 1 < vt:
+                            self._info(
+                                f"Need {vt - approvals - 1} more "
+                                f"approval(s) before decrypt")
+                            return
+                    self._ok("Threshold met — proceeding to decrypt")
+        else:
+            # Request new unlock on-chain
+            signer = self._prompt_account(
+                "Signer"
+                + (f" ({', '.join(member_names)})"
+                   if member_names else ""))
+
+            # Pre-validate membership and share commitment
+            signer_actor = self._actor_id(signer)
+            m_check = self._safe_query(
+                "Vault", "VaultMembers",
+                [vault_id, signer_actor])
+            if not m_check or not m_check.value:
+                self._err(f"{signer} is not a member of this safe")
+                return
+            if not m_check.value.get('share_committed', False):
+                self._err(
+                    f"{signer} hasn't committed their key share yet. "
+                    "Ask a member who has committed to request "
+                    "access.")
+                return
+
+            self._info(
+                "Requesting unlock on-chain "
+                "(Vault.request_unlock)...")
+            receipt = self._submit("Vault", "request_unlock", {
+                "vault_id": vault_id,
+                "file_enc_hash": f"0x{enc_hash}",
+            }, signer)
+
+            if not (receipt and receipt.is_success):
+                self._err("Unlock request failed — chain rejected")
+                return
+
+        # Collect shares (per-file namespace, auto-migrate flat layout)
         self._info("Loading local shares...")
-        local_shares = load_all_shares(vault_id)
+        migrate_shares_to_per_file(vault_id, enc_hash)
+        local_shares = load_all_shares(vault_id, enc_hash=enc_hash)
         self._val("Local shares found", str(len(local_shares)))
 
         all_shares = list(local_shares)
@@ -2897,7 +3955,13 @@ class LaudCLI:
         self._ok("Key fingerprint verified")
 
         # Decrypt
-        dest = self._prompt("Export to", f"./{f['original_name']}")
+        if f.get('name_redacted', False):
+            orig = f.get('original_name', '')
+            ext = pathlib.Path(orig).suffix if orig else ''
+            default_dest = f"./{enc_hash[:16]}{ext}"
+        else:
+            default_dest = f"./{f['original_name']}"
+        dest = self._prompt("Export to", default_dest)
         try:
             resolved = retrieve_and_decrypt(
                 vault_id, enc_hash, bytes(fek), dest)
@@ -2914,10 +3978,14 @@ class LaudCLI:
             self._info("No files in this vault")
             return
         rows = []
-        for f in files:
+        for i, f in enumerate(files):
             h = f.get('enc_hash', f.get('file_hash', '?'))
+            if f.get('name_redacted', False):
+                display = f"Document #{i+1} (private)"
+            else:
+                display = f['original_name']
             rows.append([
-                f['original_name'][:24],
+                display[:24],
                 f"{f['size_bytes']:,}",
                 h[:16] + '...',
                 f['uploaded_at'][:10],
@@ -2934,7 +4002,11 @@ class LaudCLI:
             return
         for i, f in enumerate(files):
             h = f.get('enc_hash', f.get('file_hash', '?'))
-            print(f"    {C.Y}{i+1}{C.R} {f['original_name']} "
+            if f.get('name_redacted', False):
+                display = f"Document #{i+1} (private)"
+            else:
+                display = f['original_name']
+            print(f"    {C.Y}{i+1}{C.R} {display} "
                   f"{C.DIM}({h[:16]}...){C.R}")
         idx = self._prompt_int("File #", 1) - 1
         if not (0 <= idx < len(files)):
@@ -2963,13 +4035,27 @@ class LaudCLI:
 
     def _vault_import_share(self):
         vault_id = self._prompt_int("Vault ID", 0)
+        files = get_vault_files(vault_id)
+        enc_hash = None
+        if files:
+            if len(files) == 1:
+                enc_hash = files[0].get('enc_hash', '')
+            else:
+                self._heading("Select File for Share")
+                for i, f in enumerate(files):
+                    label = f.get('display_label',
+                                  f.get('original_name', '?'))
+                    print(f"    {C.Y}{i+1}{C.R} {label}")
+                fc = self._prompt_int("File #", 1) - 1
+                if 0 <= fc < len(files):
+                    enc_hash = files[fc].get('enc_hash', '')
         hex_input = self._prompt("Share hex (XX:value...)", "")
         parsed = import_share_hex(hex_input)
         if parsed is None:
             self._err("Invalid share format (expected: XX:hex...)")
             return
         idx, value = parsed
-        path = store_share(vault_id, idx, value)
+        path = store_share(vault_id, idx, value, enc_hash=enc_hash)
         self._ok(f"Share #{idx} imported and saved to {path}")
 
     # -- Dev mode vault tools --
@@ -3053,6 +4139,1174 @@ class LaudCLI:
         except Exception as e:
             self._err(str(e))
 
+    def _vault_anonymize_index(self):
+        """Hash all plaintext filenames in the vault index."""
+        count = anonymize_existing_index()
+        if count == 0:
+            self._info("No entries to anonymize")
+        else:
+            self._ok(f"Anonymized {count} file entries in vault index")
+
+    # ------------------------------------------------------------------
+    # Custom handlers: Vault Browse & Status
+    # ------------------------------------------------------------------
+
+    def _vault_browse(self):
+        """Browse all vaults the current user belongs to."""
+        if not self._ensure():
+            return
+        safe = "Safe" if self._mode == 'normal' else "Vault"
+        self._header(f"MY {safe.upper()}S")
+        aid = self._actor_id(self._ctx_account)
+        vaults = self._vault_actor_vaults(aid)
+        if not vaults:
+            self._info(f"No {safe.lower()}s found. "
+                       "Create one with option 1.")
+            return
+        rows = []
+        for i, vid in enumerate(vaults):
+            vi = self._safe_query("Vault", "Vaults", [vid])
+            if not vi or not vi.value:
+                rows.append([str(i + 1), f"#{vid}", "?", "?", "?", "?"])
+                continue
+            v = vi.value
+            status = v.get('status', '?')
+            t = v.get('threshold', '?')
+            n = v.get('ring_size', '?')
+            mc = v.get('member_count', '?')
+            files = get_vault_files(vid)
+            doc_count = len(files) if files else 0
+            rows.append([
+                str(i + 1),
+                f"#{vid}",
+                self._colorize_state(status),
+                f"{mc}/{n}",
+                str(doc_count),
+                f"{t}-of-{n}",
+            ])
+        doc_label = "Documents" if self._mode != 'normal' else "Docs"
+        self._table(
+            ["#", f"{safe} ID", "Status", "Members",
+             doc_label, "Protection"],
+            rows)
+        choice = self._prompt(
+            f"Enter # to open a {safe.lower()}, or 'b' to go back", "b")
+        if choice.lower() == 'b':
+            return
+        try:
+            idx = int(choice) - 1
+            if 0 <= idx < len(vaults):
+                self._vault_enter(vault_id=vaults[idx])
+        except (ValueError, TypeError):
+            pass
+
+    def _vault_my_vaults(self):
+        """Quick list of vault IDs and status for current user."""
+        if not self._ensure():
+            return
+        safe = "Safe" if self._mode == 'normal' else "Vault"
+        aid = self._actor_id(self._ctx_account)
+        vaults = self._vault_actor_vaults(aid)
+        if not vaults:
+            self._info(f"No {safe.lower()}s found.")
+            return
+        for vid in vaults:
+            vi = self._safe_query("Vault", "Vaults", [vid])
+            if vi and vi.value:
+                status = vi.value.get('status', '?')
+                t = vi.value.get('threshold', '?')
+                n = vi.value.get('ring_size', '?')
+                self._val(f"{safe} #{vid}",
+                          f"{self._colorize_state(status)}  "
+                          f"{C.DIM}{t}-of-{n}{C.R}")
+            else:
+                self._val(f"{safe} #{vid}", "?")
+
+    def _vault_actor_vaults(self, actor_id):
+        """Return list of vault IDs for an actor via storage iteration."""
+        try:
+            entries = list(
+                self.substrate.query_map(
+                    "Vault", "ActorVaults",
+                    [actor_id]))
+            return [e[0].value for e in entries]
+        except Exception:
+            pass
+        # Fallback: scan VaultCount range
+        try:
+            vc = self.substrate.query("Vault", "VaultCount")
+            total = vc.value if vc else 0
+            found = []
+            for vid in range(total):
+                m = self._safe_query(
+                    "Vault", "VaultMembers", [vid, actor_id])
+                if m and m.value:
+                    found.append(vid)
+            return found
+        except Exception:
+            return []
+
+    def _vault_enter(self, vault_id=None):
+        """Enter a vault to view members, documents, and status."""
+        if not self._ensure():
+            return
+        safe = "Safe" if self._mode == 'normal' else "Vault"
+        if vault_id is None:
+            vault_id = self._prompt_int(f"{safe} ID", 0)
+        vi = self._query("Vault", "Vaults", [vault_id])
+        if not vi or not vi.value:
+            self._err(f"{safe} #{vault_id} not found")
+            return
+        v = vi.value
+        status = v.get('status', '?')
+        t = v.get('threshold', '?')
+        n = v.get('ring_size', '?')
+        owner = v.get('owner', '?')
+
+        self._header(f"{safe.upper()}: #{vault_id}")
+        self._val("Status", self._colorize_state(status))
+        self._val("Protection", f"{t}-of-{n}")
+        # Resolve owner actor_id to name
+        owner_str = str(owner)
+        for name in self.keypairs:
+            if self._actor_id(name) == owner_str:
+                owner_str = f"{C.W}{name}{C.R}"
+                break
+        else:
+            if len(owner_str) > 16:
+                owner_str = owner_str[:16] + '...'
+        self._val("Owner", owner_str)
+
+        # -- Members panel --
+        members = self._vault_get_members(vault_id, n)
+        if members:
+            # Build actor_id → name lookup
+            actor_names = {}
+            for name in self.keypairs:
+                actor_names[self._actor_id(name)] = name
+            print()
+            print(f"  {C.BC}MEMBERS{C.R}")
+            for m in members:
+                role = m.get('role', '?')
+                committed = m.get('share_committed', False)
+                actor = str(m.get('actor', '?'))
+                # Resolve to friendly name
+                acct_name = actor_names.get(actor, '')
+                if acct_name:
+                    display = f"{C.W}{acct_name}{C.R}"
+                else:
+                    display = (actor[:16] + '...'
+                               if len(actor) > 16 else actor)
+                commit_icon = (f"{C.G}\u2713{C.R}"
+                               if committed
+                               else f"{C.DIM}\u2717{C.R}")
+                if isinstance(role, dict):
+                    role = next(iter(role.keys()), str(role))
+                print(f"    {str(role):<14} {display:<20}  "
+                      f"Share: {commit_icon}")
+
+        # -- Documents panel --
+        files = get_vault_files(vault_id)
+        unregistered = []
+        if files:
+            print()
+            print(f"  {C.BC}DOCUMENTS ({len(files)}){C.R}")
+            rows = []
+            for i, f in enumerate(files):
+                h = f.get('enc_hash', '?')
+                if f.get('name_redacted', False):
+                    display = f"Document #{i+1} (private)"
+                else:
+                    display = f['original_name']
+                # Check on-chain registration
+                cf = self._safe_query(
+                    "Vault", "VaultFiles",
+                    [vault_id, f"0x{h}" if h != '?' else "0x"])
+                if cf and cf.value:
+                    chain_ok = f"{C.G}On-chain{C.R}"
+                else:
+                    chain_ok = f"{C.Y}Local only{C.R}"
+                    unregistered.append(f)
+                loc = (f"{C.CY}Loc{C.R}"
+                       if f.get('presence_bound', False)
+                       else f"{C.DIM}—{C.R}")
+                rows.append([
+                    str(i + 1),
+                    display[:24],
+                    f"{f['size_bytes']:,}",
+                    h[:16] + '...',
+                    chain_ok,
+                    loc,
+                ])
+            self._table(
+                ["#", "Name", "Size", "Hash", "Status", "Loc"],
+                rows)
+            if unregistered:
+                self._info(
+                    f"{C.Y}{len(unregistered)} file(s) exist "
+                    f"locally but not on-chain{C.R} "
+                    f"(chain may have been reset)")
+        elif status == 'Active':
+            print()
+            self._info("No documents secured yet.")
+
+        # -- State-dependent actions --
+        if status == 'Active':
+            self._vault_enter_active_menu(
+                vault_id, unregistered=unregistered)
+        elif status == 'Locked':
+            print()
+            self._info(f"This {safe.lower()} is LOCKED. "
+                       "Documents cannot be accessed.")
+            choice = self._prompt("[r]ecovery  [b]ack", "b")
+            if choice.lower() == 'r':
+                self._vault_enter_recovery(vault_id)
+        elif status == 'Recovering':
+            self._vault_enter_recovering(vault_id, v)
+        else:
+            self._info(f"{safe} is in state: {status}")
+
+    def _vault_enter_active_menu(self, vault_id, unregistered=None):
+        """Interactive submenu for an active vault."""
+        safe = "safe" if self._mode == 'normal' else "vault"
+        while True:
+            print()
+            opts = "[s]ecure  [u]nlock  [d]etail  [v]erify  [l]ock"
+            if unregistered:
+                opts += f"  [r]egister ({len(unregistered)})"
+            print(f"  {C.DIM}{opts}  [b]ack{C.R}")
+            choice = self._prompt("Action", "b").lower()
+            if choice == 'b':
+                return
+            elif choice == 'r' and unregistered:
+                self._vault_reregister_files(vault_id, unregistered)
+                unregistered = []  # Clear after re-registration
+            elif choice == 's':
+                self._vault_secure_file_for(vault_id)
+            elif choice == 'u':
+                self._vault_unlock_file_for(vault_id)
+            elif choice == 'd':
+                self._vault_document_detail(vault_id=vault_id)
+            elif choice == 'v':
+                self._vault_verify_for(vault_id)
+            elif choice == 'l':
+                confirm = self._prompt_bool(
+                    f"Lock {safe} #{vault_id}? This prevents access.")
+                if confirm:
+                    self._submit(
+                        "Vault", "lock_vault",
+                        {"vault_id": vault_id},
+                        self._ctx_account)
+                return
+
+    def _vault_reregister_files(self, vault_id, files):
+        """Re-register local-only files on-chain after a chain reset."""
+        signer = self._prompt_account("Register as")
+        ok = 0
+        for f in files:
+            h = f.get('enc_hash', '')
+            name = f.get('original_name', 'unnamed')
+            if f.get('name_redacted', False):
+                name = "(private)"
+            self._info(f"Registering {name}...")
+            receipt = self._submit("Vault", "register_file", {
+                "vault_id": vault_id,
+                "enc_hash": f"0x{h}",
+                "plaintext_hash": f"0x{f.get('plaintext_hash', '0' * 64)}",
+                "key_fingerprint": f"0x{f.get('key_fingerprint', '0' * 64)}",
+                "size_bytes": f.get('size_bytes', 0),
+            }, signer)
+            if receipt and receipt.is_success:
+                ok += 1
+            else:
+                self._err(f"Failed to register {name}")
+        self._ok(f"{ok}/{len(files)} file(s) registered on-chain")
+
+    def _vault_enter_recovery(self, vault_id):
+        """Start recovery for a locked vault."""
+        self._submit(
+            "Vault", "initiate_recovery",
+            {"vault_id": vault_id}, self._ctx_account)
+
+    def _vault_enter_recovering(self, vault_id, vault_data):
+        """Show recovery progress for a recovering vault."""
+        t = vault_data.get('threshold', '?')
+        print()
+        self._info("RECOVERY IN PROGRESS")
+        rec = self._safe_query(
+            "Vault", "RecoveryRequests", [vault_id])
+        if rec and rec.value:
+            revealed = rec.value.get('shares_revealed', 0)
+            self._val("Shares revealed", f"{revealed}/{t}")
+        choice = self._prompt("[r]eveal share  [b]ack", "b")
+        if choice.lower() == 'r':
+            share_id = self._prompt_int("Share ID to reveal", 0)
+            self._submit(
+                "Vault", "reveal_share",
+                {"share_id": share_id}, self._ctx_account)
+
+    def _vault_secure_file_for(self, vault_id):
+        """Call _vault_secure_file with vault_id pre-filled."""
+        self._vault_secure_file(prefill_vault=vault_id)
+
+    def _vault_unlock_file_for(self, vault_id):
+        """Call _vault_unlock_file with vault_id pre-filled."""
+        self._vault_unlock_file(prefill_vault=vault_id)
+
+    def _vault_verify_for(self, vault_id):
+        """Run file verification for a specific vault."""
+        files = get_vault_files(vault_id)
+        if not files:
+            self._info("No files in this vault")
+            return
+        for i, f in enumerate(files):
+            h = f.get('enc_hash', f.get('file_hash', '?'))
+            if f.get('name_redacted', False):
+                display = f"Document #{i+1} (private)"
+            else:
+                display = f['original_name']
+            print(f"    {C.Y}{i+1}{C.R} {display} "
+                  f"{C.DIM}({h[:16]}...){C.R}")
+        idx = self._prompt_int("File #", 1) - 1
+        if not (0 <= idx < len(files)):
+            return
+        f = files[idx]
+        enc_hash = f.get('enc_hash', f.get('file_hash', ''))
+        ok, current_hash = verify_vault_file(vault_id, enc_hash)
+        if ok is None:
+            self._err("Local file not found")
+        elif ok:
+            self._ok("File integrity verified")
+        else:
+            self._err("HASH MISMATCH -- file has been modified!")
+            self._val("Expected", enc_hash[:32] + '...')
+            self._val("Got", current_hash[:32] + '...')
+
+    def _vault_get_members(self, vault_id, ring_size):
+        """Fetch vault members via storage queries."""
+        members = []
+        try:
+            entries = list(
+                self.substrate.query_map(
+                    "Vault", "VaultMembers",
+                    [vault_id]))
+            for e in entries:
+                if e[1] and e[1].value:
+                    members.append(e[1].value)
+        except Exception:
+            pass
+        if not members:
+            # Fallback: probe known accounts
+            for name, kp in self.keypairs.items():
+                aid = self._actor_id(name)
+                m = self._safe_query(
+                    "Vault", "VaultMembers", [vault_id, aid])
+                if m and m.value:
+                    members.append(m.value)
+        return members
+
+    # ------------------------------------------------------------------
+    # Vault UX: Presence-gated access helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _position_distance_sq(pos_a, pos_b):
+        """Squared Euclidean distance between two position dicts."""
+        dx = pos_a.get('x', 0) - pos_b.get('x', 0)
+        dy = pos_a.get('y', 0) - pos_b.get('y', 0)
+        dz = pos_a.get('z', 0) - pos_b.get('z', 0)
+        return dx * dx + dy * dy + dz * dz
+
+    def _get_verified_position(self, epoch, signer_name):
+        """Query the current verified position for a signer.
+
+        Returns (position_dict, tolerance) or (None, None).
+        """
+        aid = self._actor_id(signer_name)
+        claim = self._safe_query(
+            "Presence", "PositionClaims", [epoch, aid])
+        if not claim or not claim.value:
+            return None, None
+        cv = claim.value
+        if not cv.get('verified', False):
+            return None, None
+        # Prefer triangulated position, fall back to claimed
+        pos = cv.get('triangulated_position')
+        if pos is None:
+            pos = cv.get('claimed_position')
+        if pos is None:
+            return None, None
+        tolerance = 100  # default tolerance (squared units)
+        return pos, tolerance
+
+    def _check_presence_for_file(self, file_entry, signer_name):
+        """Verify signer is within tolerance of a presence-bound file.
+
+        Returns True if access granted, False if denied.
+        """
+        if not file_entry.get('presence_bound', False):
+            return True  # unbound file always passes
+
+        bound_pos = file_entry.get('bound_position')
+        tolerance = file_entry.get('position_tolerance', 100)
+        if not bound_pos:
+            return True  # malformed entry, allow
+
+        # Get current epoch
+        try:
+            epoch_r = self.substrate.query("Epoch", "CurrentEpoch")
+            epoch = epoch_r.value if epoch_r else 0
+        except Exception:
+            epoch = 0
+
+        aid = self._actor_id(signer_name)
+        claim = self._safe_query(
+            "Presence", "PositionClaims", [epoch, aid])
+
+        if not claim or not claim.value:
+            self._err(
+                "ACCESS DENIED — no position claim found "
+                f"for {signer_name} in epoch {epoch}")
+            self._info(
+                "You must claim and verify your position before "
+                "unlocking location-bound files")
+            return False
+
+        cv = claim.value
+        if not cv.get('verified', False):
+            self._err(
+                "ACCESS DENIED — position not verified yet")
+            self._info(
+                f"Witness count: {cv.get('witness_count', 0)} — "
+                "need more witnesses to verify")
+            return False
+
+        # Check distance
+        current_pos = cv.get('triangulated_position')
+        if current_pos is None:
+            current_pos = cv.get('claimed_position')
+        if current_pos is None:
+            self._err("ACCESS DENIED — no position data available")
+            return False
+
+        dist_sq = self._position_distance_sq(bound_pos, current_pos)
+        tol_sq = tolerance * tolerance
+
+        if dist_sq > tol_sq:
+            import math
+            dist = math.sqrt(dist_sq)
+            self._err(
+                f"ACCESS DENIED — too far from vault location "
+                f"(distance: {dist:.0f}, tolerance: {tolerance})")
+            self._info(
+                f"Bound: ({bound_pos.get('x', 0)}, "
+                f"{bound_pos.get('y', 0)}, "
+                f"{bound_pos.get('z', 0)})")
+            self._info(
+                f"Current: ({current_pos.get('x', 0)}, "
+                f"{current_pos.get('y', 0)}, "
+                f"{current_pos.get('z', 0)})")
+            return False
+
+        return True
+
+    # ------------------------------------------------------------------
+    # Vault UX: Approvals & Unlock Requests (F5)
+    # ------------------------------------------------------------------
+
+    def _vault_approvals(self):
+        """View and act on pending unlock requests across all vaults."""
+        if not self._ensure():
+            return
+        actor_id = self._actor_id(self._ctx_account)
+        vault_ids = self._vault_actor_vaults(actor_id)
+        if not vault_ids:
+            self._info("You don't belong to any vaults yet.")
+            return
+
+        self._header("PENDING APPROVALS")
+        pending = []
+        for vid in vault_ids:
+            vault_data = self._safe_query("Vault", "Vaults", [vid])
+            if not vault_data or not vault_data.value:
+                continue
+            vd = vault_data.value
+            threshold = vd.get('threshold', 2)
+            # Scan active unlocks for this vault
+            try:
+                entries = list(
+                    self.substrate.query_map(
+                        "Vault", "ActiveUnlocks", [vid]))
+                for entry in entries:
+                    if not entry[1] or entry[1].value is None:
+                        continue
+                    req_id = entry[1].value
+                    req = self._safe_query(
+                        "Vault", "UnlockRequests", [req_id])
+                    if not req or not req.value:
+                        continue
+                    rd = req.value
+                    if rd.get('completed', False):
+                        continue
+                    pending.append({
+                        'req_id': req_id,
+                        'vault_id': vid,
+                        'file_hash': rd.get('file_enc_hash', '?'),
+                        'requester': rd.get('requester', '?'),
+                        'approvals': rd.get('approvals', 0),
+                        'threshold': threshold,
+                        'initiated': rd.get('initiated_at', '?'),
+                        'expires': rd.get('expires_at', '?'),
+                    })
+            except Exception:
+                # Fallback: scan by request count
+                req_count = self._safe_query(
+                    "Vault", "UnlockRequestCount", [])
+                total = req_count.value if req_count and req_count.value is not None else 0
+                for rid in range(1, min(total + 1, 100)):
+                    req = self._safe_query(
+                        "Vault", "UnlockRequests", [rid])
+                    if not req or not req.value:
+                        continue
+                    rd = req.value
+                    if rd.get('vault', 0) != vid:
+                        continue
+                    if rd.get('completed', False):
+                        continue
+                    pending.append({
+                        'req_id': rid,
+                        'vault_id': vid,
+                        'file_hash': rd.get('file_enc_hash', '?'),
+                        'requester': rd.get('requester', '?'),
+                        'approvals': rd.get('approvals', 0),
+                        'threshold': threshold,
+                        'initiated': rd.get('initiated_at', '?'),
+                        'expires': rd.get('expires_at', '?'),
+                    })
+
+        if not pending:
+            self._info("No pending unlock requests found.")
+            return
+
+        # Display pending table
+        rows = []
+        for i, p in enumerate(pending):
+            fh = p['file_hash']
+            if isinstance(fh, str) and len(fh) > 16:
+                fh = fh[:16] + "..."
+            elif isinstance(fh, int):
+                fh = hex(fh)[:16] + "..."
+            req_str = str(p['requester'])
+            if len(req_str) > 12:
+                req_str = req_str[:12] + ".."
+            progress = f"{p['approvals']}/{p['threshold']}"
+            if p['approvals'] >= p['threshold']:
+                progress = f"{C.G}{progress}{C.R}"
+            else:
+                progress = f"{C.Y}{progress}{C.R}"
+            rows.append([
+                str(i + 1), str(p['req_id']), str(p['vault_id']),
+                fh, req_str, progress,
+            ])
+        self._table(
+            ["#", "Request", "Vault", "File", "Requester", "Approvals"],
+            rows)
+
+        # Inline approve
+        choice = self._prompt(
+            "Approve request # (or 'b' to go back)", "b")
+        if choice.lower() == 'b':
+            return
+        try:
+            idx = int(choice) - 1
+        except ValueError:
+            return
+        if not (0 <= idx < len(pending)):
+            self._err("Invalid selection")
+            return
+
+        p = pending[idx]
+        signer = self._prompt_account("Approve as")
+
+        # Pre-validate membership and share commitment
+        a_actor = self._actor_id(signer)
+        a_chk = self._safe_query(
+            "Vault", "VaultMembers",
+            [p['vault_id'], a_actor])
+        if not a_chk or not a_chk.value:
+            self._err(f"{signer} is not a member of this safe")
+            return
+        if not a_chk.value.get('share_committed', False):
+            self._err(
+                f"{signer} hasn't committed their key share yet.")
+            return
+
+        self._info(
+            f"Authorizing unlock for request #{p['req_id']} "
+            f"on vault #{p['vault_id']}...")
+        receipt = self._submit("Vault", "authorize_unlock", {
+            "request_id": p['req_id'],
+        }, signer)
+        if receipt and receipt.is_success:
+            self._ok(
+                f"Approved! ({p['approvals'] + 1}/{p['threshold']})")
+        else:
+            self._err("Approval failed — you may have already voted")
+
+    def _vault_unlock_requests(self):
+        """View pending and past unlock requests for a specific vault."""
+        if not self._ensure():
+            return
+        vault_id = self._prompt_int("Vault ID", 0)
+        vault_data = self._safe_query("Vault", "Vaults", [vault_id])
+        if not vault_data or not vault_data.value:
+            self._err(f"Vault #{vault_id} not found")
+            return
+
+        vd = vault_data.value
+        threshold = vd.get('threshold', 2)
+        self._header(f"UNLOCK REQUESTS — VAULT #{vault_id}")
+        self._val("Status", self._colorize_state(
+            vd.get('status', 'Unknown')))
+        self._val("Threshold", f"{threshold} approvals needed")
+
+        # Gather all requests for this vault
+        requests = []
+        req_count = self._safe_query("Vault", "UnlockRequestCount", [])
+        total = req_count.value if req_count and req_count.value is not None else 0
+
+        for rid in range(1, min(total + 1, 200)):
+            req = self._safe_query("Vault", "UnlockRequests", [rid])
+            if not req or not req.value:
+                continue
+            rd = req.value
+            if rd.get('vault', 0) != vault_id:
+                continue
+            requests.append({
+                'req_id': rid,
+                'file_hash': rd.get('file_enc_hash', '?'),
+                'requester': rd.get('requester', '?'),
+                'approvals': rd.get('approvals', 0),
+                'completed': rd.get('completed', False),
+                'initiated': rd.get('initiated_at', '?'),
+                'expires': rd.get('expires_at', '?'),
+            })
+
+        if not requests:
+            self._info("No unlock requests found for this vault.")
+            return
+
+        # Split into active vs completed
+        active = [r for r in requests if not r['completed']]
+        completed = [r for r in requests if r['completed']]
+
+        if active:
+            self._heading("Active Requests")
+            rows = []
+            for r in active:
+                fh = r['file_hash']
+                if isinstance(fh, str) and len(fh) > 16:
+                    fh = fh[:16] + "..."
+                elif isinstance(fh, int):
+                    fh = hex(fh)[:16] + "..."
+                req_str = str(r['requester'])
+                if len(req_str) > 12:
+                    req_str = req_str[:12] + ".."
+                progress = f"{r['approvals']}/{threshold}"
+                rows.append([
+                    str(r['req_id']), fh, req_str,
+                    progress, str(r['expires']),
+                ])
+            self._table(
+                ["Request", "File", "Requester",
+                 "Approvals", "Expires"],
+                rows)
+
+            # Voter breakdown for active requests
+            for r in active:
+                self._val(
+                    f"Request #{r['req_id']} voters",
+                    self._get_approval_voters(r['req_id']))
+
+        if completed:
+            self._heading("Completed Requests")
+            rows = []
+            for r in completed:
+                fh = r['file_hash']
+                if isinstance(fh, str) and len(fh) > 16:
+                    fh = fh[:16] + "..."
+                elif isinstance(fh, int):
+                    fh = hex(fh)[:16] + "..."
+                rows.append([
+                    str(r['req_id']), fh,
+                    str(r['requester'])[:14],
+                    f"{C.G}Done{C.R}",
+                ])
+            self._table(
+                ["Request", "File", "Requester", "Status"],
+                rows)
+
+        # Inline approve option for active
+        if active:
+            choice = self._prompt(
+                "Approve request ID (or 'b' to go back)", "b")
+            if choice.lower() != 'b':
+                try:
+                    req_id = int(choice)
+                except ValueError:
+                    return
+                signer = self._prompt_account("Approve as")
+                # Pre-validate membership and share commitment
+                a_actor = self._actor_id(signer)
+                a_chk = self._safe_query(
+                    "Vault", "VaultMembers",
+                    [vault_id, a_actor])
+                if not a_chk or not a_chk.value:
+                    self._err(
+                        f"{signer} is not a member of this safe")
+                    return
+                if not a_chk.value.get(
+                        'share_committed', False):
+                    self._err(
+                        f"{signer} hasn't committed their "
+                        "key share yet.")
+                    return
+                receipt = self._submit("Vault", "authorize_unlock", {
+                    "request_id": req_id,
+                }, signer)
+                if receipt and receipt.is_success:
+                    self._ok("Approval submitted successfully!")
+                else:
+                    self._err("Approval failed")
+
+    def _get_approval_voters(self, request_id):
+        """Get list of actors who approved an unlock request."""
+        voters = []
+        try:
+            entries = list(
+                self.substrate.query_map(
+                    "Vault", "UnlockApprovals", [request_id]))
+            for entry in entries:
+                if entry[0]:
+                    v = entry[0]
+                    if hasattr(v, 'value'):
+                        v = v.value
+                    s = str(v)
+                    if len(s) > 12:
+                        s = s[:12] + ".."
+                    voters.append(s)
+        except Exception:
+            voters.append("(unable to query)")
+        return ", ".join(voters) if voters else "none"
+
+    # ------------------------------------------------------------------
+    # Vault UX: Health & Share Status (F6)
+    # ------------------------------------------------------------------
+
+    def _vault_health(self):
+        """Run health checks across all user vaults."""
+        if not self._ensure():
+            return
+        actor_id = self._actor_id(self._ctx_account)
+        vault_ids = self._vault_actor_vaults(actor_id)
+        if not vault_ids:
+            self._info("You don't belong to any vaults yet.")
+            return
+
+        self._header("VAULT HEALTH REPORT")
+        rows = []
+        healthy = 0
+        issues_total = 0
+
+        for vid in vault_ids:
+            vault_data = self._safe_query("Vault", "Vaults", [vid])
+            if not vault_data or not vault_data.value:
+                rows.append([
+                    str(vid), f"{C.R_}?{C.R}", "-", "-", "-",
+                    f"{C.R_}Not found{C.R}"])
+                issues_total += 1
+                continue
+
+            vd = vault_data.value
+            status = vd.get('status', 'Unknown')
+            threshold = vd.get('threshold', 2)
+            ring_size = vd.get('ring_size', 3)
+
+            # Count members
+            members = self._vault_get_members(vid, ring_size)
+            member_count = len(members)
+
+            # Check share commitments
+            committed = 0
+            for m in members:
+                if isinstance(m, dict) and m.get('share_committed', False):
+                    committed += 1
+
+            # Count local files
+            files = get_vault_files(vid)
+            file_count = len(files)
+
+            # File integrity checks
+            file_issues = 0
+            for f in files[:20]:  # Limit to avoid slowness
+                enc_hash = f.get('enc_hash', '')
+                if enc_hash:
+                    ok, _ = verify_file(vid, enc_hash)
+                    if ok is None or ok is False:
+                        file_issues += 1
+
+            # Build issue list
+            issues = []
+            if status not in ('Active',):
+                if isinstance(status, dict):
+                    s_str = next(iter(status.keys()), str(status))
+                else:
+                    s_str = str(status)
+                if s_str not in ('Active',):
+                    issues.append(f"status={s_str}")
+            if member_count < ring_size:
+                issues.append(
+                    f"members {member_count}/{ring_size}")
+            if committed < member_count:
+                issues.append(
+                    f"shares {committed}/{member_count}")
+            if file_issues > 0:
+                issues.append(
+                    f"{file_issues} file(s) corrupted")
+
+            issue_str = (
+                f"{C.G}OK{C.R}" if not issues
+                else f"{C.Y}{'; '.join(issues)}{C.R}")
+
+            if not issues:
+                healthy += 1
+            else:
+                issues_total += len(issues)
+
+            rows.append([
+                str(vid),
+                self._colorize_state(status),
+                f"{member_count}/{ring_size}",
+                f"{committed}/{member_count}",
+                str(file_count),
+                issue_str,
+            ])
+
+        self._table(
+            ["Vault", "Status", "Members", "Shares",
+             "Files", "Issues"],
+            rows)
+
+        total = len(vault_ids)
+        self._info(
+            f"{C.G}{healthy}{C.R} of {total} safe(s) healthy"
+            + (f", {C.Y}{issues_total} issue(s) found{C.R}"
+               if issues_total else ""))
+
+    def _vault_share_status(self):
+        """View key share distribution status per member."""
+        if not self._ensure():
+            return
+        vault_id = self._prompt_int("Vault ID", 0)
+        vault_data = self._safe_query("Vault", "Vaults", [vault_id])
+        if not vault_data or not vault_data.value:
+            self._err(f"Vault #{vault_id} not found")
+            return
+
+        vd = vault_data.value
+        threshold = vd.get('threshold', 2)
+        ring_size = vd.get('ring_size', 3)
+
+        self._header(f"SHARE STATUS — VAULT #{vault_id}")
+        self._val("Status", self._colorize_state(
+            vd.get('status', 'Unknown')))
+        self._val("Scheme",
+                  f"{threshold}-of-{ring_size} threshold")
+
+        members = self._vault_get_members(vault_id, ring_size)
+        if not members:
+            self._info("No members found.")
+            return
+
+        # Build share map: query VaultShares for this vault
+        vault_shares = {}
+        try:
+            entries = list(
+                self.substrate.query_map(
+                    "Vault", "VaultShares", [vault_id]))
+            for entry in entries:
+                if entry[0]:
+                    sid = entry[0]
+                    if hasattr(sid, 'value'):
+                        sid = sid.value
+                    vault_shares[sid] = True
+        except Exception:
+            pass
+
+        rows = []
+        for m in members:
+            if isinstance(m, dict):
+                actor = m.get('actor', '?')
+                role = m.get('role', '?')
+                share_idx = m.get('share_index', '?')
+                committed = m.get('share_committed', False)
+            else:
+                actor = str(m)
+                role = '?'
+                share_idx = '?'
+                committed = False
+
+            # Resolve actor name from known keypairs
+            actor_name = str(actor)
+            for name, kp in self.keypairs.items():
+                aid = self._actor_id(name)
+                if aid == actor:
+                    actor_name = name
+                    break
+            if len(actor_name) > 14:
+                actor_name = actor_name[:14] + ".."
+
+            # Format role
+            if isinstance(role, dict):
+                role_str = next(iter(role.keys()), str(role))
+            else:
+                role_str = str(role)
+
+            committed_str = (
+                f"{C.G}Yes{C.R}" if committed
+                else f"{C.Y}No{C.R}")
+
+            # Check if share exists in VaultShares
+            share_id_str = str(share_idx)
+            in_vault = (
+                f"{C.G}Registered{C.R}"
+                if vault_shares.get(share_idx, False)
+                else f"{C.DIM}—{C.R}")
+
+            rows.append([
+                actor_name, role_str, committed_str,
+                in_vault, share_id_str,
+            ])
+
+        self._table(
+            ["Member", "Role", "Committed", "Registered",
+             "Share ID"],
+            rows)
+
+        # Summary
+        committed_count = sum(
+            1 for m in members
+            if isinstance(m, dict) and m.get('share_committed', False))
+        self._info(
+            f"{committed_count}/{len(members)} shares committed, "
+            f"threshold is {threshold}")
+
+    # ------------------------------------------------------------------
+    # Vault UX: Document Detail (F4)
+    # ------------------------------------------------------------------
+
+    def _vault_document_detail(self, vault_id=None, file_entry=None):
+        """Show detailed view of a vault document with integrity checks."""
+        if not self._ensure():
+            return
+        if vault_id is None:
+            vault_id = self._prompt_int("Vault ID", 0)
+        files = get_vault_files(vault_id)
+        if not files:
+            self._info("No files in this vault.")
+            return
+
+        # Select file if not provided
+        if file_entry is None:
+            for i, f in enumerate(files):
+                if f.get('name_redacted', False):
+                    display = f"Document #{i+1} (private)"
+                else:
+                    display = f['original_name']
+                enc_hash = f.get('enc_hash', '')
+                short_hash = enc_hash[:16] + "..." if enc_hash else "?"
+                print(f"    {C.Y}{i+1}{C.R} {display} "
+                      f"{C.DIM}({short_hash}){C.R}")
+            idx = self._prompt_int("File #", 1) - 1
+            if not (0 <= idx < len(files)):
+                return
+            file_entry = files[idx]
+
+        enc_hash = file_entry.get('enc_hash', '')
+        safe = "document" if self._mode == 'normal' else "file"
+        self._header(f"{safe.upper()} DETAIL")
+
+        # Metadata
+        if file_entry.get('name_redacted', False):
+            self._val("Name", "(private / redacted)")
+        else:
+            self._val("Name", file_entry.get('original_name', '?'))
+
+        size = file_entry.get('encrypted_size', 0)
+        if size > 1024 * 1024:
+            size_str = f"{size / (1024 * 1024):.1f} MB"
+        elif size > 1024:
+            size_str = f"{size / 1024:.1f} KB"
+        else:
+            size_str = f"{size} bytes"
+        self._val("Size", size_str)
+        self._val("Threshold",
+                  f"{file_entry.get('threshold', '?')} shares needed")
+        self._val("Encrypted hash", enc_hash[:32] + "..."
+                  if len(enc_hash) > 32 else enc_hash)
+        fp = file_entry.get('key_fingerprint', '')
+        self._val("Key fingerprint", fp[:32] + "..."
+                  if len(fp) > 32 else (fp or "—"))
+        self._val("Secured at",
+                  file_entry.get('uploaded_at',
+                                 file_entry.get('timestamp', '?')))
+        if file_entry.get('presence_bound', False):
+            bp = file_entry.get('bound_position', {})
+            tol = file_entry.get('position_tolerance', 100)
+            self._val("Location bound",
+                      f"({bp.get('x', 0)}, {bp.get('y', 0)}, "
+                      f"{bp.get('z', 0)}) tol={tol}")
+
+        # On-chain verification
+        self._heading("On-Chain Verification")
+        chain_file = self._safe_query(
+            "Vault", "VaultFiles",
+            [vault_id, f"0x{enc_hash}" if enc_hash else "0x"])
+        if chain_file and chain_file.value:
+            cf = chain_file.value
+            self._val("Registered by",
+                      str(cf.get('registered_by', '?')))
+            self._val("Registered at block",
+                      str(cf.get('registered_at', '?')))
+            pt_hash = cf.get('plaintext_hash', '')
+            if isinstance(pt_hash, str):
+                self._val("Plaintext hash",
+                          pt_hash[:32] + "..."
+                          if len(pt_hash) > 32 else pt_hash)
+            else:
+                self._val("Plaintext hash", str(pt_hash))
+            chain_fp = cf.get('key_fingerprint', '')
+            if isinstance(chain_fp, str):
+                fp_match = chain_fp == f"0x{fp}" or chain_fp == fp
+            else:
+                fp_match = str(chain_fp) == fp
+            self._val("Fingerprint match",
+                      f"{C.G}Yes{C.R}" if fp_match
+                      else f"{C.R_}MISMATCH{C.R}")
+            self._ok("File registered on-chain")
+        else:
+            self._err("File NOT found on-chain — may not be registered yet")
+
+        # Local integrity
+        self._heading("Local Integrity")
+        if enc_hash:
+            ok, current = verify_file(vault_id, enc_hash)
+            if ok is True:
+                self._ok("Local file integrity: PASS")
+            elif ok is False:
+                self._err(
+                    f"Local file integrity: FAIL "
+                    f"(expected {enc_hash[:16]}..., "
+                    f"got {current[:16] if current else '?'}...)")
+            else:
+                self._info("Local encrypted file not found "
+                           "(may be on another device)")
+        else:
+            self._info("No encrypted hash — cannot verify")
+
+        # Unlock history
+        self._heading("Unlock History")
+        unlock_found = False
+        req_count = self._safe_query(
+            "Vault", "UnlockRequestCount", [])
+        total = req_count.value if req_count and req_count.value is not None else 0
+        history_rows = []
+
+        for rid in range(1, min(total + 1, 100)):
+            req = self._safe_query(
+                "Vault", "UnlockRequests", [rid])
+            if not req or not req.value:
+                continue
+            rd = req.value
+            if rd.get('vault', 0) != vault_id:
+                continue
+            # Compare file hash
+            rh = rd.get('file_enc_hash', '')
+            if isinstance(rh, str):
+                rh_clean = rh.replace('0x', '')
+            else:
+                rh_clean = str(rh)
+            if rh_clean != enc_hash and rh != f"0x{enc_hash}":
+                continue
+            unlock_found = True
+            status = (f"{C.G}Completed{C.R}" if rd.get('completed')
+                      else f"{C.Y}Pending{C.R}")
+            history_rows.append([
+                str(rid),
+                str(rd.get('requester', '?'))[:14],
+                f"{rd.get('approvals', 0)}",
+                status,
+                str(rd.get('initiated_at', '?')),
+            ])
+
+        if history_rows:
+            self._table(
+                ["Request", "Requester", "Votes",
+                 "Status", "Block"],
+                history_rows)
+        else:
+            self._info("No unlock requests for this file.")
+
+        # Actions
+        print()
+        print(f"  {C.DIM}[u]nlock  [v]erify  [e]xport share  "
+              f"[b]ack{C.R}")
+        choice = self._prompt("Action", "b").lower()
+        if choice == 'u':
+            self._vault_unlock_file_for(vault_id)
+        elif choice == 'v':
+            self._vault_verify_for(vault_id)
+        elif choice == 'e':
+            self._vault_export_share_for(vault_id)
+
+    def _vault_export_share_for(self, vault_id):
+        """Export a local share as hex for transfer to another member."""
+        files = get_vault_files(vault_id)
+        if not files:
+            self._info("No files in this vault.")
+            return
+        enc_hash = None
+        if len(files) == 1:
+            enc_hash = files[0].get('enc_hash', '')
+        else:
+            self._heading("Select File")
+            for i, f in enumerate(files):
+                label = f.get('display_label', f.get('original_name', '?'))
+                print(f"    {C.Y}{i+1}{C.R} {label}")
+            fc = self._prompt_int("File #", 1) - 1
+            if not (0 <= fc < len(files)):
+                return
+            enc_hash = files[fc].get('enc_hash', '')
+        migrate_shares_to_per_file(vault_id, enc_hash)
+        shares = load_all_shares(vault_id, enc_hash=enc_hash)
+        if not shares:
+            self._info("No local shares found for this file.")
+            return
+        for i, (idx, data) in enumerate(shares):
+            print(f"    {C.Y}{i+1}{C.R} Share #{idx} "
+                  f"({len(data)} bytes)")
+        choice = self._prompt_int("Share #", 1) - 1
+        if not (0 <= choice < len(shares)):
+            return
+        idx, _ = shares[choice]
+        hex_str = export_share_hex(vault_id, idx, enc_hash=enc_hash)
+        if hex_str is None:
+            self._err("Failed to export share")
+            return
+        self._heading("Exportable Share")
+        print(f"    {C.W}{hex_str}{C.R}")
+        self._info("Send this to the requesting vault member")
+
     # ------------------------------------------------------------------
     # Custom handlers: Dev Extensions
     # ------------------------------------------------------------------
@@ -3109,6 +5363,8 @@ class LaudCLI:
                 call = self.substrate.compose_call(mod, fn, params)
                 calls.append(call)
                 self._ok(f"Added {mod}.{fn} (#{len(calls)})")
+            except (ConnectionError, BrokenPipeError, OSError) as e:
+                self._err(f"Connection lost: {e}")
             except Exception as e:
                 self._err(f"Failed to compose: {e}")
         if not calls:
@@ -3366,10 +5622,23 @@ class LaudCLI:
     # Test flows
     # ------------------------------------------------------------------
 
+    def _ensure_bootstrapped(self):
+        """Check validators are active; auto-bootstrap if not."""
+        try:
+            vc = self.substrate.query("Validator", "ValidatorCount")
+            if vc and vc.value and vc.value > 0:
+                return True
+        except Exception:
+            pass
+        self._info("No validators found — running bootstrap first")
+        self.bootstrap()
+        return True
+
     def test_full_lifecycle(self):
         if not self._ensure():
             return
         self._check_epoch()
+        self._ensure_bootstrapped()
         self._header("FULL PoP LIFECYCLE TEST")
         epoch = self._next_test_epoch()
 
@@ -3407,6 +5676,7 @@ class LaudCLI:
         if not self._ensure():
             return
         self._check_epoch()
+        self._ensure_bootstrapped()
         self._header("COMMIT-REVEAL TEST")
         epoch = self._next_test_epoch()
 
@@ -3437,62 +5707,139 @@ class LaudCLI:
     # ------------------------------------------------------------------
 
     def _show_compact_menu(self):
+        if self._mode == 'normal':
+            self._show_normal_menu()
+        else:
+            self._show_dev_menu()
+
+    def _show_normal_menu(self):
+        """Consumer-friendly menu with word commands."""
+        print()
+        actions = [
+            ("checkin",   "Check in",
+             "Prove your presence this session"),
+            ("vote",      "Approve someone",
+             "Vote to confirm another person"),
+            ("finalize",  "Confirm a check-in",
+             "Finalize after enough votes"),
+        ]
+        info_cmds = [
+            ("status",    "My status",
+             "Your account, session, and activity"),
+            ("who",       "Everyone",
+             "See all accounts and their status"),
+            ("recap",     "Session recap",
+             "Summary of this session"),
+        ]
+        explore_cmds = [
+            ("vault",     "Document Safe",
+             "Protect and share documents"),
+            ("epoch",     "Sessions",
+             "View and manage sessions"),
+            ("vals",      "Verifiers",
+             "View verifier status and stake"),
+        ]
+
+        self._section("WHAT WOULD YOU LIKE TO DO?")
+        print()
+        for key, label, hint in actions:
+            print(f"    {C.BC}{key:<14}{C.R} {label}")
+            print(f"    {' ' * 14} {C.DIM}{hint}{C.R}")
+        print()
+        self._section("INFO")
+        print()
+        for key, label, hint in info_cmds:
+            print(f"    {C.BC}{key:<14}{C.R} {label}  "
+                  f"{C.DIM}{hint}{C.R}")
+        print()
+        self._section("EXPLORE")
+        print()
+        for key, label, hint in explore_cmds:
+            print(f"    {C.BC}{key:<14}{C.R} {label}  "
+                  f"{C.DIM}{hint}{C.R}")
+        print()
+        print(f"  {C.DIM}Type a command above, "
+              f"'flow' for next steps, "
+              f"'help' for guidance, "
+              f"'quit' to exit{C.R}")
+        print(f"  {C.DIM}Switch to full access: "
+              f"mode dev{C.R}")
+        print()
+
+    def _show_dev_menu(self):
+        """Developer menu with numbered domains."""
         visible = get_domains_for_mode(self._mode)
         group_order = get_group_display_order(self._mode)
 
         groups = {}
         for d in visible:
-            g = (d.normal_group
-                 if self._mode == 'normal' and d.normal_group
-                 else d.group)
-            groups.setdefault(g, []).append(d)
+            groups.setdefault(d.group, []).append(d)
 
         print()
-        if self._mode == 'dev':
-            print(f"  {C.Y}[DEV]{C.R}  "
-                  f"{C.DIM}mode normal to simplify{C.R}")
-        else:
-            print(f"  {C.G}[NORMAL]{C.R}  "
-                  f"{C.DIM}mode dev for full access{C.R}")
+        print(f"  {C.BA}DEV{C.R}  "
+              f"{C.DIM}\u00b7 type{C.R} mode normal "
+              f"{C.DIM}to simplify{C.R}")
 
+        tw = _term_width()
         for gkey, gtitle in group_order:
             domains = groups.get(gkey, [])
             if not domains:
                 continue
             print()
-            self._separator_line(gtitle)
-            for d in domains:
-                title = (d.normal_title
-                         if self._mode == 'normal'
-                         and d.normal_title
-                         else d.name.capitalize())
-                desc = (d.help_summary[:32]
-                        if d.help_summary else "")
-                tname = title[:16]
-                dot_n = max(2, 34 - len(tname))
-                dots = '\u00b7' * dot_n
-                print(f"   {C.Y}{d.number:>2}{C.R}  "
-                      f"{tname:<16}"
-                      f"{C.DIM}{dots}{C.R} "
-                      f"{desc}")
+            self._section(gtitle)
+
+            if tw >= 72 and len(domains) >= 2:
+                col_w = (tw - 8) // 2
+                for idx in range(0, len(domains), 2):
+                    d = domains[idx]
+                    d2 = (domains[idx + 1]
+                          if idx + 1 < len(domains) else None)
+                    left = (f" {C.BA}{d.number:>2}{C.R}  "
+                            f"{d.name.capitalize():<{col_w - 6}}")
+                    if d2:
+                        right = (f" {C.BA}{d2.number:>2}{C.R}  "
+                                 f"{d2.name.capitalize()}")
+                        print(f"  {left}{right}")
+                    else:
+                        print(f"  {left}")
+            else:
+                for d in domains:
+                    desc = (d.help_summary[:32]
+                            if d.help_summary else "")
+                    self._menu_cell(
+                        str(d.number),
+                        d.name.capitalize(), desc)
 
         print()
-        self._separator_line("TESTS")
-        for key, name, desc in [
-            ("t1", "test pop", "Full PoP lifecycle"),
-            ("t2", "test pbt", "PBT triangulation"),
-            ("t3", "test commit", "Commit-reveal"),
-        ]:
-            dot_n = max(2, 24 - len(name))
-            dots = '\u00b7' * dot_n
-            print(f"   {C.Y}{key:>2}{C.R}  "
-                  f"{name:<16}"
-                  f"{C.DIM}{dots}{C.R} "
-                  f"{desc}")
+        self._section("TESTS")
+        if tw >= 72:
+            tests = [
+                ("t1", "test pop"), ("t2", "test pbt"),
+                ("t3", "test commit"),
+            ]
+            col_w = (tw - 8) // 2
+            for idx in range(0, len(tests), 2):
+                a = tests[idx]
+                left = (f" {C.BA}{a[0]:>2}{C.R}  "
+                        f"{a[1]:<{col_w - 6}}")
+                if idx + 1 < len(tests):
+                    b = tests[idx + 1]
+                    right = f" {C.BA}{b[0]:>2}{C.R}  {b[1]}"
+                    print(f"  {left}{right}")
+                else:
+                    print(f"  {left}")
+        else:
+            for key, name, desc in [
+                ("t1", "test pop", "Full PoP lifecycle"),
+                ("t2", "test pbt", "PBT triangulation"),
+                ("t3", "test commit", "Commit-reveal"),
+            ]:
+                self._menu_cell(key, name, desc)
+
         print()
-        self._separator_line()
-        print(f"  {C.DIM}status  bootstrap (b)  "
-              f"flow (f)  connect (1)  help  ?  exit{C.R}")
+        print(f"  {C.DIM}status \u00b7 bootstrap (b) \u00b7 "
+              f"flow (f) \u00b7 who \u00b7 vals \u00b7 "
+              f"recap \u00b7 help \u00b7 quit{C.R}")
         print()
 
     # ------------------------------------------------------------------
@@ -3501,38 +5848,46 @@ class LaudCLI:
 
     def _cmd_help(self, args=None):
         if not args:
+            print()
+            self._panel("LAUD NETWORKS", "7ayLabs")
             print(f"""
-  {C.BB}LAUD CLI{C.R}  {C.DIM}PoP Protocol Testing Suite{C.R}
-
-  {C.W}Navigation{C.R}
-    menu              Show all commands with numbers
+  {C.BC}Navigation{C.R}
+    menu              Show all commands
     <command>         Enter submenu (e.g. 'presence' or '2')
     <cmd> <action>    Direct action (e.g. 'presence declare')
-    back              Return to parent menu
-    0                 Back / exit current submenu
+    back / 0          Return to parent menu
 
-  {C.W}Context{C.R}
-    use epoch <N>     Set default epoch for all commands
+  {C.BC}Context{C.R}
+    use epoch <N>     Set default epoch
     use <name>        Set default account (alice, bob, ...)
     use clear         Reset to defaults
     status            Show chain / epoch / account status
 
-  {C.W}Quick Actions{C.R}
-    b / bootstrap     Bootstrap devnet (epoch + validators)
-    f / flow          Show what to do next (epoch-aware)
+  {C.BC}Quick Actions{C.R}
+    b / bootstrap     Bootstrap devnet
+    f / flow          Show what to do next
     t1 / test pop     Full PoP lifecycle test
     t2 / test pbt     PBT triangulation test
     t3 / test commit  Commit-reveal test
     1 / connect       Connect to node
 
-  {C.W}Tips{C.R}
+  {C.BC}Shortcuts{C.R}
+    e / epoch         Epoch overview + actions
+    declare / checkin Declare presence
+    vote              Vote on a presence
+    finalize          Finalize a presence
+    who / w           All accounts + status
+    vals              Validator summary
+    recap             Epoch summary
+
+  {C.BC}Tips{C.R}
     Tab               Autocomplete commands
     Up/Down           Command history
     Ctrl+C            Cancel / back to root
     i                 Instructions (inside any submenu)
     ?                 Quick start guide
 
-  {C.DIM}Type 'help <topic>' for details (e.g. 'help presence'){C.R}
+  {C.DIM}type{C.R} help <topic> {C.DIM}for details{C.R}
 """)
             return
         topic = args[0].lower()
@@ -3544,42 +5899,39 @@ class LaudCLI:
                 f"No help for '{topic}'. Type 'help' for general help.")
 
     def show_guide(self):
-        self._header("QUICK START GUIDE")
-        print(f"""  {C.W}KEY CONCEPTS{C.R}
-  {C.DIM}  Time Period = a window during which presence proofs happen
-    Validator   = a node that votes on presence claims
-    Identity    = a participant identified by their public key
-    PBT         = position-based triangulation (location proofs){C.R}
+        self._heading("Quick Start Guide")
+        print(f"""
+  {C.BC}Concepts{C.R}
+  {C.DIM}  Epoch       = time window for presence proofs
+    Validator   = node that votes on presence claims
+    Identity    = participant identified by public key
+    PBT         = position-based triangulation{C.R}
 
-  {C.W}1. Start the devnet{C.R}
-     {C.Y}cd devnet && ./scripts/dev.sh{C.R}
-     {C.DIM}Or multi-node:  docker compose up -d --build{C.R}
+  {C.BC}1. Start the devnet{C.R}
+     {C.AMBER}cd devnet && ./scripts/dev.sh{C.R}
 
-  {C.W}2. Connect + bootstrap{C.R}
-     {C.DIM}CLI auto-connects on start. Type {C.Y}bootstrap{C.DIM} or {C.Y}b{C.DIM}:
-     activates time period 1, registers 6 validators, sets positions.{C.R}
+  {C.BC}2. Connect + bootstrap{C.R}
+     {C.DIM}Auto-connects on start. Type{C.R} bootstrap {C.DIM}or{C.R} b
 
-  {C.W}3. Run automated tests{C.R}
-     {C.Y}t1{C.R}  {C.DIM}Full PoP lifecycle    {C.Y}test pop{C.R}
-     {C.Y}t2{C.R}  {C.DIM}PBT flow             {C.Y}test pbt{C.R}
-     {C.Y}t3{C.R}  {C.DIM}Commit-reveal        {C.Y}test commit{C.R}
+  {C.BC}3. Run tests{C.R}
+     {C.AMBER}t1{C.R}  {C.DIM}Full PoP lifecycle{C.R}
+     {C.AMBER}t2{C.R}  {C.DIM}PBT triangulation{C.R}
+     {C.AMBER}t3{C.R}  {C.DIM}Commit-reveal{C.R}
 
-  {C.W}4. Set context{C.R}
-     {C.Y}use epoch 5{C.R}   {C.DIM}all commands use time period 5{C.R}
-     {C.Y}use bob{C.R}       {C.DIM}all commands sign as bob{C.R}
-     {C.Y}use clear{C.R}     {C.DIM}reset to defaults{C.R}
+  {C.BC}4. Set context{C.R}
+     {C.AMBER}use epoch 5{C.R}   {C.DIM}all commands use epoch 5{C.R}
+     {C.AMBER}use bob{C.R}       {C.DIM}sign as bob{C.R}
+     {C.AMBER}use clear{C.R}     {C.DIM}reset to defaults{C.R}
 
-  {C.W}5. Direct commands{C.R}
-     {C.Y}presence declare{C.R}   {C.DIM}or{C.R}  {C.Y}p d{C.R}
-     {C.Y}presence vote{C.R}      {C.DIM}or{C.R}  {C.Y}p v{C.R}
-     {C.Y}pbt test{C.R}           {C.DIM}full PBT test flow{C.R}
+  {C.BC}5. Direct commands{C.R}
+     {C.AMBER}presence declare{C.R}   {C.DIM}or{C.R}  {C.AMBER}p d{C.R}
+     {C.AMBER}presence vote{C.R}      {C.DIM}or{C.R}  {C.AMBER}p v{C.R}
 
-  {C.W}6. Instructions{C.R}
-     {C.DIM}Type {C.Y}i{C.DIM} inside any submenu to learn how it works.
-     Type {C.Y}i 1{C.DIM} to see details about a specific command.{C.R}
+  {C.BC}6. Instructions{C.R}
+     {C.DIM}Type{C.R} i {C.DIM}inside any submenu to learn how it works.{C.R}
 
-  {C.W}7. Accounts{C.R}
-     {C.DIM}alice {C.Y}(admin){C.DIM}, bob, charlie, dave, eve, ferdie
+  {C.BC}7. Accounts{C.R}
+     {C.DIM}alice{C.R} {C.AMBER}(admin){C.R}{C.DIM}, bob, charlie, dave, eve, ferdie
      All pre-funded with 10M UNIT on devnet{C.R}
 """)
 
@@ -3592,17 +5944,42 @@ class LaudCLI:
         self.connect(url)
 
     def _build_prompt(self):
-        mode_tag = (f"{C.Y}dev{C.R}:" if self._mode == 'dev'
-                    else "")
+        if self._mode == 'normal':
+            return self._build_normal_prompt()
+        return self._build_dev_prompt()
+
+    def _build_normal_prompt(self):
+        if self._nav_stack:
+            crumbs = [self.NAV_LABELS.get(s, s.title())
+                      for s in self._nav_stack]
+            path = " > ".join(crumbs)
+            return f"  {C.DIM}{path}{C.R} > "
+        status = self._fetch_epoch_status()
+        if status:
+            eid = status.get('epoch_id', 0)
+            state = status.get('epoch_state', 'None')
+            if state == 'Active':
+                tag = f" {C.DIM}[session {eid}]{C.R}"
+            elif eid > 0:
+                tag = f" {C.DIM}[session {eid} "\
+                      f"{state.lower()}]{C.R}"
+            else:
+                tag = ""
+        else:
+            tag = ""
+        return f"  {C.BC}laud{C.R}{tag} > "
+
+    def _build_dev_prompt(self):
         path = "/".join(["laud"] + self._nav_stack)
-        extras = []
+        parts = []
+        parts.append(f"{C.BA}dev{C.R}")
         if self._ctx_account != 'alice':
-            extras.append(f"{C.Y}{self._ctx_account}{C.R}")
+            parts.append(f"{C.AMBER}{self._ctx_account}{C.R}")
         if self._ctx_epoch is not None:
-            extras.append(f"{C.DIM}epoch:{self._ctx_epoch}{C.R}")
+            parts.append(f"{C.DIM}e{self._ctx_epoch}{C.R}")
         epoch_tag = self._epoch_status_tag()
-        extra = " " + " ".join(extras) if extras else ""
-        return f"  {mode_tag}{C.B}{path}{C.R}{extra}{epoch_tag} > "
+        ctx = (" " + " ".join(parts)) if parts else ""
+        return f"  {C.BC}{path}{C.R}{ctx}{epoch_tag} {C.DIM}>{C.R} "
 
     def _dispatch(self, line):
         parts = line.strip().split()
@@ -3610,7 +5987,7 @@ class LaudCLI:
             return
         cmd = parts[0].lower()
 
-        if cmd in ('exit', 'quit', '0'):
+        if cmd in ('exit', 'quit', 'q'):
             raise SystemExit
         if cmd in ('help', 'h'):
             self._cmd_help(parts[1:] if len(parts) > 1 else None)
@@ -3684,9 +6061,45 @@ class LaudCLI:
             self.test_commit_reveal()
             return
 
-        # Bootstrap
+        # Top-level shortcuts
+        if cmd == 'protect':
+            self._vault_secure_file()
+            return
+        if cmd == 'unlock':
+            self._vault_unlock_file()
+            return
+
+        # Quick actions
+        if cmd in ('e', 'epoch', 'sessions'):
+            self._quick_epoch()
+            return
+        if cmd in ('who', 'w', 'everyone'):
+            self._cmd_who()
+            return
+        if cmd in ('vals', 'validators', 'verifiers'):
+            self._cmd_validators()
+            return
+        if cmd in ('declare', 'checkin', 'check'):
+            self._quick_declare()
+            return
+        if cmd in ('vote', 'approve'):
+            self._quick_vote()
+            return
+        if cmd in ('finalize', 'confirm'):
+            self._quick_finalize()
+            return
+        if cmd == 'recap':
+            self._cmd_recap()
+            return
+
+        # Bootstrap — hidden in normal mode
         if cmd in ('b', 'boot', 'bootstrap'):
-            self.bootstrap()
+            if self._mode == 'dev':
+                self.bootstrap()
+            else:
+                self._info("The network sets up automatically "
+                           "when needed.")
+                self._info(f"For manual setup: {C.DIM}mode dev{C.R}")
             return
 
         # Connect
@@ -3721,31 +6134,89 @@ class LaudCLI:
     # Entry point
     # ------------------------------------------------------------------
 
-    def _print_welcome(self):
-        mode_str = "DEVELOPER" if self._mode == 'dev' else "NORMAL"
-        mode_color = C.Y if self._mode == 'dev' else C.G
+    def _first_run_onboarding(self):
+        if os.path.exists(self.MODE_CONFIG_FILE):
+            return  # Not first run
         print()
-        self._box([
-            f"{C.BB}LAUD NETWORKS{C.R}",
-            f"{C.DIM}Proof of Presence Protocol"
-            f"              v1.2.0{C.R}",
-            "",
-            f"{mode_color}[{mode_str} MODE]{C.R}"
-            f"   {C.DIM}switch: mode dev | mode normal{C.R}",
-        ], color=C.BB)
-        print(f"  {C.DIM}Type{C.R} menu {C.DIM}for commands,"
-              f"{C.R} flow {C.DIM}for next steps,"
-              f"{C.R} ? {C.DIM}for guide{C.R}")
+        self._panel("Welcome to LAUD NETWORKS")
+        print()
+        print(f"    Prove you were present at events")
+        print(f"    Protect documents with shared keys")
+        print(f"    Build verified trust connections")
+        print()
+        print(f"  How would you like to use this tool?")
+        print()
+        print(f"    {C.BC}1{C.R}  Standard")
+        print(f"       {C.DIM}Simple interface for checking in "
+              f"and protecting documents.{C.R}")
+        print()
+        print(f"    {C.BC}2{C.R}  Developer")
+        print(f"       {C.DIM}Full protocol access with all "
+              f"pallets and raw queries.{C.R}")
+        print()
+        choice = self._prompt_int("Your choice", 1)
+        self._mode = 'dev' if choice == 2 else 'normal'
+        self._save_mode()
+        self._menu_aliases = build_menu_aliases_for_mode(self._mode)
+
+    def _print_welcome(self):
+        print()
+        self._panel(
+            "LAUD NETWORKS",
+            "Proof of Presence Protocol",
+            f"{C.DIM}v0.8.27{C.R}",
+        )
+        print()
+        if self._mode == 'normal':
+            print(f"  Type {C.BC}menu{C.R} to see options, "
+                  f"{C.BC}help{C.R} for guidance, "
+                  f"{C.BC}quit{C.R} to exit")
+        else:
+            print(f"  {C.BA}DEV{C.R}"
+                  f" {C.DIM}\u00b7 type{C.R} menu"
+                  f" {C.DIM}\u00b7{C.R} help"
+                  f" {C.DIM}\u00b7{C.R} quit")
         print()
 
+    def _show_contextual_hint(self):
+        """Show what the user can do when they press Enter."""
+        status = self._fetch_epoch_status()
+        if not status:
+            print(f"  {C.DIM}Type 'menu' to see options{C.R}")
+            return
+        state = status.get('epoch_state', 'None')
+        pres = status.get('presence_state')
+        if state == 'None':
+            print(f"  {C.DIM}No session running. "
+                  f"Type 'flow' to see what to do.{C.R}")
+        elif state == 'Active' and pres is None:
+            print(f"  {C.DIM}Session is active. "
+                  f"Type 'checkin' to prove your presence.{C.R}")
+        elif pres == 'Declared':
+            vc = status.get('vote_count', 0)
+            qt = status.get('quorum_threshold', 2)
+            need = max(0, qt - vc)
+            print(f"  {C.DIM}Checked in. Waiting for "
+                  f"{need} more vote(s). "
+                  f"Type 'who' to see everyone.{C.R}")
+        elif pres == 'Validated':
+            print(f"  {C.DIM}Enough votes! "
+                  f"Type 'finalize' to confirm.{C.R}")
+        elif pres == 'Finalized':
+            print(f"  {C.DIM}You are verified. "
+                  f"Type 'vault' or 'approve' someone else.{C.R}")
+        else:
+            print(f"  {C.DIM}Type 'menu' for options{C.R}")
+
     def run(self):
+        self._first_run_onboarding()
         self._print_welcome()
         self._setup_readline()
 
         if not SUBSTRATE_OK:
-            print(f"  {C.RED}substrate-interface not found.{C.R}")
-            print(f"  Run: {C.Y}pip install substrate-interface{C.R}")
-            print(f"  Or:  {C.Y}source .venv/bin/activate{C.R}\n")
+            print(f"  {C.BR}\u2717{C.R} substrate-interface not found")
+            print(f"    {C.AMBER}pip install substrate-interface{C.R}")
+            print(f"    {C.DIM}or{C.R}  {C.AMBER}source .venv/bin/activate{C.R}\n")
         else:
             self.connect(self.url)
             if not self.connected:
@@ -3756,26 +6227,28 @@ class LaudCLI:
             try:
                 line = input(self._build_prompt()).strip()
                 if not line:
+                    if self._mode == 'normal':
+                        self._show_contextual_hint()
                     continue
                 self._dispatch(line)
             except SystemExit:
-                print(f"\n  {C.DIM}LAUD NETWORKS{C.R}\n")
+                print(f"\n  {C.DIM}\u00b7 LAUD NETWORKS 7ayLabs{C.R}\n")
                 break
             except KeyboardInterrupt:
                 print()
                 if self._nav_stack:
                     self._nav_stack.clear()
                     continue
-                print(f"  {C.DIM}(Ctrl+C again or type 'exit' "
-                      f"to quit){C.R}")
+                print(f"  {C.DIM}Press Ctrl+C again or type "
+                      f"'quit' to exit{C.R}")
             except EOFError:
-                print(f"\n  {C.DIM}LAUD NETWORKS{C.R}\n")
+                print(f"\n  {C.DIM}\u00b7 LAUD NETWORKS 7ayLabs{C.R}\n")
                 break
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
-        description="LAUD NETWORKS - PoP Protocol Testing Suite")
+        description="LAUD NETWORKS 7ayLabs - Proof of Presence Protocol")
     parser.add_argument(
         '--url', default='ws://127.0.0.1:9944',
         help='WebSocket endpoint (default: ws://127.0.0.1:9944)')

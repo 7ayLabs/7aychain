@@ -1,5 +1,5 @@
 """
-LAUD NETWORKS - Vault File Management
+LAUD NETWORKS 7ayLabs - Vault File Management
 Handles encrypted file storage, share management, and index tracking.
 Files are encrypted with AES-256-GCM; encryption keys are split via Shamir.
 """
@@ -195,61 +195,87 @@ def retrieve_and_decrypt(vault_id, enc_hash, fek, dest_path):
 
 
 # ── Share storage (local filesystem, 0600 perms) ────────────────
+#
+# Shares are namespaced per file: <vault_id>/<enc_hash>/share_<idx>.bin
+# Legacy flat layout (<vault_id>/share_<idx>.bin) is auto-migrated on read.
 
-def store_share(vault_id, share_index, share_value):
+def _shares_dir_for(vault_id, enc_hash=None):
+    """Return the share directory, optionally namespaced by enc_hash."""
+    base = VAULT_SHARES_DIR / str(vault_id)
+    if enc_hash:
+        return base / str(enc_hash)
+    return base
+
+
+def store_share(vault_id, share_index, share_value, enc_hash=None):
     """Write a share to the local share directory with restricted permissions.
 
-    File: ~/.laud/vault_shares/<vault_id>/share_<index>.bin
+    File: ~/.laud/vault_shares/<vault_id>/<enc_hash>/share_<index>.bin
+    Falls back to flat layout if enc_hash is not provided.
     """
-    shares_dir = ensure_shares_dir(vault_id)
+    shares_dir = _shares_dir_for(vault_id, enc_hash)
+    shares_dir.mkdir(parents=True, exist_ok=True)
     share_path = shares_dir / f"share_{share_index}.bin"
     share_path.write_bytes(bytes(share_value))
     share_path.chmod(stat.S_IRUSR | stat.S_IWUSR)  # 0600
     return share_path
 
 
-def load_share(vault_id, share_index):
+def load_share(vault_id, share_index, enc_hash=None):
     """Read a share from the local share directory.
 
+    Tries namespaced path first, falls back to flat layout.
     Returns:
         (index, value_bytes) or None if not found
     """
-    shares_dir = VAULT_SHARES_DIR / str(vault_id)
-    share_path = shares_dir / f"share_{share_index}.bin"
-    if not share_path.exists():
-        return None
-    value = share_path.read_bytes()
-    return (share_index, value)
+    if enc_hash:
+        ns_dir = _shares_dir_for(vault_id, enc_hash)
+        ns_path = ns_dir / f"share_{share_index}.bin"
+        if ns_path.exists():
+            return (share_index, ns_path.read_bytes())
+    # Flat fallback
+    flat_dir = VAULT_SHARES_DIR / str(vault_id)
+    flat_path = flat_dir / f"share_{share_index}.bin"
+    if flat_path.exists():
+        return (share_index, flat_path.read_bytes())
+    return None
 
 
-def load_all_shares(vault_id):
-    """Load all locally available shares for a vault.
+def load_all_shares(vault_id, enc_hash=None):
+    """Load all locally available shares for a vault file.
 
+    Tries namespaced path first, falls back to flat layout.
     Returns:
         list of (index, value_bytes) tuples
     """
-    shares_dir = VAULT_SHARES_DIR / str(vault_id)
-    if not shares_dir.exists():
-        return []
+    def _scan(directory):
+        shares = []
+        if not directory.exists():
+            return shares
+        for p in sorted(directory.glob("share_*.bin")):
+            try:
+                idx = int(p.stem.split("_")[1])
+                value = p.read_bytes()
+                if len(value) == 32:
+                    shares.append((idx, value))
+            except (ValueError, IndexError):
+                continue
+        return shares
 
-    shares = []
-    for p in sorted(shares_dir.glob("share_*.bin")):
-        try:
-            idx = int(p.stem.split("_")[1])
-            value = p.read_bytes()
-            if len(value) == 32:
-                shares.append((idx, value))
-        except (ValueError, IndexError):
-            continue
-    return shares
+    if enc_hash:
+        ns_shares = _scan(_shares_dir_for(vault_id, enc_hash))
+        if ns_shares:
+            return ns_shares
+    # Flat fallback
+    return _scan(VAULT_SHARES_DIR / str(vault_id))
 
 
-def export_share_hex(vault_id, share_index):
+def export_share_hex(vault_id, share_index, enc_hash=None):
     """Export a share as a hex string for manual transfer.
 
     Format: <index_byte_hex>:<value_hex> (e.g., "01:abcd...")
     """
-    result = load_share(vault_id, share_index)
+    result = load_share(vault_id, share_index, enc_hash=enc_hash)
     if result is None:
         return None
     idx, value = result
@@ -273,6 +299,38 @@ def import_share_hex(hex_string):
         return (idx, value)
     except (ValueError, IndexError):
         return None
+
+
+def migrate_shares_to_per_file(vault_id, enc_hash):
+    """Migrate flat-layout shares into a per-file namespace.
+
+    Moves ~/.laud/vault_shares/<vault_id>/share_*.bin
+    into  ~/.laud/vault_shares/<vault_id>/<enc_hash>/share_*.bin
+
+    Idempotent: skips if namespaced dir already has shares.
+    Returns number of shares migrated.
+    """
+    ns_dir = _shares_dir_for(vault_id, enc_hash)
+    if ns_dir.exists() and list(ns_dir.glob("share_*.bin")):
+        return 0  # Already migrated
+
+    flat_dir = VAULT_SHARES_DIR / str(vault_id)
+    if not flat_dir.exists():
+        return 0
+
+    flat_shares = list(flat_dir.glob("share_*.bin"))
+    if not flat_shares:
+        return 0
+
+    ns_dir.mkdir(parents=True, exist_ok=True)
+    count = 0
+    for p in flat_shares:
+        dest = ns_dir / p.name
+        # Copy, don't move — other files may reference flat shares
+        dest.write_bytes(p.read_bytes())
+        dest.chmod(stat.S_IRUSR | stat.S_IWUSR)
+        count += 1
+    return count
 
 
 # ── Memory safety ────────────────────────────────────────────────
@@ -306,17 +364,31 @@ def save_index(index):
         json.dump(index, f, indent=2)
 
 
+def _hash_filename(name):
+    """Compute Blake2b-256 hash of a filename for privacy mode."""
+    return hashlib.blake2b(name.encode('utf-8'), digest_size=32).hexdigest()
+
+
 def add_to_index(vault_id, enc_hash, plaintext_hash, original_name,
                  size_bytes, uploader, epoch, key_fingerprint_hex,
-                 threshold, ring_size):
+                 threshold, ring_size, privacy_mode=False,
+                 bound_position=None, position_tolerance=None):
     """Add an encrypted file entry to the index."""
     index = load_index()
     key = f"{vault_id}:{enc_hash}"
-    index[key] = {
+
+    if privacy_mode:
+        display_label = _hash_filename(original_name)
+    else:
+        display_label = original_name
+
+    entry = {
         "vault_id": vault_id,
         "enc_hash": enc_hash,
         "plaintext_hash": plaintext_hash,
         "original_name": original_name,
+        "display_label": display_label,
+        "name_redacted": privacy_mode,
         "size_bytes": size_bytes,
         "uploaded_at": datetime.now().isoformat(),
         "uploader": uploader,
@@ -326,9 +398,35 @@ def add_to_index(vault_id, enc_hash, plaintext_hash, original_name,
         "ring_size": ring_size,
         "encrypted": True,
         "verified": True,
+        "presence_bound": bound_position is not None,
     }
+    if bound_position is not None:
+        entry["bound_position"] = bound_position
+        entry["position_tolerance"] = position_tolerance or 100
+    index[key] = entry
     save_index(index)
     return key
+
+
+def anonymize_existing_index():
+    """Retroactively hash all plaintext filenames in the vault index.
+
+    Replaces display_label with a Blake2b hash and sets name_redacted=True
+    for every entry that has an original_name.
+
+    Returns:
+        Number of entries anonymized.
+    """
+    index = load_index()
+    count = 0
+    for entry in index.values():
+        name = entry.get('original_name', '')
+        if name:
+            entry['display_label'] = _hash_filename(name)
+            entry['name_redacted'] = True
+            count += 1
+    save_index(index)
+    return count
 
 
 def get_vault_files(vault_id):

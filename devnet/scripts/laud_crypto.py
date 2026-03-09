@@ -1,5 +1,5 @@
 """
-LAUD NETWORKS - Cryptographic Primitives
+LAUD NETWORKS 7ayLabs - Cryptographic Primitives
 GF(2^8) Shamir secret sharing matching Rust primitives/src/crypto.rs byte-for-byte.
 """
 

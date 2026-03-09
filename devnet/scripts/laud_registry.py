@@ -1,5 +1,5 @@
 """
-LAUD NETWORKS - Command Registry
+LAUD NETWORKS 7ayLabs - Command Registry
 Data-driven domain and command definitions for the LAUD CLI.
 """
 
@@ -33,6 +33,7 @@ class Command:
     custom_handler: str = ""
     fixed_params: dict = field(default_factory=dict)
     mode: str = "both"    # "normal"|"dev"|"both"
+    normal_label: str = ""    # user-friendly label for normal mode
 
 
 @dataclass
@@ -90,20 +91,20 @@ DOMAINS = [
     Domain(
         name="presence", title="PRESENCE PROTOCOL",
         number="2", shortcut="p", group="core", check_epoch=True,
-        mode="both", normal_title="PRESENCE", normal_group="core",
+        mode="both", normal_title="CHECK-IN", normal_group="core",
         help_summary="Declare, vote on, and finalize proof-of-presence claims",
         instructions="""
   The Presence Protocol lets participants prove they are active on the
-  network during a given time period.
+  network during a given session.
 
   TYPICAL FLOW:
-    1. Make sure a time period is active (use "bootstrap" to set up)
+    1. Make sure a session is active (use "bootstrap" to set up)
     2. Declare your presence (option 1)
-    3. Validators vote to confirm (option 4)
+    3. Verifiers vote to confirm (option 4)
     4. After enough votes, finalize (option 5)
 
   PREREQUISITES:
-    - An active time period (type "bootstrap" if first time)
+    - An active session (type "bootstrap" if first time)
     - A funded account (all test accounts are pre-funded)
 """,
         commands=[
@@ -112,6 +113,7 @@ DOMAINS = [
                     params=[Param("epoch", "Time period", "epoch")],
                     aliases=["declare", "d"],
                     help_text="Tell the network you are present in this time period",
+                    normal_label="Check In Now",
                     instructions="""
   DECLARE PRESENCE
 
@@ -123,13 +125,14 @@ DOMAINS = [
     - A funded account
 
   What happens next:
-    - Validators can now vote on your claim
+    - Verifiers can now vote on your claim
     - Once enough votes arrive, you can finalize
 """),
             Command("2", "Declare with Commitment", "custom",
                     custom_handler="_presence_commit",
                     aliases=["commit", "cm"],
-                    help_text="Declare presence using a secret (commit-reveal scheme)"),
+                    help_text="Declare presence using a secret (commit-reveal scheme)",
+                    normal_label="Private Check-In"),
             Command("3", "Reveal Commitment", "submit",
                     pallet="Presence", function="reveal_commitment",
                     params=[
@@ -148,20 +151,21 @@ DOMAINS = [
                     ],
                     aliases=["vote", "v"],
                     help_text="Cast your vote on someone's presence claim",
+                    normal_label="Approve Someone",
                     instructions="""
   VOTE ON PRESENCE
 
   What this does:
-    As a validator, cast your vote approving or rejecting
+    As a verifier, cast your vote approving or rejecting
     someone's presence claim.
 
   What you need:
-    - You must be an active validator
-    - The target identity must have declared presence
-    - You haven't already voted for this identity this period
+    - You must be an active verifier
+    - The target participant must have declared presence
+    - You haven't already voted for this participant this session
 
   What happens next:
-    - Once enough validators vote, the presence can be finalized
+    - Once enough verifiers vote, the presence can be finalized
 """),
             Command("5", "Finalize Presence", "submit",
                     pallet="Presence", function="finalize_presence",
@@ -171,6 +175,7 @@ DOMAINS = [
                     ],
                     aliases=["finalize", "f"],
                     help_text="Lock in a presence claim after enough votes",
+                    normal_label="Confirm Check-In",
                     instructions="""
   FINALIZE PRESENCE
 
@@ -178,7 +183,7 @@ DOMAINS = [
     Locks in a presence claim permanently after enough votes.
 
   What you need:
-    - Enough validator votes (check with option c)
+    - Enough verifier votes (check with option c)
     - The presence must be in "Validated" state
 
   After this:
@@ -203,28 +208,30 @@ DOMAINS = [
                     sudo=True, aliases=["quorum", "threshold"],
                     help_text="Set how many votes are needed to confirm presence",
                     mode="dev"),
-            Command("8", "Set Validator Status [admin]", "submit",
-                    pallet="Presence", function="set_validator_status",
+            Command("8", "Force Session Transition [admin]", "submit",
+                    pallet="Epoch", function="force_transition",
                     params=[
-                        Param("validator", "Validator identity", "actor"),
-                        Param("active", "Active?", "bool", True),
+                        Param("epoch_id", "Session number", "epoch"),
+                        Param("new_state", "New state", "enum",
+                              options=["Active", "Closed", "Finalized"]),
                     ],
-                    sudo=True, aliases=["validator-status"],
-                    help_text="Enable or disable a validator",
+                    sudo=True, aliases=["force-transition"],
+                    help_text="Force a session state transition",
                     mode="dev"),
-            Command("9", "Set Time Period Active [admin]", "submit",
-                    pallet="Presence", function="set_epoch_active",
+            Command("9", "Schedule Session [admin]", "submit",
+                    pallet="Epoch", function="schedule_epoch",
                     params=[
-                        Param("epoch", "Time period", "epoch"),
-                        Param("active", "Active?", "bool", True),
+                        Param("start_block", "Start block", "int"),
+                        Param("duration", "Duration (blocks)", "int",
+                              200),
                     ],
-                    sudo=True, aliases=["epoch-active"],
-                    help_text="Activate or deactivate a time period",
+                    sudo=True, aliases=["schedule-session"],
+                    help_text="Schedule a new session",
                     mode="dev"),
             Command("---", "Lookups", "separator"),
-            Command("a", "Current Time Period", "query",
-                    pallet="Presence", function="CurrentEpoch",
-                    help_text="Check what time period the network is in"),
+            Command("a", "Current Session", "query",
+                    pallet="Epoch", function="CurrentEpoch",
+                    help_text="Check what session the network is in"),
             Command("b", "Presence Record", "query",
                     pallet="Presence", function="Presences",
                     params=[
@@ -239,9 +246,9 @@ DOMAINS = [
                         Param("actor", "Identity", "actor"),
                     ],
                     help_text="Check how many votes an identity has received"),
-            Command("d", "Active Validators", "query_map",
-                    pallet="Presence", function="ActiveValidators",
-                    help_text="List all currently active validators"),
+            Command("d", "All Validators", "query_map",
+                    pallet="Validator", function="Validators",
+                    help_text="List all registered validators"),
             Command("e", "Commitment / Reveal Count", "custom",
                     custom_handler="_presence_commitment_count",
                     help_text="Check how many commitments and reveals exist"),
@@ -254,16 +261,16 @@ DOMAINS = [
         mode="both", normal_title="SESSIONS", normal_group="core",
         help_summary="Schedule, start, close, and finalize time periods",
         instructions="""
-  Time Periods (Epochs) are windows during which presence proofs
-  happen. Each period moves through: Scheduled -> Active -> Closed -> Finalized.
+  Sessions are windows during which presence proofs happen.
+  Each session moves through: Scheduled -> Active -> Closed -> Finalized.
 
   TYPICAL FLOW:
-    1. Schedule a new time period (option 1)
+    1. Schedule a new session (option 1)
     2. Start it when the block arrives (option 2)
     3. Let participants declare and vote
     4. Close and finalize when done (options 3-4)
 
-  TIP: Use "bootstrap" to automatically set up time period 1.
+  TIP: Use "bootstrap" to automatically set up session 1.
 """,
         commands=[
             Command("1", "Schedule Time Period [admin]", "submit",
@@ -317,11 +324,13 @@ DOMAINS = [
             Command("---", "Lookups", "separator"),
             Command("a", "Current Time Period", "query",
                     pallet="Epoch", function="CurrentEpoch",
-                    help_text="See which time period is active right now"),
+                    help_text="See which time period is active right now",
+                    normal_label="Current Session"),
             Command("b", "Time Period Info", "query",
                     pallet="Epoch", function="EpochInfo",
                     params=[Param("epoch", "Time period", "epoch")],
-                    help_text="View details about a specific time period"),
+                    help_text="View details about a specific time period",
+                    normal_label="Session Details"),
             Command("c", "Total Time Periods", "query",
                     pallet="Epoch", function="EpochCount",
                     help_text="How many time periods have been created"),
@@ -334,30 +343,33 @@ DOMAINS = [
     Domain(
         name="validator", title="VALIDATORS",
         number="4", shortcut="val", group="core",
-        mode="both", normal_title="STAKING", normal_group="core",
+        mode="both", normal_title="NETWORK GUARDIANS", normal_group="core",
         help_summary="Register, stake, activate, and manage network validators",
         instructions="""
-  Validators are network participants who vote on presence claims.
-  They must stake tokens to participate and can be penalized for misbehavior.
+  Verifiers are network participants who vote on presence claims.
+  They must stake tokens to participate and can receive a penalty
+  for misbehavior.
 
   TYPICAL FLOW:
     1. Register with a stake (option 1)
-    2. Activate your validator (option 2)
+    2. Activate your verifier (option 2)
     3. Vote on presence claims (via Presence menu)
     4. Withdraw stake when done (option 4)
 
-  TIP: "bootstrap" registers 6 test validators automatically.
+  TIP: "bootstrap" registers 6 test verifiers automatically.
 """,
         commands=[
             Command("1", "Register as Validator", "submit",
                     pallet="Validator", function="register_validator",
                     params=[Param("stake", "Amount to stake", "int", 1000000)],
                     aliases=["register"],
-                    help_text="Join the network as a validator with an initial stake"),
+                    help_text="Join the network as a validator with an initial stake",
+                    normal_label="Become a Verifier"),
             Command("2", "Activate Validator", "submit",
                     pallet="Validator", function="activate_validator",
                     aliases=["activate"],
-                    help_text="Start participating in validation"),
+                    help_text="Start participating in validation",
+                    normal_label="Go Active"),
             Command("3", "Deactivate Validator", "submit",
                     pallet="Validator", function="deactivate_validator",
                     aliases=["deactivate"],
@@ -395,6 +407,12 @@ DOMAINS = [
                               options=["Minor", "Moderate", "Severe", "Critical"]),
                     ],
                     help_text="Report evidence of validator misbehavior",
+                    mode="dev"),
+            Command("9", "Force Activate [admin]", "submit",
+                    pallet="Validator", function="force_activate_validator",
+                    params=[Param("controller", "Controller account (SS58)", "str")],
+                    sudo=True,
+                    help_text="Activate a validator immediately, skip bonding period",
                     mode="dev"),
             Command("---", "Lookups", "separator"),
             Command("a", "Validator Info", "query",
@@ -559,16 +577,16 @@ DOMAINS = [
     Domain(
         name="dispute", title="DISPUTE RESOLUTION",
         number="7", shortcut="dis", group="security",
-        mode="both", normal_title="DISPUTES", normal_group="security",
+        mode="both", normal_title="CHALLENGES", normal_group="security",
         help_summary="Open disputes, submit evidence, resolve cases",
         instructions="""
-  Dispute Resolution handles disagreements about validator behavior.
-  Anyone can open a dispute and submit evidence for review.
+  Challenges handle disagreements about verifier behavior.
+  Anyone can open a challenge and submit evidence for review.
 
   TYPICAL FLOW:
-    1. Open a dispute against a validator (option 1)
+    1. Open a challenge against a verifier (option 1)
     2. Submit supporting evidence (option 2)
-    3. An admin resolves the dispute (option 3)
+    3. An admin resolves the challenge (option 3)
 """,
         commands=[
             Command("1", "Open Dispute", "submit",
@@ -658,36 +676,76 @@ DOMAINS = [
             Command("7", "Add/Remove Trusted Verifier [admin]", "custom",
                     custom_handler="_zk_trusted_verifier",
                     help_text="Manage which accounts can verify proofs"),
+            Command("8", "Deregister Circuit [admin]", "submit",
+                    pallet="Zk", function="deregister_circuit",
+                    params=[Param("circuit_id", "Circuit ID (32-byte hex)",
+                                  "h256")],
+                    sudo=True, mode="dev",
+                    help_text="Deactivate a registered SNARK circuit"),
+            Command("9", "Transition Proof System Mode [admin]", "submit",
+                    pallet="Zk", function="transition_proof_system_mode",
+                    params=[Param("new_mode", "Target mode", "enum",
+                                  options=["Legacy", "Transitional",
+                                           "SnarkOnly"])],
+                    sudo=True, mode="dev",
+                    help_text="Advance proof system: Legacy -> Transitional -> SnarkOnly"),
+            Command("10", "Emergency Revert Mode [admin]", "submit",
+                    pallet="Zk", function="emergency_revert_mode",
+                    sudo=True, mode="dev",
+                    help_text="Revert from SnarkOnly to Transitional (safety valve)"),
+            Command("11", "Prune Old Proofs [admin]", "submit",
+                    pallet="Zk", function="prune_old_proofs",
+                    params=[
+                        Param("older_than", "Prune before block #", "int", 0),
+                        Param("max_entries", "Max entries to prune", "int",
+                              100),
+                    ],
+                    sudo=True, mode="dev",
+                    help_text="Remove old nullifiers and proof hashes"),
             Command("---", "Lookups", "separator"),
             Command("a", "Verification Count", "query",
                     pallet="Zk", function="VerificationCount",
                     help_text="See how many proofs have been verified"),
+            Command("b", "Circuit Registry", "query",
+                    pallet="Zk", function="CircuitRegistry",
+                    params=[Param("circuit_id", "Circuit ID (32-byte hex)",
+                                  "h256")],
+                    mode="dev",
+                    help_text="View details of a registered SNARK circuit"),
+            Command("c", "Current Proof System Mode", "query",
+                    pallet="Zk", function="CurrentProofSystemMode",
+                    mode="dev",
+                    help_text="Check current proof system mode"),
+            Command("d", "Circuit Count", "query",
+                    pallet="Zk", function="CircuitCount",
+                    mode="dev",
+                    help_text="Total number of registered circuits"),
         ],
     ),
 
     Domain(
         name="vault", title="SECURE VAULT (Shared Keys)",
         number="9", shortcut="", group="security",
-        mode="both", normal_title="VAULT", normal_group="security",
+        mode="both", normal_title="DOCUMENT SAFE", normal_group="security",
         help_summary="Secure shared key management with split secrets",
         instructions="""
-  The Secure Vault uses threshold cryptography (t-of-n) so that
+  The Document Safe uses threshold cryptography (t-of-n) so that
   a secret is split among multiple members and can only be
   reconstructed when enough members cooperate.
 
   TYPICAL FLOW:
-    1. Create a vault with a threshold (option 1)
+    1. Create a safe with a threshold (option 1)
     2. Add members (option 2)
-    3. Activate the vault (option 3)
+    3. Activate the safe (option 3)
     4. Members commit and reveal their shares (options 4-5)
 
-  EXAMPLE: A 2-of-3 vault needs any 2 of 3 members to reconstruct.
+  EXAMPLE: A 2-of-3 safe needs any 2 of 3 members to reconstruct.
 """,
         commands=[
             Command("1", "Create Vault", "submit",
                     pallet="Vault", function="create_vault",
                     params=[
-                        Param("owner", "Owner identity", "actor"),
+                        Param("owner", "Vault owner", "self_actor"),
                         Param("threshold", "Minimum signers needed (t)", "int", 2),
                         Param("ring_size", "Total members (n)", "int", 3),
                         Param("secret_hash", "Secret ID (32-byte hex)", "h256"),
@@ -729,24 +787,70 @@ DOMAINS = [
                     pallet="Vault", function="dissolve_vault",
                     params=[Param("vault_id", "Vault ID", "int", 0)],
                     help_text="Permanently dissolve a vault and release its keys"),
+            Command("---", "On-Chain File Registration", "separator"),
+            Command("r", "Register File On-Chain", "submit",
+                    pallet="Vault", function="register_file",
+                    params=[
+                        Param("vault_id", "Vault ID", "int", 0),
+                        Param("enc_hash", "Encrypted file hash",
+                              "h256"),
+                        Param("plaintext_hash", "Original file hash",
+                              "h256"),
+                        Param("key_fingerprint", "Key fingerprint",
+                              "h256"),
+                        Param("size_bytes", "File size in bytes",
+                              "int", 0),
+                    ],
+                    mode="dev",
+                    help_text="Register an encrypted file on-chain"),
+            Command("u", "Request File Unlock", "submit",
+                    pallet="Vault", function="request_unlock",
+                    params=[
+                        Param("vault_id", "Vault ID", "int", 0),
+                        Param("file_enc_hash", "Encrypted file hash",
+                              "h256"),
+                    ],
+                    mode="dev",
+                    help_text="Request threshold-gated unlock",
+                    normal_label="Request Document Access"),
+            Command("v", "Authorize Unlock", "submit",
+                    pallet="Vault", function="authorize_unlock",
+                    params=[
+                        Param("request_id", "Unlock request ID",
+                              "int", 0),
+                    ],
+                    help_text="Approve an unlock request",
+                    normal_label="Approve Access Request"),
             Command("---", "Lookups", "separator"),
             Command("a", "Vault Info", "query",
                     pallet="Vault", function="Vaults",
                     params=[Param("vault_id", "ID", "int", 0)],
                     help_text="View details about a specific vault"),
+            Command("b", "Vault File Info", "query",
+                    pallet="Vault", function="VaultFiles",
+                    params=[
+                        Param("vault_id", "Vault ID", "int", 0),
+                        Param("enc_hash", "Encrypted file hash",
+                              "h256"),
+                    ],
+                    mode="dev",
+                    help_text="View on-chain details of a vault file"),
             Command("---", "Secure Documents", "separator"),
             Command("9", "Secure a Document", "custom",
                     custom_handler="_vault_secure_file",
                     aliases=["secure", "up"],
-                    help_text="Encrypt a file with threshold protection"),
+                    help_text="Encrypt a file with threshold protection",
+                    normal_label="Protect a Document"),
             Command("10", "Unlock Document", "custom",
                     custom_handler="_vault_unlock_file",
                     aliases=["unlock"],
-                    help_text="Reconstruct key and decrypt a vault file"),
+                    help_text="Reconstruct key and decrypt a vault file",
+                    normal_label="Unlock a Document"),
             Command("11", "Vault Files", "custom",
                     custom_handler="_vault_list_files",
                     aliases=["files", "ls"],
-                    help_text="List encrypted files in a vault"),
+                    help_text="List encrypted files in a vault",
+                    normal_label="My Protected Documents"),
             Command("12", "Verify File Integrity", "custom",
                     custom_handler="_vault_verify_file",
                     aliases=["verify"],
@@ -776,6 +880,43 @@ DOMAINS = [
                     custom_handler="_vault_dev_decrypt",
                     mode="dev",
                     help_text="Decrypt a .enc file with a raw FEK"),
+            Command("z", "Anonymize File Index", "custom",
+                    custom_handler="_vault_anonymize_index",
+                    help_text="Hash all plaintext filenames in vault index",
+                    mode="dev"),
+            Command("---", "Browse & Status", "separator"),
+            Command("15", "Browse Vaults", "custom",
+                    custom_handler="_vault_browse",
+                    aliases=["browse", "ls-vaults"],
+                    help_text="Browse all your vaults with status overview",
+                    normal_label="Browse Safes"),
+            Command("16", "Vault Health", "custom",
+                    custom_handler="_vault_health",
+                    aliases=["health", "check"],
+                    help_text="Run health checks across all your vaults",
+                    normal_label="Safe Health Check"),
+            Command("17", "Pending Approvals", "custom",
+                    custom_handler="_vault_approvals",
+                    aliases=["approvals", "pending"],
+                    help_text="View and act on pending unlock requests",
+                    normal_label="Pending Approvals"),
+            Command("---", "Vault Detail", "separator"),
+            Command("c", "My Vaults", "custom",
+                    custom_handler="_vault_my_vaults",
+                    help_text="List all vaults you belong to",
+                    normal_label="My Safes"),
+            Command("d", "Open Vault", "custom",
+                    custom_handler="_vault_enter",
+                    help_text="Enter a vault to view members and documents",
+                    normal_label="Open Safe"),
+            Command("e", "Share Status", "custom",
+                    custom_handler="_vault_share_status",
+                    help_text="View key share distribution status per member",
+                    normal_label="Key Share Status"),
+            Command("f", "Unlock Requests", "custom",
+                    custom_handler="_vault_unlock_requests",
+                    help_text="View pending and past unlock requests",
+                    normal_label="Access Requests"),
         ],
     ),
 
@@ -801,13 +942,13 @@ DOMAINS = [
             Command("1", "Register Device", "submit",
                     pallet="Device", function="register_device",
                     params=[
-                        Param("owner", "Owner identity", "actor"),
                         Param("device_type", "Type", "enum",
                               options=["Mobile", "Desktop", "Server",
                                        "IoT", "Hardware", "Virtual"]),
                         Param("public_key_hash", "Public key ID (32-byte hex)", "h256"),
-                        Param("attestation_type", "Attestation type", "str",
-                              "SelfSigned"),
+                        Param("attestation_type", "Attestation type", "enum",
+                              options=["SelfSigned", "ThirdParty",
+                                       "Hardware", "Remote"]),
                     ],
                     help_text="Register a new device on the network"),
             Command("2", "Activate / Reactivate Device", "custom",

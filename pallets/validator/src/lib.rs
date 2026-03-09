@@ -713,6 +713,40 @@ pub mod pallet {
             // Reward is deferred to apply_slash — not paid immediately
             Ok(())
         }
+
+        /// Force-activate a validator, skipping the bonding period check.
+        /// Root-only. Intended for devnet bootstrap and governance overrides.
+        #[pallet::call_index(8)]
+        #[pallet::weight(T::WeightInfo::force_activate_validator())]
+        pub fn force_activate_validator(
+            origin: OriginFor<T>,
+            controller: T::AccountId,
+        ) -> DispatchResult {
+            ensure_root(origin)?;
+
+            let validator_id = ValidatorByController::<T>::get(&controller)
+                .ok_or(Error::<T>::ValidatorNotFound)?;
+            let mut info =
+                Validators::<T>::get(validator_id).ok_or(Error::<T>::ValidatorNotFound)?;
+
+            ensure!(
+                info.status == ValidatorStatus::Bonding,
+                Error::<T>::AlreadyActive
+            );
+
+            info.status = ValidatorStatus::Active;
+            Validators::<T>::insert(validator_id, info);
+
+            ActiveValidatorCount::<T>::mutate(|count| {
+                *count = count.saturating_add(1);
+            });
+
+            Self::deposit_event(Event::ValidatorActivated {
+                validator: validator_id,
+            });
+
+            Ok(())
+        }
     }
 
     impl<T: Config> Pallet<T> {
@@ -730,13 +764,16 @@ pub mod pallet {
             validator_stake: BalanceOf<T>,
             additional_to_total: BalanceOf<T>,
         ) -> DispatchResult {
-            let total_stake = TotalStake::<T>::get();
+            let validator_count = ValidatorCount::<T>::get();
 
-            // During bootstrap (no existing stake), allow registration
-            if total_stake.is_zero() {
+            // With fewer than 3 validators the 33% cap is mathematically
+            // impossible to satisfy with equal stakes (2 validators each
+            // hold 50%).  The check becomes meaningful at 3+ validators.
+            if validator_count < 3 {
                 return Ok(());
             }
 
+            let total_stake = TotalStake::<T>::get();
             let total_after = total_stake.saturating_add(additional_to_total);
             let max_allowed = MAX_STAKE_RATIO.mul_floor(total_after);
             ensure!(validator_stake <= max_allowed, Error::<T>::StakeTooHigh);
