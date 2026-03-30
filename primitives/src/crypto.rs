@@ -3,6 +3,7 @@
 use alloc::vec::Vec;
 use parity_scale_codec::{Decode, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
+use sha2::Digest;
 use sp_core::{blake2_256, H256};
 use sp_runtime::RuntimeDebug;
 
@@ -17,6 +18,60 @@ pub const DOMAIN_NULLIFIER: &[u8] = b"7ay:nullifier:v1";
 pub const DOMAIN_BOOMERANG: &[u8] = b"7ay:boomerang:v1";
 pub const DOMAIN_STORAGE_KEY: &[u8] = b"7ay:storage:key:v1";
 pub const DOMAIN_ENTROPY_MIX: &[u8] = b"7ay:entropy:mix:v1";
+
+// NIST SHA-256 domain separators (v0.9.0 dual-hash layer)
+// These use a `nist:` prefix to ensure domain separation between Blake2 and SHA-256
+// hash families per FIPS 180-4 compliance requirements.
+pub const NIST_DOMAIN_PRESENCE: &[u8] = b"7ay:nist:presence:v1";
+pub const NIST_DOMAIN_COMMITMENT: &[u8] = b"7ay:nist:commit:v1";
+pub const NIST_DOMAIN_MERKLE: &[u8] = b"7ay:nist:merkle:v1";
+pub const NIST_DOMAIN_NULLIFIER: &[u8] = b"7ay:nist:nullifier:v1";
+pub const NIST_DOMAIN_FINGERPRINT: &[u8] = b"7ay:nist:fingerprint:v1";
+
+/// SHA-256 with domain separation (NIST FIPS 180-4).
+///
+/// Mirrors `hash_with_domain` but uses SHA-256 instead of Blake2-256.
+/// Length-prefixed domain prevents ambiguity between domain and data.
+#[inline]
+pub fn sha256_with_domain(domain: &[u8], data: &[u8]) -> H256 {
+    let domain_len = (domain.len() as u32).to_le_bytes();
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(domain_len);
+    hasher.update(domain);
+    hasher.update(data);
+    let result = hasher.finalize();
+    H256::from_slice(&result)
+}
+
+/// Raw SHA-256 digest without domain separation.
+#[inline]
+pub fn sha256_raw(data: &[u8]) -> [u8; 32] {
+    let result = sha2::Sha256::digest(data);
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&result);
+    out
+}
+
+/// SHA-256 hash pair for NIST-compliant Merkle tree nodes.
+///
+/// Uses `NIST_DOMAIN_MERKLE` for internal node separation, mirroring
+/// the Blake2-based `hash_pair` function.
+#[inline]
+pub fn sha256_hash_pair(left: &H256, right: &H256) -> H256 {
+    let mut data = Vec::with_capacity(64);
+    data.extend_from_slice(left.as_bytes());
+    data.extend_from_slice(right.as_bytes());
+    sha256_with_domain(NIST_DOMAIN_MERKLE, &data)
+}
+
+/// NIST-compliant key fingerprint using SHA-256.
+///
+/// Produces a deterministic fingerprint of a cryptographic key for
+/// identification without revealing the key material.
+#[inline]
+pub fn nist_key_fingerprint(key: &[u8; 32]) -> H256 {
+    sha256_with_domain(NIST_DOMAIN_FINGERPRINT, key)
+}
 
 /// Hash with domain separation.
 ///
@@ -1064,5 +1119,132 @@ mod tests {
         assert_ne!(h_file, h_unlock);
         assert_ne!(h_file, h_share);
         assert_ne!(h_unlock, h_share);
+    }
+
+    // =========================================================================
+    // SHA-256 NIST Dual-Hash Layer Tests (v0.9.0)
+    // =========================================================================
+
+    #[test]
+    fn sha256_with_domain_deterministic() {
+        let data = b"test data";
+        let h1 = sha256_with_domain(NIST_DOMAIN_PRESENCE, data);
+        let h2 = sha256_with_domain(NIST_DOMAIN_PRESENCE, data);
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn sha256_with_domain_different_domains() {
+        let data = b"same data";
+        let h1 = sha256_with_domain(NIST_DOMAIN_PRESENCE, data);
+        let h2 = sha256_with_domain(NIST_DOMAIN_COMMITMENT, data);
+        assert_ne!(h1, h2);
+    }
+
+    #[test]
+    fn sha256_with_domain_different_data() {
+        let h1 = sha256_with_domain(NIST_DOMAIN_PRESENCE, b"data1");
+        let h2 = sha256_with_domain(NIST_DOMAIN_PRESENCE, b"data2");
+        assert_ne!(h1, h2);
+    }
+
+    #[test]
+    fn sha256_differs_from_blake2() {
+        let data = b"cross-hash check";
+        let blake = hash_with_domain(DOMAIN_PRESENCE, data);
+        let sha = sha256_with_domain(NIST_DOMAIN_PRESENCE, data);
+        assert_ne!(blake, sha);
+    }
+
+    #[test]
+    fn sha256_raw_deterministic() {
+        let data = b"raw hash test";
+        let h1 = sha256_raw(data);
+        let h2 = sha256_raw(data);
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn sha256_raw_known_vector() {
+        // SHA-256("") = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+        let empty_hash = sha256_raw(b"");
+        assert_eq!(empty_hash[0], 0xe3);
+        assert_eq!(empty_hash[1], 0xb0);
+        assert_eq!(empty_hash[31], 0x55);
+    }
+
+    #[test]
+    fn sha256_hash_pair_deterministic() {
+        let left = H256::repeat_byte(0x01);
+        let right = H256::repeat_byte(0x02);
+        let h1 = sha256_hash_pair(&left, &right);
+        let h2 = sha256_hash_pair(&left, &right);
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn sha256_hash_pair_order_matters() {
+        let a = H256::repeat_byte(0x01);
+        let b = H256::repeat_byte(0x02);
+        let h1 = sha256_hash_pair(&a, &b);
+        let h2 = sha256_hash_pair(&b, &a);
+        assert_ne!(h1, h2);
+    }
+
+    #[test]
+    fn sha256_hash_pair_differs_from_blake2_pair() {
+        let left = H256::repeat_byte(0x0A);
+        let right = H256::repeat_byte(0x0B);
+        let blake = hash_pair(&left, &right);
+        let sha = sha256_hash_pair(&left, &right);
+        assert_ne!(blake, sha);
+    }
+
+    #[test]
+    fn nist_key_fingerprint_deterministic() {
+        let key = [0xABu8; 32];
+        let fp1 = nist_key_fingerprint(&key);
+        let fp2 = nist_key_fingerprint(&key);
+        assert_eq!(fp1, fp2);
+    }
+
+    #[test]
+    fn nist_key_fingerprint_different_keys() {
+        let key1 = [0xABu8; 32];
+        let key2 = [0xCDu8; 32];
+        assert_ne!(nist_key_fingerprint(&key1), nist_key_fingerprint(&key2));
+    }
+
+    #[test]
+    fn nist_key_fingerprint_differs_from_blake2() {
+        let key = [0xABu8; 32];
+        let blake = key_fingerprint(&key);
+        let nist = nist_key_fingerprint(&key);
+        assert_ne!(blake, nist);
+    }
+
+    #[test]
+    fn nist_domain_separators_unique() {
+        let data = [42u8; 32];
+        let h_presence = sha256_with_domain(NIST_DOMAIN_PRESENCE, &data);
+        let h_commit = sha256_with_domain(NIST_DOMAIN_COMMITMENT, &data);
+        let h_merkle = sha256_with_domain(NIST_DOMAIN_MERKLE, &data);
+        let h_nullifier = sha256_with_domain(NIST_DOMAIN_NULLIFIER, &data);
+        let h_fingerprint = sha256_with_domain(NIST_DOMAIN_FINGERPRINT, &data);
+
+        let all = [h_presence, h_commit, h_merkle, h_nullifier, h_fingerprint];
+        for i in 0..all.len() {
+            for j in (i + 1)..all.len() {
+                assert_ne!(all[i], all[j]);
+            }
+        }
+    }
+
+    #[test]
+    fn sha256_domain_length_prefix_prevents_ambiguity() {
+        // "ab" + "cd" should differ from "a" + "bcd"
+        let h1 = sha256_with_domain(b"ab", b"cd");
+        let h2 = sha256_with_domain(b"a", b"bcd");
+        assert_ne!(h1, h2);
     }
 }
