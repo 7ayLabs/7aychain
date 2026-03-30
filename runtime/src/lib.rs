@@ -626,6 +626,22 @@ mod benches {
         [frame_system, SystemBench::<Runtime>]
         [pallet_balances, Balances]
         [pallet_timestamp, Timestamp]
+        [pallet_presence, Presence]
+        [pallet_epoch, Epoch]
+        [pallet_validator, Validator]
+        [pallet_dispute, Dispute]
+        [pallet_governance, Governance]
+        [pallet_semantic, Semantic]
+        [pallet_boomerang, Boomerang]
+        [pallet_autonomous, Autonomous]
+        [pallet_octopus, Octopus]
+        [pallet_device, Device]
+        [pallet_vault, Vault]
+        [pallet_zk, Zk]
+        [pallet_storage, Storage]
+        [pallet_lifecycle, Lifecycle]
+        [pallet_triangulation, Triangulation]
+        [pallet_device_scanner, DeviceScanner]
     );
 }
 
