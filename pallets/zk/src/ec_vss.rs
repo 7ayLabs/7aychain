@@ -155,22 +155,29 @@ impl EcFeldmanVSS {
             let yi = share_i.value;
 
             // Lagrange basis polynomial evaluated at 0
-            let mut li = Fr::from(1u64);
-            for (j, share_j) in subset.iter().enumerate() {
-                if i != j {
-                    let xj = Fr::from(share_j.index as u64);
-                    let denom = xj - xi;
-                    if denom.is_zero() {
-                        return None; // Duplicate indices
-                    }
-                    li *= xj * denom.inverse()?;
-                }
-            }
+            let li = Self::lagrange_basis_at_zero(subset, i, xi)?;
 
             secret += yi * li;
         }
 
         Some(secret)
+    }
+
+    /// Compute Lagrange basis polynomial evaluated at zero for index i.
+    fn lagrange_basis_at_zero(subset: &[EcVssShare], i: usize, xi: Fr) -> Option<Fr> {
+        let mut li = Fr::from(1u64);
+        for (j, share_j) in subset.iter().enumerate() {
+            if i == j {
+                continue;
+            }
+            let xj = Fr::from(share_j.index as u64);
+            let denom = xj - xi;
+            if denom.is_zero() {
+                return None; // Duplicate indices
+            }
+            li *= xj * denom.inverse()?;
+        }
+        Some(li)
     }
 
     /// Check that a set of shares has enough for reconstruction.
