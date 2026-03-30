@@ -3,6 +3,9 @@
 // Allow disallowed_macros for construct_runtime! which internally uses println
 #![allow(clippy::disallowed_macros)]
 
+#[cfg(test)]
+mod integration_tests;
+
 #[cfg(feature = "std")]
 include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 
