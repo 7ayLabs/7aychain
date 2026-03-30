@@ -8449,6 +8449,7 @@ dependencies = [
  "serde",
  "serde_json",
  "seveny-runtime",
+ "seveny-runtime-api",
  "sp-api",
  "sp-block-builder",
  "sp-blockchain",
@@ -8472,6 +8473,7 @@ version = "0.8.26"
 dependencies = [
  "parity-scale-codec",
  "scale-info",
+ "sha2 0.10.9",
  "sp-arithmetic",
  "sp-core",
  "sp-runtime",
@@ -8515,6 +8517,7 @@ dependencies = [
  "parity-scale-codec",
  "scale-info",
  "seveny-primitives",
+ "seveny-runtime-api",
  "sp-api",
  "sp-block-builder",
  "sp-consensus-aura",
@@ -8529,6 +8532,19 @@ dependencies = [
  "sp-transaction-pool",
  "sp-version",
  "substrate-wasm-builder",
+]
+
+[[package]]
+name = "seveny-runtime-api"
+version = "0.8.26"
+dependencies = [
+ "parity-scale-codec",
+ "scale-info",
+ "serde",
+ "seveny-primitives",
+ "sp-api",
+ "sp-core",
+ "sp-runtime",
 ]
 
 [[package]]

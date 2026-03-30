@@ -57,6 +57,7 @@ pallet-transaction-payment-rpc = { version = "48.0.0" }
 substrate-frame-rpc-system = { version = "49.0.0" }
 
 seveny-runtime = { path = "../runtime" }
+seveny-runtime-api = { path = "../runtime-api", features = ["std"] }
 
 # Scanner dependencies
 tokio = { version = "1.0", features = ["sync", "time", "rt-multi-thread"] }
