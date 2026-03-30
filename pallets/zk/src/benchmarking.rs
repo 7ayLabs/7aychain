@@ -8,7 +8,10 @@ use super::*;
 use frame_benchmarking::v2::*;
 use frame_system::RawOrigin;
 use pallet::*;
-use seveny_primitives::crypto::{Nullifier, StateRoot};
+use seveny_primitives::{
+    crypto::{Nullifier, StateRoot},
+    types::ActorId,
+};
 use sp_core::H256;
 
 #[benchmarks]
@@ -21,8 +24,7 @@ mod benchmarks {
         let statement = ShareStatement {
             commitment_hash: H256::repeat_byte(0xCC),
         };
-        let proof = BoundedVec::try_from(alloc::vec![0u8; 64])
-            .expect("proof within bounds");
+        let proof = BoundedVec::try_from(alloc::vec![0u8; 64]).expect("proof within bounds");
 
         #[extrinsic_call]
         _(RawOrigin::Signed(caller), statement, proof);
@@ -36,8 +38,7 @@ mod benchmarks {
             state_root: StateRoot::EMPTY,
             nullifier: Nullifier(H256::repeat_byte(0xAA)),
         };
-        let proof = BoundedVec::try_from(alloc::vec![0u8; 64])
-            .expect("proof within bounds");
+        let proof = BoundedVec::try_from(alloc::vec![0u8; 64]).expect("proof within bounds");
 
         #[extrinsic_call]
         _(RawOrigin::Signed(caller), statement, proof);
@@ -50,8 +51,7 @@ mod benchmarks {
             vault_id: 1u64,
             access_hash: H256::repeat_byte(0xEE),
         };
-        let proof = BoundedVec::try_from(alloc::vec![0u8; 64])
-            .expect("proof within bounds");
+        let proof = BoundedVec::try_from(alloc::vec![0u8; 64]).expect("proof within bounds");
 
         #[extrinsic_call]
         _(RawOrigin::Signed(caller), statement, proof);
@@ -59,7 +59,7 @@ mod benchmarks {
 
     #[benchmark]
     fn add_trusted_verifier() {
-        let verifier = H256::repeat_byte(0x01);
+        let verifier = ActorId(H256::repeat_byte(0x01));
 
         #[extrinsic_call]
         _(RawOrigin::Root, verifier);
@@ -67,7 +67,7 @@ mod benchmarks {
 
     #[benchmark]
     fn remove_trusted_verifier() {
-        let verifier = H256::repeat_byte(0x01);
+        let verifier = ActorId(H256::repeat_byte(0x01));
 
         #[extrinsic_call]
         _(RawOrigin::Root, verifier);
@@ -86,8 +86,7 @@ mod benchmarks {
     fn register_circuit() {
         let circuit_id = H256::repeat_byte(0xDD);
         let proof_type = SnarkProofType::Groth16;
-        let vk = BoundedVec::try_from(alloc::vec![0u8; 128])
-            .expect("vk within bounds");
+        let vk = BoundedVec::try_from(alloc::vec![0u8; 128]).expect("vk within bounds");
 
         #[extrinsic_call]
         _(RawOrigin::Root, circuit_id, proof_type, vk);
@@ -97,10 +96,8 @@ mod benchmarks {
     fn verify_snark() {
         let caller: T::AccountId = whitelisted_caller();
         let circuit_id = H256::repeat_byte(0xDD);
-        let proof = BoundedVec::try_from(alloc::vec![0u8; 64])
-            .expect("proof within bounds");
-        let inputs = BoundedVec::try_from(alloc::vec![[0u8; 32]; 1])
-            .expect("inputs within bounds");
+        let proof = BoundedVec::try_from(alloc::vec![0u8; 64]).expect("proof within bounds");
+        let inputs = BoundedVec::try_from(alloc::vec![[0u8; 32]; 1]).expect("inputs within bounds");
 
         #[extrinsic_call]
         _(RawOrigin::Signed(caller), circuit_id, proof, inputs);
@@ -108,7 +105,7 @@ mod benchmarks {
 
     #[benchmark]
     fn transition_proof_system_mode() {
-        let new_mode = migration::ProofSystemMode::DualVerification;
+        let new_mode = migration::ProofSystemMode::SnarkOnly;
 
         #[extrinsic_call]
         _(RawOrigin::Root, new_mode);

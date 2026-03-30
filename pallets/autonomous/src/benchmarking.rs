@@ -22,7 +22,12 @@ mod benchmarks {
         let data_hash = H256::repeat_byte(0xAA);
 
         #[extrinsic_call]
-        _(RawOrigin::Signed(caller), actor_id, behavior_type, data_hash);
+        _(
+            RawOrigin::Signed(caller),
+            actor_id,
+            behavior_type,
+            data_hash,
+        );
     }
 
     #[benchmark]
@@ -32,7 +37,12 @@ mod benchmarks {
         let classification = PatternClassification::Normal;
 
         #[extrinsic_call]
-        _(RawOrigin::Root, behavior_type, signature_hash, classification);
+        _(
+            RawOrigin::Root,
+            behavior_type,
+            signature_hash,
+            classification,
+        );
     }
 
     #[benchmark]
@@ -42,7 +52,12 @@ mod benchmarks {
         let confidence_score: u8 = 80;
 
         #[extrinsic_call]
-        _(RawOrigin::Root, pattern_id, classification, confidence_score);
+        _(
+            RawOrigin::Root,
+            pattern_id,
+            classification,
+            confidence_score,
+        );
     }
 
     #[benchmark]
