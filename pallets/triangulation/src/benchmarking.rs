@@ -7,7 +7,6 @@
 use super::*;
 use frame_benchmarking::v2::*;
 use frame_system::RawOrigin;
-use pallet::*;
 use sp_core::H256;
 
 #[benchmarks]
