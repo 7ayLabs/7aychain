@@ -19,6 +19,9 @@ pub mod circuits;
 #[cfg(test)]
 mod tests;
 
+#[cfg(feature = "runtime-benchmarks")]
+pub mod benchmarking;
+
 #[cfg(all(test, feature = "groth16"))]
 mod groth16_tests;
 
