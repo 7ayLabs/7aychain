@@ -5341,7 +5341,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-autonomous"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -5373,7 +5373,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-boomerang"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -5388,7 +5388,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-device"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -5403,7 +5403,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-device-scanner"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -5420,7 +5420,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-dispute"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -5435,7 +5435,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-epoch"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -5450,7 +5450,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-governance"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -5488,7 +5488,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-lifecycle"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -5503,7 +5503,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-octopus"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -5519,7 +5519,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-presence"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -5534,7 +5534,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-semantic"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -5572,7 +5572,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-storage"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -5669,7 +5669,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-triangulation"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -5684,7 +5684,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-validator"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -5701,7 +5701,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-vault"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -5716,7 +5716,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-zk"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "ark-bn254",
  "ark-ec 0.5.0",
@@ -8418,7 +8418,7 @@ dependencies = [
 
 [[package]]
 name = "seveny-node"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "async-trait",
  "clap",
@@ -8471,7 +8471,7 @@ dependencies = [
 
 [[package]]
 name = "seveny-primitives"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "parity-scale-codec",
  "scale-info",
@@ -8483,7 +8483,7 @@ dependencies = [
 
 [[package]]
 name = "seveny-runtime"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "frame-benchmarking",
  "frame-executive",
@@ -8539,7 +8539,7 @@ dependencies = [
 
 [[package]]
 name = "seveny-runtime-api"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "parity-scale-codec",
  "scale-info",
