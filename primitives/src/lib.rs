@@ -20,10 +20,12 @@ pub use types::*;
 
 // Re-export crypto with explicit names to avoid conflicts
 pub use crypto::{
-    derive_actor_id, derive_validator_id, hash_pair, hash_with_domain, MerkleProof, Nullifier,
-    PresenceCommitment, PresenceProof, PresenceStatement, PresenceWitness, Share, ShareIndex,
-    StateRoot, DOMAIN_ACTOR, DOMAIN_COMMITMENT, DOMAIN_EPOCH, DOMAIN_MERKLE, DOMAIN_NULLIFIER,
-    DOMAIN_PRESENCE, DOMAIN_VALIDATOR_ID,
+    derive_actor_id, derive_validator_id, hash_pair, hash_with_domain, nist_key_fingerprint,
+    sha256_hash_pair, sha256_raw, sha256_with_domain, MerkleProof, Nullifier, PresenceCommitment,
+    PresenceProof, PresenceStatement, PresenceWitness, Share, ShareIndex, StateRoot, DOMAIN_ACTOR,
+    DOMAIN_COMMITMENT, DOMAIN_EPOCH, DOMAIN_MERKLE, DOMAIN_NULLIFIER, DOMAIN_PRESENCE,
+    DOMAIN_VALIDATOR_ID, DOMAIN_VRF_EPOCH, NIST_DOMAIN_COMMITMENT, NIST_DOMAIN_FINGERPRINT,
+    NIST_DOMAIN_MERKLE, NIST_DOMAIN_NULLIFIER, NIST_DOMAIN_PRESENCE,
 };
 
 // Re-export traits with explicit names

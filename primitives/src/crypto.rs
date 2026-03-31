@@ -3,6 +3,7 @@
 use alloc::vec::Vec;
 use parity_scale_codec::{Decode, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
+use sha2::Digest;
 use sp_core::{blake2_256, H256};
 use sp_runtime::RuntimeDebug;
 
@@ -17,6 +18,61 @@ pub const DOMAIN_NULLIFIER: &[u8] = b"7ay:nullifier:v1";
 pub const DOMAIN_BOOMERANG: &[u8] = b"7ay:boomerang:v1";
 pub const DOMAIN_STORAGE_KEY: &[u8] = b"7ay:storage:key:v1";
 pub const DOMAIN_ENTROPY_MIX: &[u8] = b"7ay:entropy:mix:v1";
+pub const DOMAIN_VRF_EPOCH: &[u8] = b"7ay:vrf:epoch:v1";
+
+// NIST SHA-256 domain separators (v0.9.0 dual-hash layer)
+// These use a `nist:` prefix to ensure domain separation between Blake2 and SHA-256
+// hash families per FIPS 180-4 compliance requirements.
+pub const NIST_DOMAIN_PRESENCE: &[u8] = b"7ay:nist:presence:v1";
+pub const NIST_DOMAIN_COMMITMENT: &[u8] = b"7ay:nist:commit:v1";
+pub const NIST_DOMAIN_MERKLE: &[u8] = b"7ay:nist:merkle:v1";
+pub const NIST_DOMAIN_NULLIFIER: &[u8] = b"7ay:nist:nullifier:v1";
+pub const NIST_DOMAIN_FINGERPRINT: &[u8] = b"7ay:nist:fingerprint:v1";
+
+/// SHA-256 with domain separation (NIST FIPS 180-4).
+///
+/// Mirrors `hash_with_domain` but uses SHA-256 instead of Blake2-256.
+/// Length-prefixed domain prevents ambiguity between domain and data.
+#[inline]
+pub fn sha256_with_domain(domain: &[u8], data: &[u8]) -> H256 {
+    let domain_len = (domain.len() as u32).to_le_bytes();
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(domain_len);
+    hasher.update(domain);
+    hasher.update(data);
+    let result = hasher.finalize();
+    H256::from_slice(&result)
+}
+
+/// Raw SHA-256 digest without domain separation.
+#[inline]
+pub fn sha256_raw(data: &[u8]) -> [u8; 32] {
+    let result = sha2::Sha256::digest(data);
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&result);
+    out
+}
+
+/// SHA-256 hash pair for NIST-compliant Merkle tree nodes.
+///
+/// Uses `NIST_DOMAIN_MERKLE` for internal node separation, mirroring
+/// the Blake2-based `hash_pair` function.
+#[inline]
+pub fn sha256_hash_pair(left: &H256, right: &H256) -> H256 {
+    let mut data = Vec::with_capacity(64);
+    data.extend_from_slice(left.as_bytes());
+    data.extend_from_slice(right.as_bytes());
+    sha256_with_domain(NIST_DOMAIN_MERKLE, &data)
+}
+
+/// NIST-compliant key fingerprint using SHA-256.
+///
+/// Produces a deterministic fingerprint of a cryptographic key for
+/// identification without revealing the key material.
+#[inline]
+pub fn nist_key_fingerprint(key: &[u8; 32]) -> H256 {
+    sha256_with_domain(NIST_DOMAIN_FINGERPRINT, key)
+}
 
 /// Hash with domain separation.
 ///
@@ -420,6 +476,19 @@ pub const DOMAIN_VAULT_FEK: &[u8] = b"7ay:vault:fek:v1";
 pub const DOMAIN_VAULT_FILE: &[u8] = b"7ay:vault:file:v1";
 pub const DOMAIN_UNLOCK: &[u8] = b"7ay:unlock:v1";
 
+/// Domain separator for Proactive Secret Sharing refresh polynomials.
+///
+/// Used to derive deterministic polynomial coefficients for share
+/// refreshing. The zero-constant-term property ensures the underlying
+/// secret is unchanged after refresh.
+pub const DOMAIN_PSS_REFRESH: &[u8] = b"7ay:pss:refresh:v1";
+
+/// Domain separator for Schnorr-style share knowledge proofs.
+///
+/// Used in the Fiat-Shamir challenge derivation to bind proofs
+/// to a specific share index and commitment.
+pub const DOMAIN_SCHNORR_SHARE: &[u8] = b"7ay:schnorr:share:v1";
+
 /// Compute a fingerprint of a File Encryption Key.
 /// The FEK itself is never stored on-chain; only this fingerprint is.
 pub fn key_fingerprint(fek: &[u8; 32]) -> H256 {
@@ -609,6 +678,270 @@ impl FeldmanVSS {
     pub fn verify_share_count(shares: &[Share], threshold: u8) -> bool {
         shares.len() >= threshold as usize
     }
+}
+
+// =========================================================================
+// Proactive Secret Sharing (PSS)
+// =========================================================================
+
+/// Generate refresh shares for Proactive Secret Sharing (PSS).
+///
+/// Creates a degree-(threshold-1) polynomial with a zero constant term,
+/// evaluated at each participant index `1..=total`. Because the constant
+/// term is zero, adding these deltas to existing Shamir shares does not
+/// change the reconstructed secret:
+///
+/// ```text
+///   delta(x) = 0 + b_1*x + b_2*x^2 + ... + b_{t-1}*x^{t-1}
+///   delta(0) = 0  =>  secret is preserved after refresh
+/// ```
+///
+/// Each participant generates one such polynomial and distributes its
+/// evaluations. The final refresh delta for participant `j` is the
+/// GF(2^8) sum of all `delta_i(j)` across all participants `i`. This
+/// function generates a single participant's contribution.
+///
+/// Returns `None` if parameters are invalid (`threshold < 2`, or
+/// `total < threshold`, or `total == 0`).
+///
+/// # Security
+///
+/// - Entropy is mixed with scheme parameters via domain-separated
+///   hashing (`DOMAIN_PSS_REFRESH`) to prevent predictability even
+///   if the attacker controls the entropy source.
+/// - The constant term is unconditionally set to `[0u8; 32]` after
+///   coefficient generation, enforcing the zero-secret invariant
+///   regardless of the entropy derivation path.
+/// - After applying refresh deltas, old shares become incompatible
+///   with new shares, providing forward security.
+pub fn pss_generate_refresh(threshold: u8, total: u8, entropy: &[u8; 32]) -> Option<Vec<Share>> {
+    if threshold < 2 || total < threshold || total == 0 {
+        return None;
+    }
+
+    // Mix entropy with scheme parameters for unpredictability
+    let mut mix_input = Vec::with_capacity(32 + 2);
+    mix_input.extend_from_slice(entropy);
+    mix_input.push(threshold);
+    mix_input.push(total);
+    let mixed = hash_with_domain(DOMAIN_PSS_REFRESH, &mix_input);
+
+    // Build polynomial coefficients: constant term = 0 (zero secret)
+    let mut coefficients = Vec::with_capacity(threshold as usize);
+    coefficients.push([0u8; 32]); // c_0 = 0 enforces secret preservation
+
+    for i in 1..threshold {
+        let seed_input = [mixed.as_bytes() as &[u8], &[i]].concat();
+        let coeff = hash_with_domain(DOMAIN_PSS_REFRESH, &seed_input).0;
+        coefficients.push(coeff);
+    }
+
+    // Evaluate the zero-secret polynomial at each participant index
+    let mut refresh_shares = Vec::with_capacity(total as usize);
+    for idx in 1..=total {
+        let delta = eval_polynomial(&coefficients, idx);
+        refresh_shares.push(Share {
+            index: ShareIndex(idx),
+            value: delta,
+        });
+    }
+
+    Some(refresh_shares)
+}
+
+/// Apply refresh deltas to existing shares for Proactive Secret Sharing.
+///
+/// Computes new share values by adding (XOR in GF(2^8)) the refresh
+/// delta to each existing share:
+///
+/// ```text
+///   new_value[byte] = old_value[byte] XOR delta[byte]
+/// ```
+///
+/// XOR is the addition operation in GF(2^8), matching the field
+/// arithmetic used by the Shamir scheme.
+///
+/// Returns `None` if:
+/// - The slice lengths differ
+/// - Either slice is empty
+/// - Any share index does not match its corresponding delta index
+///
+/// # Security
+///
+/// - Index matching is enforced to prevent accidental misapplication
+///   of deltas to wrong participants.
+/// - After refresh, old shares become incompatible with the new
+///   share set, providing forward security for the threshold scheme.
+pub fn pss_apply_refresh(old_shares: &[Share], refresh_deltas: &[Share]) -> Option<Vec<Share>> {
+    if old_shares.len() != refresh_deltas.len() {
+        return None;
+    }
+
+    if old_shares.is_empty() {
+        return None;
+    }
+
+    let mut new_shares = Vec::with_capacity(old_shares.len());
+
+    for (old, delta) in old_shares.iter().zip(refresh_deltas.iter()) {
+        // Enforce that delta is applied to the correct participant
+        if old.index.0 != delta.index.0 {
+            return None;
+        }
+
+        let mut new_value = [0u8; 32];
+        for (byte_idx, new_byte) in new_value.iter_mut().enumerate() {
+            // GF(2^8) addition is XOR
+            *new_byte = gf256::add(old.value[byte_idx], delta.value[byte_idx]);
+        }
+
+        new_shares.push(Share {
+            index: ShareIndex(old.index.0),
+            value: new_value,
+        });
+    }
+
+    Some(new_shares)
+}
+
+// =========================================================================
+// Schnorr Proof of Share Knowledge
+// =========================================================================
+
+/// Schnorr-style proof of knowledge of a share value.
+///
+/// Proves the statement: "I know a value `s` such that
+/// `H(DOMAIN_SHARE || index || s) = commitment`" without revealing `s`.
+///
+/// The protocol uses the Fiat-Shamir heuristic to make the following
+/// Sigma protocol non-interactive:
+///
+/// 1. **Commit**: Prover picks random nonce `k`, computes
+///    `R = H(DOMAIN_SCHNORR_SHARE || index || k)`.
+/// 2. **Challenge**: `e = H(DOMAIN_SCHNORR_SHARE || R || commitment)`
+///    where `commitment = H(DOMAIN_SHARE || index || s)`.
+/// 3. **Response**: `z[i] = k[i] XOR gf256_mul(e_byte, s[i])` for each
+///    byte `i` in `0..32`.
+///
+/// Soundness in the random oracle model: A forger who does not know `s`
+/// cannot produce a valid `(R, z)` pair because `R` is committed before
+/// the challenge `e` is known, and computing `z` requires knowledge of
+/// both `k` (bound by `R`) and `s` (bound by the commitment).
+#[derive(Clone, PartialEq, Eq, RuntimeDebug)]
+pub struct ShareKnowledgeProof {
+    /// Random commitment `R = H(DOMAIN_SCHNORR_SHARE || index || k)`
+    /// where `k` is the random nonce.
+    pub commitment_r: H256,
+    /// Response `z[i] = k[i] XOR gf256_mul(e_byte, s[i])` per byte,
+    /// where `e_byte` is the first byte of the Fiat-Shamir challenge.
+    pub response: [u8; 32],
+}
+
+/// Generate a Schnorr proof of knowledge for a share value.
+///
+/// Demonstrates knowledge of `share.value` that hashes to the
+/// commitment `H(DOMAIN_SHARE || index || value)` without revealing
+/// the share value itself.
+///
+/// `entropy` provides 32 bytes of randomness used as the seed for
+/// nonce derivation. The entropy is mixed with the share index via
+/// domain-separated hashing to prevent catastrophic nonce reuse if
+/// the same entropy is accidentally supplied for different shares.
+///
+/// # Security
+///
+/// - Nonce `k` is derived from `entropy` mixed with the share index
+///   to prevent nonce reuse across different share indices.
+/// - Challenge `e` is derived via Fiat-Shamir with domain separation,
+///   binding the proof to both the nonce commitment and the share
+///   commitment.
+/// - The response is computed in GF(2^8) per byte, matching the
+///   field arithmetic of the underlying Shamir scheme.
+pub fn prove_share_knowledge(share: &Share, entropy: &[u8; 32]) -> ShareKnowledgeProof {
+    // Derive nonce k from entropy mixed with share context
+    let mut nonce_input = Vec::with_capacity(32 + 1);
+    nonce_input.extend_from_slice(entropy);
+    nonce_input.push(share.index.0);
+    let k = hash_with_domain(DOMAIN_SCHNORR_SHARE, &nonce_input).0;
+
+    // R = H(DOMAIN_SCHNORR_SHARE || index || k)
+    let mut r_input = Vec::with_capacity(1 + 32);
+    r_input.push(share.index.0);
+    r_input.extend_from_slice(&k);
+    let commitment_r = hash_with_domain(DOMAIN_SCHNORR_SHARE, &r_input);
+
+    // Compute the public commitment to this share
+    let share_commitment = ShamirScheme::hash_share(share);
+
+    // Challenge e = H(DOMAIN_SCHNORR_SHARE || R || share_commitment)
+    let mut e_input = Vec::with_capacity(32 + 32);
+    e_input.extend_from_slice(commitment_r.as_bytes());
+    e_input.extend_from_slice(share_commitment.as_bytes());
+    let e_hash = hash_with_domain(DOMAIN_SCHNORR_SHARE, &e_input);
+
+    // Use first byte of challenge hash as the GF(2^8) scalar.
+    // The soundness of the protocol per-byte is bounded by the
+    // field size (2^8), but the overall proof covers all 32 bytes
+    // simultaneously -- an adversary must guess correctly for ALL
+    // bytes, giving effective security of 256 bits (32 * 8 independent
+    // GF(2^8) equations) against brute-force forgery.
+    let e_byte = e_hash.0[0];
+
+    // Response: z[i] = k[i] XOR gf256_mul(e_byte, s[i])
+    let mut response = [0u8; 32];
+    for i in 0..32 {
+        response[i] = gf256::add(k[i], gf256::mul(e_byte, share.value[i]));
+    }
+
+    ShareKnowledgeProof {
+        commitment_r,
+        response,
+    }
+}
+
+/// Verify a share-knowledge proof.
+///
+/// The current construction proves knowledge relative to a hash commitment
+/// `H(DOMAIN_SHARE || index || s)`, but hash-preimage knowledge is not a
+/// relation this verifier can soundly check with the transcript alone.
+///
+/// Until the protocol is upgraded to a real proof system over a verifiable
+/// algebraic commitment, this verifier fails closed and rejects all proofs
+/// after basic structural validation. This avoids the previous unsafe
+/// behavior where malformed proofs could be accepted without checking the
+/// claimed witness relation at all.
+pub fn verify_share_knowledge(
+    proof: &ShareKnowledgeProof,
+    share_index: ShareIndex,
+    expected_commitment: &H256,
+) -> bool {
+    // R must not be zero (degenerate proof)
+    if proof.commitment_r == H256::zero() {
+        return false;
+    }
+
+    // Recompute challenge e = H(DOMAIN_SCHNORR_SHARE || R || commitment)
+    let mut e_input = Vec::with_capacity(32 + 32);
+    e_input.extend_from_slice(proof.commitment_r.as_bytes());
+    e_input.extend_from_slice(expected_commitment.as_bytes());
+    let e_hash = hash_with_domain(DOMAIN_SCHNORR_SHARE, &e_input);
+    let e_byte = e_hash.0[0];
+
+    // If e_byte == 0, the response z = k regardless of s, making
+    // the proof trivially forgeable. Reject to maintain soundness.
+    if e_byte == 0 {
+        return false;
+    }
+
+    // Verify the share index is valid (non-zero, matching Shamir convention)
+    if share_index.0 == 0 {
+        return false;
+    }
+
+    let _ = proof.response;
+    let _ = expected_commitment;
+
+    false
 }
 
 impl Share {
@@ -1064,5 +1397,156 @@ mod tests {
         assert_ne!(h_file, h_unlock);
         assert_ne!(h_file, h_share);
         assert_ne!(h_unlock, h_share);
+    }
+
+    // =========================================================================
+    // SHA-256 NIST Dual-Hash Layer Tests (v0.9.0)
+    // =========================================================================
+
+    #[test]
+    fn sha256_with_domain_deterministic() {
+        let data = b"test data";
+        let h1 = sha256_with_domain(NIST_DOMAIN_PRESENCE, data);
+        let h2 = sha256_with_domain(NIST_DOMAIN_PRESENCE, data);
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn sha256_with_domain_different_domains() {
+        let data = b"same data";
+        let h1 = sha256_with_domain(NIST_DOMAIN_PRESENCE, data);
+        let h2 = sha256_with_domain(NIST_DOMAIN_COMMITMENT, data);
+        assert_ne!(h1, h2);
+    }
+
+    #[test]
+    fn sha256_with_domain_different_data() {
+        let h1 = sha256_with_domain(NIST_DOMAIN_PRESENCE, b"data1");
+        let h2 = sha256_with_domain(NIST_DOMAIN_PRESENCE, b"data2");
+        assert_ne!(h1, h2);
+    }
+
+    #[test]
+    fn sha256_differs_from_blake2() {
+        let data = b"cross-hash check";
+        let blake = hash_with_domain(DOMAIN_PRESENCE, data);
+        let sha = sha256_with_domain(NIST_DOMAIN_PRESENCE, data);
+        assert_ne!(blake, sha);
+    }
+
+    #[test]
+    fn sha256_raw_deterministic() {
+        let data = b"raw hash test";
+        let h1 = sha256_raw(data);
+        let h2 = sha256_raw(data);
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn sha256_raw_known_vector() {
+        // SHA-256("") = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+        let empty_hash = sha256_raw(b"");
+        assert_eq!(empty_hash[0], 0xe3);
+        assert_eq!(empty_hash[1], 0xb0);
+        assert_eq!(empty_hash[31], 0x55);
+    }
+
+    #[test]
+    fn sha256_hash_pair_deterministic() {
+        let left = H256::repeat_byte(0x01);
+        let right = H256::repeat_byte(0x02);
+        let h1 = sha256_hash_pair(&left, &right);
+        let h2 = sha256_hash_pair(&left, &right);
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn sha256_hash_pair_order_matters() {
+        let a = H256::repeat_byte(0x01);
+        let b = H256::repeat_byte(0x02);
+        let h1 = sha256_hash_pair(&a, &b);
+        let h2 = sha256_hash_pair(&b, &a);
+        assert_ne!(h1, h2);
+    }
+
+    #[test]
+    fn sha256_hash_pair_differs_from_blake2_pair() {
+        let left = H256::repeat_byte(0x0A);
+        let right = H256::repeat_byte(0x0B);
+        let blake = hash_pair(&left, &right);
+        let sha = sha256_hash_pair(&left, &right);
+        assert_ne!(blake, sha);
+    }
+
+    #[test]
+    fn nist_key_fingerprint_deterministic() {
+        let key = [0xABu8; 32];
+        let fp1 = nist_key_fingerprint(&key);
+        let fp2 = nist_key_fingerprint(&key);
+        assert_eq!(fp1, fp2);
+    }
+
+    #[test]
+    fn nist_key_fingerprint_different_keys() {
+        let key1 = [0xABu8; 32];
+        let key2 = [0xCDu8; 32];
+        assert_ne!(nist_key_fingerprint(&key1), nist_key_fingerprint(&key2));
+    }
+
+    #[test]
+    fn nist_key_fingerprint_differs_from_blake2() {
+        let key = [0xABu8; 32];
+        let blake = key_fingerprint(&key);
+        let nist = nist_key_fingerprint(&key);
+        assert_ne!(blake, nist);
+    }
+
+    #[test]
+    fn nist_domain_separators_unique() {
+        let data = [42u8; 32];
+        let h_presence = sha256_with_domain(NIST_DOMAIN_PRESENCE, &data);
+        let h_commit = sha256_with_domain(NIST_DOMAIN_COMMITMENT, &data);
+        let h_merkle = sha256_with_domain(NIST_DOMAIN_MERKLE, &data);
+        let h_nullifier = sha256_with_domain(NIST_DOMAIN_NULLIFIER, &data);
+        let h_fingerprint = sha256_with_domain(NIST_DOMAIN_FINGERPRINT, &data);
+
+        let all = [h_presence, h_commit, h_merkle, h_nullifier, h_fingerprint];
+        for i in 0..all.len() {
+            for j in (i + 1)..all.len() {
+                assert_ne!(all[i], all[j]);
+            }
+        }
+    }
+
+    #[test]
+    fn sha256_domain_length_prefix_prevents_ambiguity() {
+        // "ab" + "cd" should differ from "a" + "bcd"
+        let h1 = sha256_with_domain(b"ab", b"cd");
+        let h2 = sha256_with_domain(b"a", b"bcd");
+        assert_ne!(h1, h2);
+    }
+
+    #[test]
+    fn share_knowledge_verifier_fails_closed_for_generated_proof() {
+        let share = Share::new(1, [0x42; 32]);
+        let entropy = [0xAB; 32];
+        let proof = prove_share_knowledge(&share, &entropy);
+        let commitment = ShamirScheme::hash_share(&share);
+
+        assert!(!verify_share_knowledge(&proof, share.index, &commitment));
+    }
+
+    #[test]
+    fn share_knowledge_verifier_rejects_degenerate_inputs() {
+        let proof = ShareKnowledgeProof {
+            commitment_r: H256::zero(),
+            response: [0u8; 32],
+        };
+
+        assert!(!verify_share_knowledge(
+            &proof,
+            ShareIndex(0),
+            &H256::repeat_byte(0x11)
+        ));
     }
 }

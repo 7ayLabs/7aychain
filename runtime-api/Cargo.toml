@@ -1,49 +1,40 @@
 # =============================================================================
-# 7aychain Primitives - Core Types and Protocol Constants
+# 7aychain Runtime API - DePIN RPC Runtime API Traits
 # =============================================================================
 # SPDX-License-Identifier: BUSL-1.1
 # Copyright (c) 2026 7ayLabs. All rights reserved.
 # =============================================================================
 
 [package]
-name = "seveny-primitives"
-description = "Core types, constants, and shared traits for the 7ay Proof of Presence Protocol"
+name = "seveny-runtime-api"
+description = "Runtime API trait definitions for 7aychain DePIN RPC endpoints"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
-documentation.workspace = true
-readme = "README.md"
-keywords = ["blockchain", "substrate", "proof-of-presence", "primitives"]
-categories = ["cryptography", "no-std"]
 
 [dependencies]
-# Codec
-parity-scale-codec = { workspace = true }
-scale-info = { workspace = true }
-
-# Substrate primitives
+parity-scale-codec = { workspace = true, features = ["derive"] }
+scale-info = { workspace = true, features = ["derive"] }
+sp-api = { workspace = true }
 sp-core = { workspace = true }
 sp-runtime = { workspace = true }
-sp-arithmetic = { workspace = true }
-
-# Cryptography
-sha2 = { workspace = true }
+serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
+seveny-primitives = { workspace = true }
 
 [features]
 default = ["std"]
 std = [
     "parity-scale-codec/std",
     "scale-info/std",
+    "sp-api/std",
     "sp-core/std",
     "sp-runtime/std",
-    "sp-arithmetic/std",
-    "sha2/std",
+    "serde/std",
+    "seveny-primitives/std",
 ]
-runtime-benchmarks = []
-try-runtime = []
 
 [lints]
 workspace = true

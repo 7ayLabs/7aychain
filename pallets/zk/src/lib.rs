@@ -13,11 +13,17 @@ pub mod groth16;
 #[cfg(any(test, feature = "groth16"))]
 pub mod ec_vss;
 
+#[cfg(any(test, feature = "groth16"))]
+pub mod bulletproofs;
+
 #[cfg(any(test, feature = "circuits"))]
 pub mod circuits;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(feature = "runtime-benchmarks")]
+pub mod benchmarking;
 
 #[cfg(all(test, feature = "groth16"))]
 mod groth16_tests;

@@ -3,9 +3,16 @@
 // Allow disallowed_macros for construct_runtime! which internally uses println
 #![allow(clippy::disallowed_macros)]
 
+#[cfg(test)]
+mod integration_tests;
+
 #[cfg(feature = "std")]
 include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 
+use seveny_runtime_api::{
+    RpcDeviceHealth, RpcDeviceStatus, RpcEpochInfo, RpcEpochState, RpcPresenceRecord,
+    RpcPresenceState, RpcValidatorInfo, RpcValidatorStatus,
+};
 use sp_api::impl_runtime_apis;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_consensus_grandpa::AuthorityId as GrandpaId;
@@ -67,7 +74,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     spec_name: Cow::Borrowed("seveny"),
     impl_name: Cow::Borrowed("seveny-node"),
     authoring_version: 1,
-    spec_version: 111,
+    spec_version: 113,
     impl_version: 1,
     apis: RUNTIME_API_VERSIONS,
     transaction_version: 1,
@@ -188,6 +195,15 @@ impl pallet_aura::Config for Runtime {
     type SlotDuration = pallet_aura::MinimumPeriodTimesTwo<Runtime>;
 }
 
+/// GRANDPA equivocation reporting.
+///
+/// Full equivocation reporting requires `pallet_session` for key ownership
+/// proofs. Without session-based authority management, we use `sp_core::Void`
+/// for `KeyOwnerProof` and `()` for `EquivocationReportSystem`, meaning
+/// equivocation proofs cannot be submitted on-chain.
+///
+/// Roadmap: pallet_session integration is planned for a future version
+/// to enable dynamic validator rotation and proper equivocation slashing.
 impl pallet_grandpa::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
@@ -613,6 +629,22 @@ mod benches {
         [frame_system, SystemBench::<Runtime>]
         [pallet_balances, Balances]
         [pallet_timestamp, Timestamp]
+        [pallet_presence, Presence]
+        [pallet_epoch, Epoch]
+        [pallet_validator, Validator]
+        [pallet_dispute, Dispute]
+        [pallet_governance, Governance]
+        [pallet_semantic, Semantic]
+        [pallet_boomerang, Boomerang]
+        [pallet_autonomous, Autonomous]
+        [pallet_octopus, Octopus]
+        [pallet_device, Device]
+        [pallet_vault, Vault]
+        [pallet_zk, Zk]
+        [pallet_storage, Storage]
+        [pallet_lifecycle, Lifecycle]
+        [pallet_triangulation, Triangulation]
+        [pallet_device_scanner, DeviceScanner]
     );
 }
 
@@ -720,8 +752,9 @@ impl_runtime_apis! {
             >,
             _key_owner_proof: sp_consensus_grandpa::OpaqueKeyOwnershipProof,
         ) -> Option<()> {
-            // TODO: implement equivocation reporting — currently unhandled
-            log::warn!(target: "runtime", "Grandpa equivocation report received but not processed");
+            // Equivocation reporting requires pallet_session for key ownership
+            // verification. Without session-managed authorities, equivocation
+            // proofs cannot be cryptographically verified on-chain.
             None
         }
 
@@ -729,8 +762,8 @@ impl_runtime_apis! {
             _set_id: sp_consensus_grandpa::SetId,
             _authority_id: GrandpaId,
         ) -> Option<sp_consensus_grandpa::OpaqueKeyOwnershipProof> {
-            // TODO: implement key ownership proofs for equivocation reporting
-            log::warn!(target: "runtime", "Key ownership proof requested but not implemented");
+            // Key ownership proofs require pallet_session integration.
+            // Returns None until session-based authority rotation is enabled.
             None
         }
     }
@@ -789,7 +822,165 @@ impl_runtime_apis! {
             signature_check: bool,
             select: frame_try_runtime::TryStateSelect,
         ) -> Weight {
-            Executive::try_execute_block(block.into(), state_root_check, signature_check, select).unwrap()
+            Executive::try_execute_block(
+                block.into(),
+                state_root_check,
+                signature_check,
+                select,
+            )
+            .unwrap()
+        }
+    }
+
+    // =========================================================================
+    // DePIN RPC Runtime APIs (v0.9.0)
+    // =========================================================================
+
+    impl seveny_runtime_api::PresenceApi<Block> for Runtime {
+        fn get_presence_state(
+            actor_id: H256,
+            epoch_id: u64,
+        ) -> Option<RpcPresenceRecord> {
+            use seveny_primitives::types::{ActorId, EpochId, PresenceState};
+
+            let actor = ActorId::from(actor_id);
+            let epoch = EpochId::new(epoch_id);
+
+            pallet_presence::Presences::<Runtime>::get(epoch, actor)
+                .map(|record| {
+                    let state = match record.state {
+                        PresenceState::None => RpcPresenceState::None,
+                        PresenceState::Declared => RpcPresenceState::Declared,
+                        PresenceState::Validated => {
+                            RpcPresenceState::Validated
+                        }
+                        PresenceState::Finalized => {
+                            RpcPresenceState::Finalized
+                        }
+                        PresenceState::Slashed => RpcPresenceState::Slashed,
+                    };
+                    RpcPresenceRecord {
+                        actor: actor_id,
+                        epoch: epoch_id,
+                        state,
+                        declared_at: record.declared_at,
+                        validated_at: record.validated_at,
+                        finalized_at: record.finalized_at,
+                        vote_count: record.vote_count,
+                    }
+                })
+        }
+    }
+
+    impl seveny_runtime_api::EpochApi<Block> for Runtime {
+        fn current_epoch() -> Option<RpcEpochInfo> {
+            use seveny_primitives::types::EpochState;
+
+            let epoch_id = pallet_epoch::CurrentEpoch::<Runtime>::get();
+            pallet_epoch::EpochInfo::<Runtime>::get(epoch_id).map(
+                |meta| {
+                    let state = match meta.state {
+                        EpochState::Scheduled => {
+                            RpcEpochState::Scheduled
+                        }
+                        EpochState::Active => RpcEpochState::Active,
+                        EpochState::Closed => RpcEpochState::Closed,
+                        EpochState::Finalized => {
+                            RpcEpochState::Finalized
+                        }
+                    };
+                    RpcEpochInfo {
+                        epoch_id: epoch_id.inner(),
+                        state,
+                        start_block: meta.start_block,
+                        end_block: meta.end_block,
+                        participant_count: meta.participant_count,
+                    }
+                },
+            )
+        }
+    }
+
+    impl seveny_runtime_api::ValidatorApi<Block> for Runtime {
+        fn validator_status(
+            validator_id: H256,
+        ) -> Option<RpcValidatorInfo> {
+            use seveny_primitives::types::ValidatorId;
+
+            let vid = ValidatorId::from(validator_id);
+            pallet_validator::Pallet::<Runtime>::get_validator(vid)
+                .map(|info| {
+                    let status = match info.status {
+                        pallet_validator::ValidatorStatus::Bonding => {
+                            RpcValidatorStatus::Inactive
+                        }
+                        pallet_validator::ValidatorStatus::Active => {
+                            RpcValidatorStatus::Active
+                        }
+                        pallet_validator::ValidatorStatus::Unbonding => {
+                            RpcValidatorStatus::Recovering
+                        }
+                        pallet_validator::ValidatorStatus::Slashed => {
+                            RpcValidatorStatus::Suspended
+                        }
+                    };
+                    RpcValidatorInfo {
+                        id: validator_id,
+                        stake: info.stake,
+                        status,
+                        registered_at: info.registered_at,
+                        is_unbonding: info.unbonding_at.is_some(),
+                    }
+                })
+        }
+    }
+
+    impl seveny_runtime_api::DeviceApi<Block> for Runtime {
+        fn device_health(
+            device_pub_key_hash: H256,
+        ) -> Option<RpcDeviceHealth> {
+            use pallet_device::{
+                DeviceStatus, Devices, Heartbeats, PublicKeyDevice,
+            };
+
+            let device_id =
+                PublicKeyDevice::<Runtime>::get(device_pub_key_hash)?;
+            let device = Devices::<Runtime>::get(device_id)?;
+
+            let status = match device.status {
+                DeviceStatus::Pending => RpcDeviceStatus::Pending,
+                DeviceStatus::Active => RpcDeviceStatus::Active,
+                DeviceStatus::Suspended => RpcDeviceStatus::Suspended,
+                DeviceStatus::Revoked => RpcDeviceStatus::Revoked,
+                DeviceStatus::Compromised => {
+                    RpcDeviceStatus::Compromised
+                }
+                DeviceStatus::Offline => RpcDeviceStatus::Offline,
+            };
+
+            let (health_score, consecutive_misses, last_seq) =
+                Heartbeats::<Runtime>::get(device_id)
+                    .map(|hb| {
+                        (
+                            hb.health_score,
+                            hb.consecutive_misses,
+                            hb.sequence,
+                        )
+                    })
+                    .unwrap_or((0, 0, 0));
+
+            let is_online =
+                matches!(device.status, DeviceStatus::Active);
+
+            Some(RpcDeviceHealth {
+                device_id: device_id.0,
+                status,
+                trust_score: device.trust_score,
+                health_score,
+                consecutive_misses,
+                last_heartbeat_seq: last_seq,
+                is_online,
+            })
         }
     }
 }

@@ -6,6 +6,7 @@ use frame_support::{
     traits::{ConstU32, Hooks},
 };
 use frame_system as system;
+use seveny_primitives::crypto::{hash_with_domain, DOMAIN_VRF_EPOCH};
 use seveny_primitives::types::{EpochId, EpochState};
 use sp_core::H256;
 use sp_runtime::{
@@ -471,5 +472,176 @@ fn events_emitted_correctly() {
             epoch_id,
             participant: 1,
         }));
+    });
+}
+
+// =========================================================================
+// VRF Epoch Randomness Tests
+// =========================================================================
+
+#[test]
+fn submit_vrf_in_active_epoch_succeeds() {
+    new_test_ext().execute_with(|| {
+        let epoch_id = EpochId::new(1);
+        let vrf_output = H256::repeat_byte(0xAA);
+        let vrf_proof = [0u8; 64];
+
+        assert_ok!(Epoch::submit_epoch_vrf(
+            RuntimeOrigin::signed(1),
+            epoch_id,
+            vrf_output,
+            vrf_proof,
+        ));
+
+        System::assert_has_event(RuntimeEvent::Epoch(Event::EpochVrfSubmitted {
+            epoch_id,
+            submitter: 1,
+        }));
+    });
+}
+
+#[test]
+fn submit_vrf_in_non_active_epoch_fails() {
+    new_test_ext().execute_with(|| {
+        let epoch_id = EpochId::new(1);
+
+        // Close the epoch so it is no longer Active
+        assert_ok!(Epoch::close_epoch(RuntimeOrigin::root(), epoch_id));
+
+        let vrf_output = H256::repeat_byte(0xBB);
+        let vrf_proof = [0u8; 64];
+
+        assert_noop!(
+            Epoch::submit_epoch_vrf(RuntimeOrigin::signed(1), epoch_id, vrf_output, vrf_proof,),
+            Error::<Test>::VrfSubmissionNotActive
+        );
+    });
+}
+
+#[test]
+fn submit_vrf_for_wrong_epoch_fails() {
+    new_test_ext().execute_with(|| {
+        // Current epoch is 1; submitting for epoch 99 should fail
+        let wrong_epoch = EpochId::new(99);
+        let vrf_output = H256::repeat_byte(0xCC);
+        let vrf_proof = [0u8; 64];
+
+        assert_noop!(
+            Epoch::submit_epoch_vrf(RuntimeOrigin::signed(1), wrong_epoch, vrf_output, vrf_proof,),
+            Error::<Test>::VrfEpochMismatch
+        );
+    });
+}
+
+#[test]
+fn vrf_seed_stored_correctly() {
+    new_test_ext().execute_with(|| {
+        let epoch_id = EpochId::new(1);
+        let vrf_output = H256::repeat_byte(0xDD);
+        let vrf_proof = [0u8; 64];
+
+        // Before submission, no seed exists
+        assert!(Epoch::epoch_seed(epoch_id).is_none());
+
+        assert_ok!(Epoch::submit_epoch_vrf(
+            RuntimeOrigin::signed(1),
+            epoch_id,
+            vrf_output,
+            vrf_proof,
+        ));
+
+        // After submission, seed should be present
+        let seed = Epoch::epoch_seed(epoch_id);
+        assert!(seed.is_some());
+
+        // Verify the seed is computed deterministically:
+        // seed = hash_with_domain(DOMAIN_VRF_EPOCH, vrf_output || prev_seed || epoch_id)
+        let prev_seed = H256::zero(); // PreviousEpochSeed default is zero
+        let epoch_id_bytes = epoch_id.inner().to_le_bytes();
+        let mut data = [0u8; 72];
+        data[..32].copy_from_slice(vrf_output.as_bytes());
+        data[32..64].copy_from_slice(prev_seed.as_bytes());
+        data[64..72].copy_from_slice(&epoch_id_bytes);
+        let expected = hash_with_domain(DOMAIN_VRF_EPOCH, &data);
+
+        assert_eq!(seed, Some(expected));
+    });
+}
+
+#[test]
+fn seed_propagates_to_previous_on_finalization() {
+    new_test_ext().execute_with(|| {
+        let epoch_id = EpochId::new(1);
+        let vrf_output = H256::repeat_byte(0xEE);
+        let vrf_proof = [0u8; 64];
+
+        // Submit a VRF for epoch 1
+        assert_ok!(Epoch::submit_epoch_vrf(
+            RuntimeOrigin::signed(1),
+            epoch_id,
+            vrf_output,
+            vrf_proof,
+        ));
+
+        let seed_epoch1 = Epoch::epoch_seed(epoch_id).expect("seed should exist after submission");
+
+        // PreviousEpochSeed should still be the default (zero) before finalization
+        assert_eq!(Epoch::previous_epoch_seed(), H256::zero());
+
+        // Close and finalize epoch 1
+        assert_ok!(Epoch::close_epoch(RuntimeOrigin::root(), epoch_id));
+        run_to_block(112);
+        assert_ok!(Epoch::finalize_epoch(RuntimeOrigin::root(), epoch_id));
+
+        // Now PreviousEpochSeed should have been propagated
+        assert_eq!(Epoch::previous_epoch_seed(), seed_epoch1);
+    });
+}
+
+#[test]
+fn multiple_vrf_submissions_mix_correctly() {
+    new_test_ext().execute_with(|| {
+        let epoch_id = EpochId::new(1);
+
+        let vrf_output_1 = H256::repeat_byte(0x11);
+        let vrf_output_2 = H256::repeat_byte(0x22);
+        let vrf_proof = [0u8; 64];
+
+        // First submission: uses PreviousEpochSeed (zero default)
+        assert_ok!(Epoch::submit_epoch_vrf(
+            RuntimeOrigin::signed(1),
+            epoch_id,
+            vrf_output_1,
+            vrf_proof,
+        ));
+
+        let seed_after_first =
+            Epoch::epoch_seed(epoch_id).expect("seed should exist after first submission");
+
+        // Second submission: should use the seed from the first submission
+        // as the prev_seed input, not the PreviousEpochSeed storage value
+        assert_ok!(Epoch::submit_epoch_vrf(
+            RuntimeOrigin::signed(2),
+            epoch_id,
+            vrf_output_2,
+            vrf_proof,
+        ));
+
+        let seed_after_second =
+            Epoch::epoch_seed(epoch_id).expect("seed should exist after second submission");
+
+        // The two seeds must differ (different inputs)
+        assert_ne!(seed_after_first, seed_after_second);
+
+        // Verify the second seed is computed from the first seed:
+        // seed2 = H(DOMAIN_VRF_EPOCH || vrf_output_2 || seed_after_first || epoch_id)
+        let epoch_id_bytes = epoch_id.inner().to_le_bytes();
+        let mut data = [0u8; 72];
+        data[..32].copy_from_slice(vrf_output_2.as_bytes());
+        data[32..64].copy_from_slice(seed_after_first.as_bytes());
+        data[64..72].copy_from_slice(&epoch_id_bytes);
+        let expected = hash_with_domain(DOMAIN_VRF_EPOCH, &data);
+
+        assert_eq!(seed_after_second, expected);
     });
 }
