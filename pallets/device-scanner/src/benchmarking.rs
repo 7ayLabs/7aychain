@@ -7,8 +7,6 @@
 use super::*;
 use frame_benchmarking::v2::*;
 use frame_system::RawOrigin;
-use pallet::*;
-use seveny_primitives::Position;
 use sp_core::H256;
 
 #[benchmarks]
@@ -16,7 +14,7 @@ mod benchmarks {
     use super::*;
 
     #[benchmark]
-    fn process_scan_data(n: Linear<1, 100>) {
+    fn set_scan_data(n: Linear<1, 100>) {
         let devices: Vec<ScannedDevice> = (0..n)
             .map(|i| {
                 let mut bytes = [0u8; 32];
@@ -35,12 +33,16 @@ mod benchmarks {
             .collect();
         let data = DeviceScanInherentData {
             devices,
-            reporter_position: Position::new(40_000, -74_000, 0),
+            reporter_position: Position {
+                x: 40_000,
+                y: -74_000,
+                z: 0,
+            },
             scan_timestamp: 1_000_000,
         };
 
         #[extrinsic_call]
-        set_scan_data(RawOrigin::None, data);
+        _(RawOrigin::None, data);
     }
 
     impl_benchmark_test_suite!(Pallet, crate::tests::new_test_ext(), crate::tests::Test);

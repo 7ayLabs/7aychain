@@ -7,8 +7,6 @@
 use super::*;
 use frame_benchmarking::v2::*;
 use frame_system::RawOrigin;
-use pallet::*;
-use seveny_primitives::Position;
 use sp_core::H256;
 
 #[benchmarks]
@@ -18,7 +16,11 @@ mod benchmarks {
     #[benchmark]
     fn register_reporter() {
         let caller: T::AccountId = whitelisted_caller();
-        let position = Position::new(40_000, -74_000, 0);
+        let position = Position {
+            x: 40_000,
+            y: -74_000,
+            z: 0,
+        };
 
         #[extrinsic_call]
         _(RawOrigin::Signed(caller), position);
@@ -57,7 +59,11 @@ mod benchmarks {
     fn update_reporter_position() {
         let caller: T::AccountId = whitelisted_caller();
         let reporter_id = ReporterId::new(1);
-        let new_position = Position::new(41_000, -73_000, 0);
+        let new_position = Position {
+            x: 41_000,
+            y: -73_000,
+            z: 0,
+        };
 
         #[extrinsic_call]
         _(RawOrigin::Signed(caller), reporter_id, new_position);
