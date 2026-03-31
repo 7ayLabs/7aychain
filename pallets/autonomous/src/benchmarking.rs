@@ -8,6 +8,7 @@ use super::*;
 use frame_benchmarking::v2::*;
 use frame_system::RawOrigin;
 use pallet::*;
+use seveny_primitives::types::ActorId;
 use sp_core::H256;
 
 #[benchmarks]
@@ -17,7 +18,7 @@ mod benchmarks {
     #[benchmark]
     fn record_behavior() {
         let caller: T::AccountId = whitelisted_caller();
-        let actor_id = H256::repeat_byte(0x01);
+        let actor_id = ActorId(H256::repeat_byte(0x01));
         let behavior_type = BehaviorType::PresencePattern;
         let data_hash = H256::repeat_byte(0xAA);
 
@@ -62,7 +63,7 @@ mod benchmarks {
 
     #[benchmark]
     fn update_status() {
-        let actor_id = H256::repeat_byte(0x01);
+        let actor_id = ActorId(H256::repeat_byte(0x01));
         let new_status = AutonomousStatus::Human;
 
         #[extrinsic_call]
@@ -71,7 +72,7 @@ mod benchmarks {
 
     #[benchmark]
     fn flag_actor() {
-        let actor_id = H256::repeat_byte(0x01);
+        let actor_id = ActorId(H256::repeat_byte(0x01));
         let reason = H256::repeat_byte(0xCC);
 
         #[extrinsic_call]
@@ -81,7 +82,7 @@ mod benchmarks {
     #[benchmark]
     fn match_behavior() {
         let behavior_id = BehaviorId::new(1);
-        let actor_id = H256::repeat_byte(0x01);
+        let actor_id = ActorId(H256::repeat_byte(0x01));
         let pattern_id = PatternId(1);
 
         #[extrinsic_call]
@@ -91,7 +92,7 @@ mod benchmarks {
     #[benchmark]
     fn create_profile() {
         let caller: T::AccountId = whitelisted_caller();
-        let actor_id = H256::repeat_byte(0x01);
+        let actor_id = ActorId(H256::repeat_byte(0x01));
 
         #[extrinsic_call]
         _(RawOrigin::Signed(caller), actor_id);

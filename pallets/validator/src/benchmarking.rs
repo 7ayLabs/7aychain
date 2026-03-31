@@ -8,7 +8,7 @@ use super::*;
 use frame_benchmarking::v2::*;
 use frame_system::RawOrigin;
 use pallet::*;
-use seveny_primitives::types::ViolationType;
+use seveny_primitives::types::{ValidatorId, ViolationType};
 use sp_core::H256;
 
 #[benchmarks]
@@ -67,7 +67,7 @@ mod benchmarks {
 
     #[benchmark]
     fn slash_validator() {
-        let validator_id = H256::repeat_byte(0x01);
+        let validator_id = ValidatorId(H256::repeat_byte(0x01));
         let violation = ViolationType::Minor;
 
         #[extrinsic_call]
@@ -85,7 +85,7 @@ mod benchmarks {
     #[benchmark]
     fn report_evidence() {
         let caller: T::AccountId = whitelisted_caller();
-        let validator_id = H256::repeat_byte(0x01);
+        let validator_id = ValidatorId(H256::repeat_byte(0x01));
         let violation = ViolationType::Minor;
 
         #[extrinsic_call]

@@ -8,6 +8,7 @@ use super::*;
 use frame_benchmarking::v2::*;
 use frame_system::RawOrigin;
 use pallet::*;
+use seveny_primitives::types::ActorId;
 use sp_core::H256;
 
 #[benchmarks]
@@ -25,7 +26,7 @@ mod benchmarks {
 
     #[benchmark]
     fn activate_actor() {
-        let actor_id = H256::repeat_byte(0x01);
+        let actor_id = ActorId(H256::repeat_byte(0x01));
 
         #[extrinsic_call]
         _(RawOrigin::Root, actor_id);
@@ -33,7 +34,7 @@ mod benchmarks {
 
     #[benchmark]
     fn suspend_actor() {
-        let actor_id = H256::repeat_byte(0x01);
+        let actor_id = ActorId(H256::repeat_byte(0x01));
 
         #[extrinsic_call]
         _(RawOrigin::Root, actor_id);
@@ -41,7 +42,7 @@ mod benchmarks {
 
     #[benchmark]
     fn reactivate_actor() {
-        let actor_id = H256::repeat_byte(0x01);
+        let actor_id = ActorId(H256::repeat_byte(0x01));
 
         #[extrinsic_call]
         _(RawOrigin::Root, actor_id);
@@ -59,7 +60,7 @@ mod benchmarks {
     #[benchmark]
     fn attest_destruction() {
         let caller: T::AccountId = whitelisted_caller();
-        let target_actor = H256::repeat_byte(0x02);
+        let target_actor = ActorId(H256::repeat_byte(0x02));
         let signature_hash = H256::repeat_byte(0xBB);
 
         #[extrinsic_call]

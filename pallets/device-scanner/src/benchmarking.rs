@@ -8,7 +8,6 @@ use super::*;
 use frame_benchmarking::v2::*;
 use frame_system::RawOrigin;
 use pallet::*;
-use seveny_primitives::Position;
 use sp_core::H256;
 
 #[benchmarks]
@@ -35,7 +34,11 @@ mod benchmarks {
             .collect();
         let data = DeviceScanInherentData {
             devices,
-            reporter_position: Position::new(40_000, -74_000, 0),
+            reporter_position: Position {
+                x: 40_000,
+                y: -74_000,
+                z: 0,
+            },
             scan_timestamp: 1_000_000,
         };
 

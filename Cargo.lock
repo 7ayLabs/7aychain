@@ -5405,6 +5405,7 @@ dependencies = [
 name = "pallet-device-scanner"
 version = "0.9.0"
 dependencies = [
+ "frame-benchmarking",
  "frame-support",
  "frame-system",
  "log",
@@ -5670,6 +5671,7 @@ dependencies = [
 name = "pallet-triangulation"
 version = "0.9.0"
 dependencies = [
+ "frame-benchmarking",
  "frame-support",
  "frame-system",
  "parity-scale-codec",

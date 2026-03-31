@@ -844,7 +844,7 @@ pub mod pallet {
         }
 
         #[pallet::call_index(8)]
-        #[pallet::weight(T::WeightInfo::activate_subnode())]
+        #[pallet::weight(T::WeightInfo::record_device_observation())]
         pub fn record_device_observation(
             origin: OriginFor<T>,
             subnode_id: SubnodeId,
@@ -892,7 +892,7 @@ pub mod pallet {
         }
 
         #[pallet::call_index(9)]
-        #[pallet::weight(T::WeightInfo::activate_subnode())]
+        #[pallet::weight(T::WeightInfo::record_position_confirmation())]
         pub fn record_position_confirmation(
             origin: OriginFor<T>,
             subnode_id: SubnodeId,
@@ -942,7 +942,7 @@ pub mod pallet {
         }
 
         #[pallet::call_index(10)]
-        #[pallet::weight(T::WeightInfo::activate_subnode())]
+        #[pallet::weight(T::WeightInfo::heartbeat_with_device_proof())]
         pub fn heartbeat_with_device_proof(
             origin: OriginFor<T>,
             subnode_id: SubnodeId,
@@ -1013,7 +1013,7 @@ pub mod pallet {
         }
 
         #[pallet::call_index(11)]
-        #[pallet::weight(T::WeightInfo::update_throughput())]
+        #[pallet::weight(T::WeightInfo::set_fusion_weights())]
         pub fn set_fusion_weights(
             origin: OriginFor<T>,
             heartbeat_weight: u8,

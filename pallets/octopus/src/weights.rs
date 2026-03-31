@@ -17,6 +17,10 @@ pub trait WeightInfo {
     fn evaluate_scaling() -> Weight;
     fn update_subnode_throughput() -> Weight;
     fn record_heartbeat() -> Weight;
+    fn record_device_observation() -> Weight;
+    fn record_position_confirmation() -> Weight;
+    fn heartbeat_with_device_proof() -> Weight;
+    fn set_fusion_weights() -> Weight;
 }
 
 pub struct SubstrateWeight<T>(PhantomData<T>);
@@ -69,6 +73,28 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
             .saturating_add(T::DbWeight::get().reads(1))
             .saturating_add(T::DbWeight::get().writes(1))
     }
+
+    fn record_device_observation() -> Weight {
+        Weight::from_parts(30_000_000, 0)
+            .saturating_add(T::DbWeight::get().reads(2))
+            .saturating_add(T::DbWeight::get().writes(1))
+    }
+
+    fn record_position_confirmation() -> Weight {
+        Weight::from_parts(30_000_000, 0)
+            .saturating_add(T::DbWeight::get().reads(2))
+            .saturating_add(T::DbWeight::get().writes(1))
+    }
+
+    fn heartbeat_with_device_proof() -> Weight {
+        Weight::from_parts(35_000_000, 0)
+            .saturating_add(T::DbWeight::get().reads(2))
+            .saturating_add(T::DbWeight::get().writes(2))
+    }
+
+    fn set_fusion_weights() -> Weight {
+        Weight::from_parts(15_000_000, 0).saturating_add(T::DbWeight::get().writes(1))
+    }
 }
 
 impl WeightInfo for () {
@@ -118,5 +144,27 @@ impl WeightInfo for () {
         Weight::from_parts(25_000_000, 0)
             .saturating_add(RocksDbWeight::get().reads(1))
             .saturating_add(RocksDbWeight::get().writes(1))
+    }
+
+    fn record_device_observation() -> Weight {
+        Weight::from_parts(30_000_000, 0)
+            .saturating_add(RocksDbWeight::get().reads(2))
+            .saturating_add(RocksDbWeight::get().writes(1))
+    }
+
+    fn record_position_confirmation() -> Weight {
+        Weight::from_parts(30_000_000, 0)
+            .saturating_add(RocksDbWeight::get().reads(2))
+            .saturating_add(RocksDbWeight::get().writes(1))
+    }
+
+    fn heartbeat_with_device_proof() -> Weight {
+        Weight::from_parts(35_000_000, 0)
+            .saturating_add(RocksDbWeight::get().reads(2))
+            .saturating_add(RocksDbWeight::get().writes(2))
+    }
+
+    fn set_fusion_weights() -> Weight {
+        Weight::from_parts(15_000_000, 0).saturating_add(RocksDbWeight::get().writes(1))
     }
 }

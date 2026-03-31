@@ -8,6 +8,8 @@ use super::*;
 use frame_benchmarking::v2::*;
 use frame_system::RawOrigin;
 use pallet::*;
+use seveny_primitives::types::ActorId;
+use sp_core::H256;
 
 #[benchmarks]
 mod benchmarks {
@@ -16,7 +18,7 @@ mod benchmarks {
     #[benchmark]
     fn create_relationship() {
         let caller: T::AccountId = whitelisted_caller();
-        let to_actor = sp_core::H256::repeat_byte(0x02);
+        let to_actor = ActorId(H256::repeat_byte(0x02));
         let relationship_type = RelationshipType::Trust;
         let trust_level: u8 = 75;
         let expires_at: Option<frame_system::pallet_prelude::BlockNumberFor<T>> = None;
