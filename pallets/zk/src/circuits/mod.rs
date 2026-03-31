@@ -22,24 +22,30 @@
 
 pub mod access;
 pub mod attestation;
+pub mod cluster;
 pub mod distance;
 pub mod epoch;
 pub mod position;
 pub mod presence;
 pub mod reputation;
+pub mod rotation;
 pub mod share;
 pub mod stake;
+pub mod storage;
 pub mod vote;
 
 pub use access::AccessCircuit;
 pub use attestation::AttestationCircuit;
+pub use cluster::ClusterCircuit;
 pub use distance::DistanceCircuit;
 pub use epoch::EpochCircuit;
 pub use position::PositionProximityCircuit;
 pub use presence::PresenceCircuit;
 pub use reputation::ReputationCircuit;
+pub use rotation::RotationCircuit;
 pub use share::ShareCircuit;
 pub use stake::StakeCircuit;
+pub use storage::StorageCircuit;
 pub use vote::VoteCircuit;
 
 use ark_bn254::Fr;
