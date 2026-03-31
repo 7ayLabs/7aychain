@@ -100,8 +100,7 @@ impl ConstraintSynthesizer<Fr> for RotationCircuit {
         })?;
 
         // Constraint 1: MiMC(old_key) == old_key_hash
-        let computed_old_hash =
-            mimc_hash_gadget(core::slice::from_ref(&old_key_var), &constants)?;
+        let computed_old_hash = mimc_hash_gadget(core::slice::from_ref(&old_key_var), &constants)?;
         computed_old_hash.enforce_equal(&old_key_hash_var)?;
 
         // Constraint 2: new_key == MiMC(old_key || derivation_nonce)

@@ -15,7 +15,10 @@ use std::sync::Arc;
 use jsonrpsee::{core::RpcResult, proc_macros::rpc, types::ErrorObjectOwned, RpcModule};
 use sc_transaction_pool_api::TransactionPool;
 use seveny_runtime::{opaque::Block, AccountId, Balance, Nonce};
-use seveny_runtime_api::{RpcDeviceHealth, RpcEpochInfo, RpcPresenceRecord, RpcValidatorInfo};
+use seveny_runtime_api::{
+    DeviceApi, EpochApi, PresenceApi, RpcDeviceHealth, RpcEpochInfo, RpcPresenceRecord,
+    RpcValidatorInfo, ValidatorApi,
+};
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::{Error as BlockChainError, HeaderBackend, HeaderMetadata};
 use sp_core::H256;
