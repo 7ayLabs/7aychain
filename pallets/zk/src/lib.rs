@@ -13,6 +13,9 @@ pub mod groth16;
 #[cfg(any(test, feature = "groth16"))]
 pub mod ec_vss;
 
+#[cfg(any(test, feature = "groth16"))]
+pub mod bulletproofs;
+
 #[cfg(any(test, feature = "circuits"))]
 pub mod circuits;
 
