@@ -22,6 +22,8 @@
 
 pub mod access;
 pub mod attestation;
+pub mod distance;
+pub mod epoch;
 pub mod position;
 pub mod presence;
 pub mod reputation;
@@ -31,6 +33,8 @@ pub mod vote;
 
 pub use access::AccessCircuit;
 pub use attestation::AttestationCircuit;
+pub use distance::DistanceCircuit;
+pub use epoch::EpochCircuit;
 pub use position::PositionProximityCircuit;
 pub use presence::PresenceCircuit;
 pub use reputation::ReputationCircuit;
