@@ -6164,7 +6164,7 @@ class LaudCLI:
         self._panel(
             "LAUD NETWORKS",
             "Proof of Presence Protocol",
-            f"{C.DIM}v0.8.27{C.R}",
+            f"{C.DIM}v0.9.0{C.R}",
         )
         print()
         if self._mode == 'normal':

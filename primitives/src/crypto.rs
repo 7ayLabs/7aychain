@@ -3,12 +3,13 @@
 use alloc::vec::Vec;
 use parity_scale_codec::{Decode, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
+use sha2::{Digest, Sha256};
 use sp_core::{blake2_256, H256};
 use sp_runtime::RuntimeDebug;
 
 use crate::traits::{ConstantTimeEq, CryptoHash, DomainSeparatedHash};
 
-// Domain separators for hash functions
+// Domain separators for hash functions (Blake2-256, internal use)
 pub const DOMAIN_PRESENCE: &[u8] = b"7ay:presence:v1";
 pub const DOMAIN_EPOCH: &[u8] = b"7ay:epoch:v1";
 pub const DOMAIN_COMMITMENT: &[u8] = b"7ay:commit:v1";
@@ -17,6 +18,12 @@ pub const DOMAIN_NULLIFIER: &[u8] = b"7ay:nullifier:v1";
 pub const DOMAIN_BOOMERANG: &[u8] = b"7ay:boomerang:v1";
 pub const DOMAIN_STORAGE_KEY: &[u8] = b"7ay:storage:key:v1";
 pub const DOMAIN_ENTROPY_MIX: &[u8] = b"7ay:entropy:mix:v1";
+
+// NIST SHA-256 domain separators (FIPS 180-4, external/compliance use)
+pub const DOMAIN_NIST_VAULT_FEK: &[u8] = b"7ay:nist:vault:fek:v1";
+pub const DOMAIN_NIST_CIRCUIT_ID: &[u8] = b"7ay:nist:circuit:id:v1";
+pub const DOMAIN_NIST_EXTERNAL: &[u8] = b"7ay:nist:external:v1";
+pub const DOMAIN_NIST_DEVICE_ATTESTATION: &[u8] = b"7ay:nist:device:attest:v1";
 
 /// Hash with domain separation.
 ///
@@ -41,6 +48,57 @@ pub fn hash_pair(left: &H256, right: &H256) -> H256 {
     data.extend_from_slice(left.as_bytes());
     data.extend_from_slice(right.as_bytes());
     hash_with_domain(DOMAIN_MERKLE, &data)
+}
+
+// =============================================================================
+// NIST SHA-256 Compliance Layer (FIPS 180-4)
+// =============================================================================
+// Use SHA-256 functions for external-facing operations requiring NIST
+// compliance: vault FEK fingerprints, ZK circuit identifiers, device
+// attestation hashes, and cross-chain commitments.
+// Use Blake2-256 functions (above) for internal state roots, Merkle trees,
+// presence hashing, and nullifier derivation where performance is critical.
+// =============================================================================
+
+/// NIST-compliant SHA-256 hash with domain separation (FIPS 180-4).
+///
+/// Uses length-prefixed domain separation identical to `hash_with_domain`
+/// but with SHA-256 instead of Blake2-256 for regulatory compliance.
+#[inline]
+pub fn sha256_with_domain(domain: &[u8], data: &[u8]) -> H256 {
+    let mut hasher = Sha256::new();
+    hasher.update((domain.len() as u32).to_le_bytes());
+    hasher.update(domain);
+    hasher.update(data);
+    H256::from_slice(&hasher.finalize())
+}
+
+/// SHA-256 hash of raw data without domain separation.
+///
+/// Use `sha256_with_domain` whenever possible. This is only for
+/// compatibility with external systems that expect raw SHA-256.
+#[inline]
+pub fn sha256_raw(data: &[u8]) -> H256 {
+    let mut hasher = Sha256::new();
+    hasher.update(data);
+    H256::from_slice(&hasher.finalize())
+}
+
+/// SHA-256 Merkle node hash using DOMAIN_MERKLE.
+#[inline]
+pub fn sha256_hash_pair(left: &H256, right: &H256) -> H256 {
+    let mut data = Vec::with_capacity(64);
+    data.extend_from_slice(left.as_bytes());
+    data.extend_from_slice(right.as_bytes());
+    sha256_with_domain(DOMAIN_MERKLE, &data)
+}
+
+/// NIST-compliant vault FEK fingerprint using SHA-256.
+///
+/// For external auditing and regulatory reporting. Internal vault
+/// operations continue to use Blake2-256 via `key_fingerprint()`.
+pub fn nist_key_fingerprint(fek: &[u8; 32]) -> H256 {
+    sha256_with_domain(DOMAIN_NIST_VAULT_FEK, fek)
 }
 
 /// Pedersen-style commitment: C = H(domain || value || randomness)
@@ -1064,5 +1122,91 @@ mod tests {
         assert_ne!(h_file, h_unlock);
         assert_ne!(h_file, h_share);
         assert_ne!(h_unlock, h_share);
+    }
+
+    // =========================================================================
+    // SHA-256 NIST Compliance Layer Tests
+    // =========================================================================
+
+    #[test]
+    fn sha256_empty_input_matches_nist() {
+        // NIST test vector: SHA-256("") = e3b0c44298fc1c14...
+        let result = sha256_raw(b"");
+        assert_eq!(
+            &result.as_bytes()[..4],
+            &[0xe3, 0xb0, 0xc4, 0x42],
+            "SHA-256 empty string should match NIST test vector"
+        );
+    }
+
+    #[test]
+    fn sha256_domain_separation_different_domains() {
+        let data = b"test data";
+        let h1 = sha256_with_domain(DOMAIN_NIST_VAULT_FEK, data);
+        let h2 = sha256_with_domain(DOMAIN_NIST_CIRCUIT_ID, data);
+        let h3 = sha256_with_domain(DOMAIN_NIST_EXTERNAL, data);
+        let h4 = sha256_with_domain(DOMAIN_NIST_DEVICE_ATTESTATION, data);
+        assert_ne!(h1, h2);
+        assert_ne!(h1, h3);
+        assert_ne!(h1, h4);
+        assert_ne!(h2, h3);
+        assert_ne!(h2, h4);
+        assert_ne!(h3, h4);
+    }
+
+    #[test]
+    fn sha256_domain_separation_same_input_deterministic() {
+        let data = [0xAB; 64];
+        let h1 = sha256_with_domain(DOMAIN_NIST_EXTERNAL, &data);
+        let h2 = sha256_with_domain(DOMAIN_NIST_EXTERNAL, &data);
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn sha256_differs_from_blake2() {
+        let data = b"cross-algorithm test";
+        let blake2 = hash_with_domain(DOMAIN_MERKLE, data);
+        let sha256 = sha256_with_domain(DOMAIN_MERKLE, data);
+        assert_ne!(blake2, sha256, "SHA-256 and Blake2-256 must differ");
+    }
+
+    #[test]
+    fn sha256_hash_pair_deterministic() {
+        let left = H256::repeat_byte(0x01);
+        let right = H256::repeat_byte(0x02);
+        let r1 = sha256_hash_pair(&left, &right);
+        let r2 = sha256_hash_pair(&left, &right);
+        assert_eq!(r1, r2);
+    }
+
+    #[test]
+    fn sha256_hash_pair_order_matters() {
+        let a = H256::repeat_byte(0x01);
+        let b = H256::repeat_byte(0x02);
+        assert_ne!(sha256_hash_pair(&a, &b), sha256_hash_pair(&b, &a));
+    }
+
+    #[test]
+    fn nist_key_fingerprint_deterministic() {
+        let fek = [0xAB; 32];
+        assert_eq!(nist_key_fingerprint(&fek), nist_key_fingerprint(&fek));
+    }
+
+    #[test]
+    fn nist_key_fingerprint_differs_from_blake2() {
+        let fek = [0xAB; 32];
+        assert_ne!(
+            nist_key_fingerprint(&fek),
+            key_fingerprint(&fek),
+            "NIST and Blake2 fingerprints must differ"
+        );
+    }
+
+    #[test]
+    fn nist_domain_separators_unique_from_blake2_domains() {
+        let data = [42u8; 32];
+        let h_nist = sha256_with_domain(DOMAIN_NIST_VAULT_FEK, &data);
+        let h_blake = hash_with_domain(DOMAIN_VAULT_FEK, &data);
+        assert_ne!(h_nist, h_blake);
     }
 }
