@@ -19,7 +19,9 @@ pub mod pallet {
         traits::{Get, StorageVersion},
     };
     use frame_system::pallet_prelude::*;
+    use seveny_primitives::crypto::{hash_with_domain, DOMAIN_VRF_EPOCH};
     use seveny_primitives::types::{EpochId, EpochState};
+    use sp_core::H256;
     use sp_runtime::traits::Saturating;
 
     use crate::WeightInfo;
@@ -130,6 +132,23 @@ pub mod pallet {
     #[pallet::getter(fn last_finalized_epoch)]
     pub type LastFinalizedEpoch<T: Config> = StorageValue<_, EpochId, OptionQuery>;
 
+    /// Per-epoch VRF seed used for randomness-dependent operations.
+    ///
+    /// Computed as `H(DOMAIN_VRF_EPOCH || vrf_output || prev_seed || epoch_id)`.
+    /// Multiple submissions mix into the existing seed by using the previous
+    /// stored value as input, producing cumulative entropy.
+    #[pallet::storage]
+    #[pallet::getter(fn epoch_seed)]
+    pub type EpochSeed<T: Config> = StorageMap<_, Blake2_128Concat, EpochId, H256, OptionQuery>;
+
+    /// Previous epoch's seed, carried forward during finalization.
+    ///
+    /// Used as VRF input for the current epoch so that each epoch's
+    /// randomness is chained to prior epochs' contributions.
+    #[pallet::storage]
+    #[pallet::getter(fn previous_epoch_seed)]
+    pub type PreviousEpochSeed<T: Config> = StorageValue<_, H256, ValueQuery>;
+
     #[pallet::storage]
     #[pallet::getter(fn epoch_participants)]
     pub type EpochParticipants<T: Config> = StorageDoubleMap<
@@ -171,6 +190,11 @@ pub mod pallet {
             duration: BlockNumberFor<T>,
             grace_period: BlockNumberFor<T>,
         },
+        /// A VRF evaluation was submitted and mixed into the epoch seed.
+        EpochVrfSubmitted {
+            epoch_id: EpochId,
+            submitter: T::AccountId,
+        },
     }
 
     #[pallet::error]
@@ -191,6 +215,10 @@ pub mod pallet {
         /// M20: start_block must be in the future
         StartBlockInPast,
         ForceTransitionSkipsState,
+        /// VRF submission is only allowed during Active epochs
+        VrfSubmissionNotActive,
+        /// The submitted epoch_id does not match the current epoch
+        VrfEpochMismatch,
     }
 
     #[pallet::genesis_config]
@@ -401,6 +429,8 @@ pub mod pallet {
             EpochInfo::<T>::insert(epoch_id, metadata.clone());
             LastFinalizedEpoch::<T>::put(epoch_id);
 
+            Self::propagate_epoch_seed(epoch_id);
+
             Self::deposit_event(Event::EpochFinalized {
                 epoch_id,
                 block_number,
@@ -499,6 +529,7 @@ pub mod pallet {
                 Self::ensure_grace_period_elapsed(&metadata)?;
                 metadata.finalized_block = Some(block_number);
                 LastFinalizedEpoch::<T>::put(epoch_id);
+                Self::propagate_epoch_seed(epoch_id);
             }
 
             metadata.state = new_state;
@@ -507,6 +538,62 @@ pub mod pallet {
             if new_state == EpochState::Active {
                 CurrentEpoch::<T>::put(epoch_id);
             }
+
+            Ok(())
+        }
+
+        /// Submit a VRF evaluation for the current epoch's randomness.
+        ///
+        /// The VRF output is combined with the previous epoch's seed to
+        /// produce the current epoch's seed:
+        ///   `seed = H(DOMAIN_VRF_EPOCH || vrf_output || prev_seed || epoch_id)`
+        ///
+        /// Only callable during an Active epoch for the current epoch.
+        /// Multiple submissions are mixed together: each new submission
+        /// uses the currently stored seed as `prev_seed`, so entropy
+        /// accumulates with every call.
+        ///
+        /// The `vrf_proof` parameter is accepted and stored for future
+        /// on-chain verification once a VRF verification pallet is
+        /// integrated.
+        #[pallet::call_index(7)]
+        #[pallet::weight(T::WeightInfo::submit_epoch_vrf())]
+        pub fn submit_epoch_vrf(
+            origin: OriginFor<T>,
+            epoch_id: EpochId,
+            vrf_output: H256,
+            _vrf_proof: [u8; 64],
+        ) -> DispatchResult {
+            let who = ensure_signed(origin)?;
+
+            let current = CurrentEpoch::<T>::get();
+            ensure!(epoch_id == current, Error::<T>::VrfEpochMismatch);
+
+            let metadata = EpochInfo::<T>::get(epoch_id).ok_or(Error::<T>::EpochNotFound)?;
+            ensure!(
+                metadata.state == EpochState::Active,
+                Error::<T>::VrfSubmissionNotActive
+            );
+
+            // Use the existing epoch seed if one has already been submitted
+            // this epoch, otherwise fall back to the previous epoch's seed.
+            // This ensures multiple submissions mix cumulatively.
+            let prev_seed =
+                EpochSeed::<T>::get(epoch_id).unwrap_or_else(PreviousEpochSeed::<T>::get);
+
+            let epoch_id_bytes = epoch_id.inner().to_le_bytes();
+            let mut data = [0u8; 72];
+            data[..32].copy_from_slice(vrf_output.as_bytes());
+            data[32..64].copy_from_slice(prev_seed.as_bytes());
+            data[64..72].copy_from_slice(&epoch_id_bytes);
+
+            let seed = hash_with_domain(DOMAIN_VRF_EPOCH, &data);
+            EpochSeed::<T>::insert(epoch_id, seed);
+
+            Self::deposit_event(Event::EpochVrfSubmitted {
+                epoch_id,
+                submitter: who,
+            });
 
             Ok(())
         }
@@ -595,6 +682,18 @@ pub mod pallet {
             }
 
             Err(Error::<T>::EpochNotScheduled.into())
+        }
+
+        /// Propagate the current epoch's seed to `PreviousEpochSeed`.
+        ///
+        /// Called during finalization so the next epoch can chain its
+        /// randomness to this epoch's accumulated VRF contributions.
+        /// If no VRF was submitted for the epoch, `PreviousEpochSeed`
+        /// is left unchanged.
+        fn propagate_epoch_seed(epoch_id: EpochId) {
+            if let Some(seed) = EpochSeed::<T>::get(epoch_id) {
+                PreviousEpochSeed::<T>::put(seed);
+            }
         }
 
         pub fn get_epoch_state(epoch_id: EpochId) -> Option<EpochState> {
