@@ -47,6 +47,11 @@ pub mod pallet {
 
         #[pallet::constant]
         type GracePeriod: Get<BlockNumberFor<Self>>;
+
+        /// Temporary safety gate for epoch VRF submissions until on-chain
+        /// proof verification and validator authorization are implemented.
+        #[pallet::constant]
+        type AllowUnverifiedVrfSubmissions: Get<bool>;
     }
 
     #[derive(
@@ -219,6 +224,8 @@ pub mod pallet {
         VrfSubmissionNotActive,
         /// The submitted epoch_id does not match the current epoch
         VrfEpochMismatch,
+        /// Unverified VRF submissions are disabled in this runtime.
+        VrfSubmissionDisabled,
     }
 
     #[pallet::genesis_config]
@@ -564,6 +571,11 @@ pub mod pallet {
             vrf_output: H256,
             _vrf_proof: [u8; 64],
         ) -> DispatchResult {
+            ensure!(
+                T::AllowUnverifiedVrfSubmissions::get(),
+                Error::<T>::VrfSubmissionDisabled
+            );
+
             let who = ensure_signed(origin)?;
 
             let current = CurrentEpoch::<T>::get();

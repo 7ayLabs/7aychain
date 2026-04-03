@@ -54,6 +54,7 @@ parameter_types! {
     pub const MinEpochDuration: u64 = 10;
     pub const MaxEpochDuration: u64 = 1000;
     pub const GracePeriod: u64 = 10;
+    pub static AllowUnverifiedVrfSubmissions: bool = true;
 }
 
 impl pallet_epoch::Config for Test {
@@ -62,6 +63,7 @@ impl pallet_epoch::Config for Test {
     type MinEpochDuration = MinEpochDuration;
     type MaxEpochDuration = MaxEpochDuration;
     type GracePeriod = GracePeriod;
+    type AllowUnverifiedVrfSubmissions = AllowUnverifiedVrfSubmissions;
 }
 
 fn new_test_ext() -> sp_io::TestExternalities {
@@ -88,6 +90,22 @@ fn run_to_block(n: u64) {
         System::set_block_number(System::block_number() + 1);
         Epoch::on_initialize(System::block_number());
     }
+}
+
+#[test]
+fn vrf_submission_can_be_disabled_by_runtime() {
+    new_test_ext().execute_with(|| {
+        AllowUnverifiedVrfSubmissions::set(false);
+
+        let epoch_id = Epoch::current_epoch();
+        let vrf_output = H256::repeat_byte(7);
+        let vrf_proof = [0u8; 64];
+
+        assert_noop!(
+            Epoch::submit_epoch_vrf(RuntimeOrigin::signed(1), epoch_id, vrf_output, vrf_proof),
+            Error::<Test>::VrfSubmissionDisabled
+        );
+    });
 }
 
 #[test]

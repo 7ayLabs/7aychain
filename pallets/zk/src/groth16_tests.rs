@@ -14,9 +14,12 @@ use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisE
 use ark_serialize::CanonicalSerialize;
 use ark_snark::SNARK;
 use ark_std::rand::thread_rng;
+use seveny_primitives::crypto::{Nullifier, StateRoot};
+use sp_core::H256;
 
 use crate::groth16::Groth16Verifier;
 use crate::verifier::ZkVerifier;
+use crate::{AccessStatement, PresenceStatement, ShareStatement};
 
 /// Trivial test circuit: proves knowledge of x such that x * x == y.
 /// Public input: y
@@ -194,4 +197,38 @@ fn groth16_vk_size_reasonable() {
         "VK should fit in MaxVkSize (4096), got {}",
         vk.len()
     );
+}
+
+#[test]
+fn groth16_rejects_legacy_share_proof_paths() {
+    let statement = ShareStatement {
+        commitment_hash: H256::repeat_byte(7),
+    };
+
+    assert!(!Groth16Verifier::verify_share_proof(&statement, &[0u8; 65]));
+}
+
+#[test]
+fn groth16_rejects_legacy_presence_proof_paths() {
+    let statement = PresenceStatement {
+        epoch_id: 1,
+        state_root: StateRoot::EMPTY,
+        nullifier: Nullifier(H256::repeat_byte(9)),
+    };
+
+    assert!(!Groth16Verifier::verify_presence_proof(
+        &statement, &[0u8; 80]
+    ));
+}
+
+#[test]
+fn groth16_rejects_legacy_access_proof_paths() {
+    let statement = AccessStatement {
+        vault_id: 1,
+        access_hash: H256::repeat_byte(3),
+    };
+
+    assert!(!Groth16Verifier::verify_access_proof(
+        &statement, &[0u8; 68]
+    ));
 }

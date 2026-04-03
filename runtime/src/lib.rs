@@ -289,6 +289,7 @@ parameter_types! {
     pub const MinEpochDuration: BlockNumber = 4;
     pub const MaxEpochDuration: BlockNumber = 1000;
     pub const GracePeriod: BlockNumber = 2;
+    pub const AllowUnverifiedVrfSubmissions: bool = false;
 }
 
 impl pallet_epoch::Config for Runtime {
@@ -297,6 +298,7 @@ impl pallet_epoch::Config for Runtime {
     type MinEpochDuration = MinEpochDuration;
     type MaxEpochDuration = MaxEpochDuration;
     type GracePeriod = GracePeriod;
+    type AllowUnverifiedVrfSubmissions = AllowUnverifiedVrfSubmissions;
 }
 
 parameter_types! {

@@ -109,22 +109,31 @@ impl Groth16Verifier {
 }
 
 impl crate::verifier::ZkVerifier for Groth16Verifier {
-    /// Delegates to StubVerifier (hash-based).
-    /// Replaced with ZK circuit in future version.
-    fn verify_share_proof(statement: &ShareStatement, proof: &[u8]) -> bool {
-        crate::StubVerifier::verify_share_proof(statement, proof)
+    /// Fail closed until a real share circuit is registered.
+    fn verify_share_proof(_statement: &ShareStatement, _proof: &[u8]) -> bool {
+        log::warn!(
+            target: "pallet-zk",
+            "Groth16Verifier: share proof verification disabled until a real circuit is registered",
+        );
+        false
     }
 
-    /// Delegates to StubVerifier (hash-based).
-    /// Replaced with ZK circuit in future version.
-    fn verify_presence_proof(statement: &PresenceStatement, proof: &[u8]) -> bool {
-        crate::StubVerifier::verify_presence_proof(statement, proof)
+    /// Fail closed until a real presence circuit is registered.
+    fn verify_presence_proof(_statement: &PresenceStatement, _proof: &[u8]) -> bool {
+        log::warn!(
+            target: "pallet-zk",
+            "Groth16Verifier: presence proof verification disabled until a real circuit is registered",
+        );
+        false
     }
 
-    /// Delegates to StubVerifier (hash-based).
-    /// Replaced with ZK circuit in future version.
-    fn verify_access_proof(statement: &AccessStatement, proof: &[u8]) -> bool {
-        crate::StubVerifier::verify_access_proof(statement, proof)
+    /// Fail closed until a real access circuit is registered.
+    fn verify_access_proof(_statement: &AccessStatement, _proof: &[u8]) -> bool {
+        log::warn!(
+            target: "pallet-zk",
+            "Groth16Verifier: access proof verification disabled until a real circuit is registered",
+        );
+        false
     }
 
     /// Verify a Groth16 BN254 SNARK proof against a verification key.
