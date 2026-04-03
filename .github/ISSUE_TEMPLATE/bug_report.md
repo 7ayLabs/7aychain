@@ -6,6 +6,8 @@ labels: bug
 assignees: ''
 ---
 
+> If this bug is about cryptography, privacy, ZK, cybersecurity, or infrastructure hardening, use the `Security / Crypto Change Plan` issue form instead of this generic bug report.
+
 ## Description
 
 <!-- Clear description of the bug -->

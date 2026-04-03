@@ -6,6 +6,8 @@ labels: enhancement
 assignees: ''
 ---
 
+> If this feature is about cryptography, privacy, ZK, cybersecurity, or infrastructure, use the `Security / Crypto Change Plan` issue form so the work includes a concrete test plan and residual-risk section.
+
 ## Summary
 
 <!-- Brief description of the feature -->

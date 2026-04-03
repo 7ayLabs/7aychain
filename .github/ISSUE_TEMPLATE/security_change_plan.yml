@@ -1,0 +1,145 @@
+name: Security / Crypto Change Plan
+description: Plan a future feature, fix, or patch for cryptography, cybersecurity, privacy, ZK, or infrastructure.
+title: "[SECURITY] "
+labels:
+  - security
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for future work on cryptography, privacy, ZK, cybersecurity, and infrastructure.
+
+        Keep it implementation-first:
+        - describe the problem
+        - describe the required change
+        - describe how it will be tested
+        - describe residual risk
+
+        Do not include protocol marketing or "what the chain does" text.
+
+  - type: dropdown
+    id: work_type
+    attributes:
+      label: Work Type
+      description: Choose the type of planned work.
+      options:
+        - Fix
+        - Patch
+        - Feature
+    validations:
+      required: true
+
+  - type: dropdown
+    id: primary_category
+    attributes:
+      label: Primary Category
+      description: Choose the main domain affected by this change.
+      options:
+        - Cryptography
+        - Privacy
+        - ZK
+        - Cybersecurity
+        - Infrastructure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: secondary_category
+    attributes:
+      label: Secondary Category
+      description: Choose an optional second domain if needed.
+      options:
+        - None
+        - Cryptography
+        - Privacy
+        - ZK
+        - Cybersecurity
+        - Infrastructure
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Describe the current weakness, missing behavior, trust boundary, or exploit path.
+      placeholder: |
+        Current problem:
+        Security or privacy impact:
+        What fails today:
+    validations:
+      required: true
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: State the concrete success criteria and what must remain unchanged.
+      placeholder: |
+        Success criteria:
+        Expected final behavior:
+        Behavior that must not change:
+    validations:
+      required: true
+
+  - type: textarea
+    id: implementation
+    attributes:
+      label: Implementation
+      description: Describe the runtime, pallet, node, infra, RPC, or CI surfaces that must change.
+      placeholder: |
+        Components touched:
+        Validation and fail-closed behavior:
+        Migration or rollout constraints:
+    validations:
+      required: true
+
+  - type: textarea
+    id: test_plan
+    attributes:
+      label: Test Plan
+      description: List the exact unit, integration, adversarial, devnet, or real-device tests required.
+      placeholder: |
+        Unit tests:
+        Integration/runtime tests:
+        Abuse-path tests:
+        Devnet or real-device tests:
+        Regression tests:
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: List the commands, expected outcomes, and evidence that prove the change works.
+      placeholder: |
+        Commands to run:
+        Expected pass/fail outcome:
+        Logs, events, storage, RPC, or metrics to verify:
+    validations:
+      required: true
+
+  - type: textarea
+    id: residual_risk
+    attributes:
+      label: Residual Risk
+      description: Record what remains unsolved, intentionally disabled, or deferred.
+      placeholder: |
+        Remaining risk:
+        Deferred hardening:
+        Follow-up items:
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: plan_guards
+    attributes:
+      label: Planning Guards
+      options:
+        - label: This issue excludes chain narrative or marketing text.
+          required: true
+        - label: This issue includes a concrete test plan, not only implementation notes.
+          required: true
+        - label: This issue records fail-closed behavior or explicitly documents why it cannot.
+          required: true
