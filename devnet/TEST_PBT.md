@@ -1,6 +1,6 @@
 # Testing Presence-Based Triangulation (PBT)
 
-This guide explains how to test the new PBT architecture that replaces WiFi/Bluetooth scanning.
+This guide explains how to test the new PBT architecture that replaces direct WiFi/Bluetooth scanning. For live devnet ingestion, the node now consumes an external JSON scan bridge in `external` scanner mode.
 
 ## Architecture Overview
 
@@ -63,7 +63,16 @@ docker compose ps
 docker compose logs -f alice  # Watch logs
 ```
 
-### 4. Run PBT Test Script
+### 4. Publish External Scan Data For Alice
+
+```bash
+cd /Users/mac/Desktop/Zaid/empresa/proyectos/repos/7aychain
+python3 devnet/scripts/publish_external_scan.py --sample
+```
+
+This writes `devnet/state/alice-scan.json`, which the native Alice process reads when started with `--scanner-mode=external`.
+
+### 5. Run PBT Test Script
 
 ```bash
 cd scripts
@@ -109,6 +118,37 @@ presence.submitWitnessAttestation(target, epoch, latency_ms, direct_connection)
 presence.verifyPosition(target, epoch)
 - target: <actor H256>
 - epoch: 1
+```
+
+## Real-Device Checklist
+
+1. Run Alice natively with `devnet/scripts/run-native-alice.sh --pos 0 0 0`.
+2. Keep `scanner-mode=external` and publish a fresh bridge file every time your local device observations change.
+3. Use `python3 devnet/scripts/publish_external_scan.py --sample` for smoke tests before wiring a real hardware collector.
+4. For real hardware, replace the sample publisher with a local bridge process that writes the same JSON schema to `devnet/state/alice-scan.json`.
+5. Ensure new scan payloads arrive more frequently than `--max-scan-age`, otherwise the node will drop them as stale.
+6. Confirm Alice logs at least one external scan batch before submitting presence-related extrinsics.
+7. Bring up the Docker validators with `docker compose -f docker-compose.hybrid.yml up -d`.
+8. Submit validator positions and witness attestations from separate machines or separate network segments.
+9. Verify the position only after at least three witnesses have submitted attestations.
+10. Clear the bridge with `python3 devnet/scripts/publish_external_scan.py --clear` and confirm no new device-scan inherents are authored.
+
+## External Scan JSON Schema
+
+```json
+{
+  "generated_at": 1700000000,
+  "devices": [
+    {
+      "mac_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "rssi": -41,
+      "signal_type": "wifi",
+      "device_type": "iphone",
+      "device_name": "alice-phone",
+      "frequency": 2412
+    }
+  ]
+}
 ```
 
 ## Query State

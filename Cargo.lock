@@ -8424,6 +8424,7 @@ dependencies = [
  "clap",
  "frame-system",
  "futures",
+ "hex",
  "jsonrpsee",
  "log",
  "pallet-transaction-payment",

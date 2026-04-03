@@ -136,6 +136,8 @@ pub fn run() -> sc_cli::Result<()> {
                 mock_device_count: cli.run.mock_devices,
                 mock_seed: cli.run.mock_seed,
                 scan_interval_secs: cli.run.scan_interval,
+                external_scan_file: cli.run.external_scan_file.clone(),
+                max_scan_age_secs: cli.run.max_scan_age,
                 reporter_position: Position {
                     x: cli.run.scanner_pos_x,
                     y: cli.run.scanner_pos_y,

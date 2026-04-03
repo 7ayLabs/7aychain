@@ -1,4 +1,5 @@
 use sc_cli::RunCmd;
+use std::path::PathBuf;
 
 #[derive(Debug, clap::Parser)]
 #[command(
@@ -40,6 +41,12 @@ pub struct ExtendedRunCmd {
 
     #[arg(long, default_value = "42")]
     pub mock_seed: u64,
+
+    #[arg(long)]
+    pub external_scan_file: Option<PathBuf>,
+
+    #[arg(long, default_value = "30")]
+    pub max_scan_age: u64,
 
     /// Block sealing mode: "aura" (continuous every 7s) or "instant" (only on extrinsic)
     #[arg(long, default_value = "aura")]

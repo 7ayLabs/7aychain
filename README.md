@@ -154,14 +154,17 @@ Run a single validator on the local testnet:
 Run the full network with Alice natively and the remaining validators in Docker:
 
 ```shell
-# 1. Start Alice natively (real or mock scanning)
+# 1. Start Alice natively with the external scan bridge
 devnet/scripts/run-native-alice.sh
 
-# 2. Start Bob, Charlie, Dave, Eve, Ferdie in Docker
+# 2. Publish a sample external scan payload for Alice
+python3 devnet/scripts/publish_external_scan.py --sample
+
+# 3. Start Bob, Charlie, Dave, Eve, Ferdie in Docker
 cd devnet
 docker compose -f docker-compose.hybrid.yml up -d
 
-# 3. Monitor the network
+# 4. Monitor the network
 devnet/scripts/monitor.sh
 ```
 
@@ -197,9 +200,11 @@ docker compose -f docker-compose.hybrid.yml down -v     # stop + clear chain sta
 | `--rpc-external` | Listen on all interfaces (0.0.0.0) |
 | `--port <port>` | P2P network port (default: 30333) |
 | `--name <name>` | Node display name |
-| `--scanner-mode <mode>` | Device scanner mode (`latency`, `mock`) |
+| `--scanner-mode <mode>` | Device scanner mode (`latency`, `external`, `mock`) |
 | `--mock-devices <n>` | Number of simulated devices in mock mode |
+| `--external-scan-file <path>` | JSON bridge file consumed in `external` scanner mode |
 | `--scan-interval <secs>` | Seconds between device scans (default: 6) |
+| `--max-scan-age <secs>` | Maximum accepted age for a scan batch before it is dropped |
 | `--scanner-pos-x/y/z <n>` | Scanner position coordinates |
 
 ## Docker

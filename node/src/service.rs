@@ -353,6 +353,7 @@ pub fn new_full(
         let scanner_cfg = scanner_config.unwrap_or_default();
         let inherent_reporter_position = scanner_cfg.reporter_position;
         let inherent_max_devices = scanner_cfg.max_devices_per_block;
+        let inherent_max_scan_age = scanner_cfg.max_scan_age_secs;
         start_scanner_task(&task_manager, scanner_cfg, scan_results.clone());
         log::info!("Device scanner initialized for block authoring");
 
@@ -426,6 +427,7 @@ pub fn new_full(
                                 scan_results,
                                 inherent_reporter_position,
                                 inherent_max_devices,
+                                inherent_max_scan_age,
                             );
 
                             Ok((slot, timestamp, device_scanner))

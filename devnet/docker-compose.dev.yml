@@ -12,16 +12,16 @@ x-node-build: &node-build
   build:
     context: ..
     dockerfile: devnet/Dockerfile
-  image: seveny-node:latest
+  image: ${SEVENY_NODE_IMAGE:-seveny-node:v0.9.3-devnet}
 
 services:
   node:
     <<: *node-build
     container_name: seveny-dev
     ports:
-      - "9944:9944"
-      - "9933:9933"
-      - "30333:30333"
+      - "127.0.0.1:9944:9944"
+      - "127.0.0.1:9933:9933"
+      - "127.0.0.1:30333:30333"
     volumes:
       - dev-data:/node/data
     command:
@@ -30,7 +30,7 @@ services:
       - "--base-path=/node/data"
       - "--rpc-cors=all"
       - "--rpc-external"
-      - "--rpc-methods=unsafe"
+      - "--rpc-methods=safe"
       - "--scanner-mode=mock"
       - "--mock-devices=15"
       - "--scanner-pos-x=0"

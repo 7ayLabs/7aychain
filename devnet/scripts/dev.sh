@@ -21,7 +21,7 @@ case "${1:-docker}" in
       --dev \
       --sealing=instant \
       --rpc-cors=all \
-      --rpc-methods=unsafe \
+      --rpc-methods=safe \
       --scanner-mode=mock \
       --mock-devices=15 \
       --tmp

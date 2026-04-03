@@ -66,6 +66,7 @@ log = "0.4"
 parity-scale-codec = { workspace = true, features = ["std"] }
 rand = "0.8"
 rand_chacha = "0.3"
+hex = "0.4"
 
 [build-dependencies]
 substrate-build-script-utils = { version = "11.0.0" }

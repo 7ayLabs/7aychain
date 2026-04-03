@@ -1,15 +1,19 @@
 # Hybrid Devnet Configuration
-# Use this when running Alice natively with latency-based scanning
+# Use this when running Alice natively with external scan bridging
 # Run: docker compose -f docker-compose.hybrid.yml up -d
+
+name: seveny-hybrid
+
+x-node-image: &node-image ${SEVENY_NODE_IMAGE:-seveny-node:v0.9.3-devnet}
 
 services:
   bob:
-    image: seveny-node:latest
+    image: *node-image
     container_name: seveny-bob
     ports:
-      - "9945:9944"
-      - "9934:9933"
-      - "30334:30333"
+      - "127.0.0.1:9945:9944"
+      - "127.0.0.1:9934:9933"
+      - "127.0.0.1:30334:30333"
     volumes:
       - bob-data:/node/data
     command:
@@ -19,7 +23,7 @@ services:
       - "--base-path=/node/data"
       - "--rpc-cors=all"
       - "--rpc-external"
-      - "--rpc-methods=unsafe"
+      - "--rpc-methods=safe"
       - "--node-key=0000000000000000000000000000000000000000000000000000000000000002"
       - "--bootnodes=/dns4/host.docker.internal/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp"
       - "--scanner-mode=mock"
@@ -36,12 +40,12 @@ services:
     restart: unless-stopped
 
   charlie:
-    image: seveny-node:latest
+    image: *node-image
     container_name: seveny-charlie
     ports:
-      - "9946:9944"
-      - "9935:9933"
-      - "30335:30333"
+      - "127.0.0.1:9946:9944"
+      - "127.0.0.1:9935:9933"
+      - "127.0.0.1:30335:30333"
     volumes:
       - charlie-data:/node/data
     command:
@@ -51,7 +55,7 @@ services:
       - "--base-path=/node/data"
       - "--rpc-cors=all"
       - "--rpc-external"
-      - "--rpc-methods=unsafe"
+      - "--rpc-methods=safe"
       - "--node-key=0000000000000000000000000000000000000000000000000000000000000003"
       - "--bootnodes=/dns4/host.docker.internal/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp"
       - "--scanner-mode=mock"
@@ -70,12 +74,12 @@ services:
     restart: unless-stopped
 
   dave:
-    image: seveny-node:latest
+    image: *node-image
     container_name: seveny-dave
     ports:
-      - "9947:9944"
-      - "9936:9933"
-      - "30336:30333"
+      - "127.0.0.1:9947:9944"
+      - "127.0.0.1:9936:9933"
+      - "127.0.0.1:30336:30333"
     volumes:
       - dave-data:/node/data
     command:
@@ -85,7 +89,7 @@ services:
       - "--base-path=/node/data"
       - "--rpc-cors=all"
       - "--rpc-external"
-      - "--rpc-methods=unsafe"
+      - "--rpc-methods=safe"
       - "--node-key=0000000000000000000000000000000000000000000000000000000000000004"
       - "--bootnodes=/dns4/host.docker.internal/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp"
       - "--scanner-mode=mock"
@@ -104,12 +108,12 @@ services:
     restart: unless-stopped
 
   eve:
-    image: seveny-node:latest
+    image: *node-image
     container_name: seveny-eve
     ports:
-      - "9948:9944"
-      - "9937:9933"
-      - "30337:30333"
+      - "127.0.0.1:9948:9944"
+      - "127.0.0.1:9937:9933"
+      - "127.0.0.1:30337:30333"
     volumes:
       - eve-data:/node/data
     command:
@@ -119,7 +123,7 @@ services:
       - "--base-path=/node/data"
       - "--rpc-cors=all"
       - "--rpc-external"
-      - "--rpc-methods=unsafe"
+      - "--rpc-methods=safe"
       - "--node-key=0000000000000000000000000000000000000000000000000000000000000005"
       - "--bootnodes=/dns4/host.docker.internal/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp"
       - "--scanner-mode=mock"
@@ -138,12 +142,12 @@ services:
     restart: unless-stopped
 
   ferdie:
-    image: seveny-node:latest
+    image: *node-image
     container_name: seveny-ferdie
     ports:
-      - "9949:9944"
-      - "9938:9933"
-      - "30338:30333"
+      - "127.0.0.1:9949:9944"
+      - "127.0.0.1:9938:9933"
+      - "127.0.0.1:30338:30333"
     volumes:
       - ferdie-data:/node/data
     command:
@@ -153,7 +157,7 @@ services:
       - "--base-path=/node/data"
       - "--rpc-cors=all"
       - "--rpc-external"
-      - "--rpc-methods=unsafe"
+      - "--rpc-methods=safe"
       - "--node-key=0000000000000000000000000000000000000000000000000000000000000006"
       - "--bootnodes=/dns4/host.docker.internal/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp"
       - "--scanner-mode=mock"

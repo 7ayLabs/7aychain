@@ -58,10 +58,23 @@ pub struct ScannedDevice {
     pub detected_at: u64,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct ScanResults {
     pub devices: Vec<ScannedDevice>,
     pub last_scan: Option<SystemTime>,
+    pub scan_sequence: u64,
+    pub last_emitted_sequence: Option<u64>,
+}
+
+impl Default for ScanResults {
+    fn default() -> Self {
+        Self {
+            devices: Vec::new(),
+            last_scan: None,
+            scan_sequence: 0,
+            last_emitted_sequence: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Encode, Decode)]

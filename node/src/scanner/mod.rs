@@ -1,19 +1,24 @@
+pub mod external;
 pub mod inherent;
 pub mod latency;
 pub mod mock;
 pub mod types;
 
+pub use external::ExternalScannerConfig;
 pub use inherent::{DeviceScanInherentDataProvider, ScanResultsHandle};
 pub use mock::{MockConfig, MockScanner};
 pub use types::*;
 
+use external::run_external_scanner;
 use std::sync::Arc;
 use std::time::Duration;
+use std::{path::PathBuf, time::SystemTime};
 use tokio::sync::RwLock;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ScannerMode {
     Latency,
+    External,
     Mock,
     Disabled,
 }
@@ -30,10 +35,11 @@ impl std::str::FromStr for ScannerMode {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "latency" | "network" => Ok(Self::Latency),
+            "external" | "file" | "bridge" => Ok(Self::External),
             "mock" => Ok(Self::Mock),
             "disabled" | "off" | "none" => Ok(Self::Disabled),
             other => Err(format!(
-                "Unknown scanner mode '{}'. Valid: latency, mock, disabled",
+                "Unknown scanner mode '{}'. Valid: latency, external, mock, disabled",
                 other
             )),
         }
@@ -48,6 +54,8 @@ pub struct ScannerConfig {
     pub reporter_position: Position,
     pub mock_device_count: u32,
     pub mock_seed: u64,
+    pub external_scan_file: Option<PathBuf>,
+    pub max_scan_age_secs: u64,
 }
 
 impl Default for ScannerConfig {
@@ -59,6 +67,8 @@ impl Default for ScannerConfig {
             reporter_position: Position::default(),
             mock_device_count: 15,
             mock_seed: 42,
+            external_scan_file: None,
+            max_scan_age_secs: 30,
         }
     }
 }
@@ -75,6 +85,16 @@ pub async fn run_scanner(config: ScannerConfig, scan_results: ScanResultsHandle)
         ScannerMode::Mock => {
             run_mock_scanner(config, scan_results).await;
         }
+        ScannerMode::External => {
+            run_external_scanner(
+                ExternalScannerConfig {
+                    scan_interval_secs: config.scan_interval_secs,
+                    scan_file: config.external_scan_file,
+                },
+                scan_results,
+            )
+            .await;
+        }
         ScannerMode::Latency => {
             run_latency_scanner(config, scan_results).await;
         }
@@ -90,6 +110,9 @@ async fn run_latency_scanner(config: ScannerConfig, scan_results: ScanResultsHan
         config.reporter_position.x,
         config.reporter_position.y,
         config.reporter_position.z
+    );
+    log::warn!(
+        "Latency scanner is telemetry-only in this build and does not emit inherent scan data. Use --scanner-mode=external or --scanner-mode=mock for block-authoring scans."
     );
 
     loop {
@@ -128,7 +151,8 @@ async fn run_mock_scanner(config: ScannerConfig, scan_results: ScanResultsHandle
         {
             let mut guard = scan_results.write().await;
             guard.devices = devices.clone();
-            guard.last_scan = Some(std::time::SystemTime::now());
+            guard.last_scan = Some(SystemTime::now());
+            guard.scan_sequence = guard.scan_sequence.saturating_add(1);
         }
 
         log::info!("Mock scan complete: {} devices", devices.len());

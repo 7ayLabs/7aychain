@@ -1,7 +1,7 @@
 #!/bin/bash
-# Native Alice Runner for Real Device Scanning
-# Use this script to run Alice natively with real WiFi/Bluetooth scanning
-# while other nodes run in Docker with mock scanning
+# Native Alice Runner for External Device Scan Bridging
+# Use this script to run Alice natively while another local tool publishes
+# scan observations into a JSON bridge file consumed by the node.
 
 set -e
 
@@ -9,6 +9,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 BINARY="$PROJECT_ROOT/target/release/seveny-node"
 DATA_DIR="$PROJECT_ROOT/target/alice-data"
+SCAN_DIR="$PROJECT_ROOT/devnet/state"
+EXTERNAL_SCAN_FILE="$SCAN_DIR/alice-scan.json"
 
 # Colors for output
 RED='\033[0;31m'
@@ -23,7 +25,7 @@ print_banner() {
     echo "    / / (_) | __ | (__| __ |/ _ \ | || .\` |"
     echo "   /_/ \__\_\_||_|\___|_||_/_/ \_\___|_|\_|"
     echo ""
-    echo "   Native Alice - Real Device Scanning"
+    echo "   Native Alice - External Scan Bridge"
     echo -e "${NC}"
 }
 
@@ -35,23 +37,10 @@ check_binary() {
     fi
 }
 
-check_macos_permissions() {
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        echo -e "${YELLOW}macOS detected. Checking permissions...${NC}"
-
-        # Check location services
-        if ! defaults read /var/db/locationd/clients.plist 2>/dev/null | grep -q "Terminal"; then
-            echo -e "${RED}Warning: Location Services may not be enabled for Terminal.${NC}"
-            echo "Enable: System Preferences → Security & Privacy → Privacy → Location Services"
-        fi
-
-        # Test WiFi scanning
-        if /System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport -s &>/dev/null; then
-            echo -e "${GREEN}✓ WiFi scanning available${NC}"
-        else
-            echo -e "${RED}✗ WiFi scanning unavailable. Check permissions.${NC}"
-        fi
-    fi
+print_bridge_hint() {
+    echo -e "${YELLOW}External scan bridge file:${NC} $EXTERNAL_SCAN_FILE"
+    echo "Populate it with:"
+    echo "  python3 devnet/scripts/publish_external_scan.py --sample --output \"$EXTERNAL_SCAN_FILE\""
 }
 
 cleanup() {
@@ -62,11 +51,14 @@ cleanup() {
 trap cleanup SIGINT SIGTERM
 
 # Parse arguments
-SCANNER_MODE="latency"
+SCANNER_MODE="external"
 SCAN_INTERVAL=10
+MAX_SCAN_AGE=30
 POS_X=0
 POS_Y=0
 POS_Z=0
+RPC_METHODS="safe"
+RPC_EXTERNAL=0
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -74,8 +66,20 @@ while [[ $# -gt 0 ]]; do
             SCANNER_MODE="mock"
             shift
             ;;
+        --latency)
+            SCANNER_MODE="latency"
+            shift
+            ;;
+        --external-scan-file)
+            EXTERNAL_SCAN_FILE="$2"
+            shift 2
+            ;;
         --scan-interval)
             SCAN_INTERVAL="$2"
+            shift 2
+            ;;
+        --max-scan-age)
+            MAX_SCAN_AGE="$2"
             shift 2
             ;;
         --pos)
@@ -83,6 +87,14 @@ while [[ $# -gt 0 ]]; do
             POS_Y="$3"
             POS_Z="$4"
             shift 4
+            ;;
+        --rpc-external)
+            RPC_EXTERNAL=1
+            shift
+            ;;
+        --unsafe-rpc)
+            RPC_METHODS="unsafe"
+            shift
             ;;
         --purge)
             echo -e "${YELLOW}Purging Alice data...${NC}"
@@ -98,27 +110,43 @@ done
 
 print_banner
 check_binary
-check_macos_permissions
+print_bridge_hint
 
 echo -e "${GREEN}Starting Alice with:${NC}"
 echo "  Scanner Mode: $SCANNER_MODE"
 echo "  Scan Interval: ${SCAN_INTERVAL}s"
+echo "  Max Scan Age: ${MAX_SCAN_AGE}s"
 echo "  Position: ($POS_X, $POS_Y, $POS_Z)"
+if [[ "$SCANNER_MODE" == "external" ]]; then
+    echo "  External Scan File: $EXTERNAL_SCAN_FILE"
+fi
 echo ""
 
 mkdir -p "$DATA_DIR"
+mkdir -p "$SCAN_DIR"
 
-exec "$BINARY" \
-    --alice \
-    --validator \
-    --chain=local \
-    --base-path="$DATA_DIR" \
-    --rpc-cors=all \
-    --rpc-external \
-    --rpc-methods=unsafe \
-    --node-key=0000000000000000000000000000000000000000000000000000000000000001 \
-    --scanner-mode="$SCANNER_MODE" \
-    --scan-interval="$SCAN_INTERVAL" \
-    --scanner-pos-x="$POS_X" \
-    --scanner-pos-y="$POS_Y" \
+ARGS=(
+    --alice
+    --validator
+    --chain=local
+    --base-path="$DATA_DIR"
+    --rpc-cors=all
+    --rpc-methods="$RPC_METHODS"
+    --node-key=0000000000000000000000000000000000000000000000000000000000000001
+    --scanner-mode="$SCANNER_MODE"
+    --scan-interval="$SCAN_INTERVAL"
+    --max-scan-age="$MAX_SCAN_AGE"
+    --scanner-pos-x="$POS_X"
+    --scanner-pos-y="$POS_Y"
     --scanner-pos-z="$POS_Z"
+)
+
+if [[ "$RPC_EXTERNAL" -eq 1 ]]; then
+    ARGS+=(--rpc-external)
+fi
+
+if [[ "$SCANNER_MODE" == "external" ]]; then
+    ARGS+=(--external-scan-file="$EXTERNAL_SCAN_FILE")
+fi
+
+exec "$BINARY" "${ARGS[@]}"
