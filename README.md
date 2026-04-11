@@ -19,6 +19,8 @@ The chain runs on the [7ay Proof of Presence Protocol](https://github.com/7ayLab
 
 [Website](https://7aylabs.com) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [License](LICENSE)
 
+Release planning for the native carrier devnet is tracked in [docs/releases/v0.9.7/README.md](/Users/mac/Desktop/Zaid/empresa/proyectos/repos/7aychain/docs/releases/v0.9.7/README.md).
+
 Get running in three commands — clone, build, and start a local devnet. Then use the [Laud Networks CLI](#laud-networks-cli) to interact with every module on the chain.
 
 ```bash

@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [v0.9.7] - Planned
+
+### Added
+
+- Release specification for the native carrier devnet under `docs/releases/v0.9.7/`
+- Branching, sub-branch, and conventional commit guidelines for the `v0.9.7`
+  delivery train
+- Architecture target for a Proof-of-Presence-backed decentralized carrier where
+  `7AYchain` acts as the subscriber, numbering, presence, and service-rights
+  control plane
+- Acceptance criteria for a devnet capable of native-number service validation
+  on iPhone and other devices through a real telecom stack bridged to the chain
+
+### Planned
+
+- `pallet-carrier` or equivalent subscriber-core module for number binding,
+  SIM/eSIM entitlement, service activation, portability, and recovery
+- Telecom core bridge that translates on-chain PoP-approved subscriber state
+  into native carrier network attach authorization
+- Native carrier devnet milestones covering local coverage nodes, attach flows,
+  and real call validation targets
+
 ## [v0.8.16] - 2026-02-23
 
 ### Added
