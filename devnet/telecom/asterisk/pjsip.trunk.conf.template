@@ -1,0 +1,35 @@
+; SIP Trunk registration template for 7AY carrier devnet.
+; Variables filled by carrier_softphone_bridge.py --trunk-config.
+
+[trunk-auth]
+type=auth
+auth_type=userpass
+username={{TRUNK_USERNAME}}
+password={{TRUNK_PASSWORD}}
+
+[trunk-aor]
+type=aor
+contact=sip:{{TRUNK_REGISTRAR}}
+qualify_frequency=60
+
+[trunk-registration]
+type=registration
+transport={{TRUNK_TRANSPORT}}
+outbound_auth=trunk-auth
+server_uri=sip:{{TRUNK_REGISTRAR}}
+client_uri=sip:{{TRUNK_USERNAME}}@{{TRUNK_REGISTRAR}}
+retry_interval=60
+
+[trunk-endpoint]
+type=endpoint
+transport={{TRUNK_TRANSPORT}}
+context={{TRUNK_CONTEXT_IN}}
+disallow=all
+allow=ulaw,alaw,opus
+outbound_auth=trunk-auth
+aors=trunk-aor
+direct_media=no
+rewrite_contact=yes
+rtp_symmetric=yes
+force_rport=yes
+from_domain={{TRUNK_REGISTRAR}}

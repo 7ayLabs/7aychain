@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>7AYchain WebRTC Dialer</title>
+<script src="https://cdn.jsdelivr.net/npm/jssip@3.10.0/lib/JsSIP.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0a0a0f;
+    color: #e0e0e0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem;
+  }
+  h1 { color: #7af; margin-bottom: 0.5rem; font-size: 1.5rem; }
+  .subtitle { color: #888; font-size: 0.85rem; margin-bottom: 2rem; }
+  .card {
+    background: #14141f;
+    border: 1px solid #2a2a3f;
+    border-radius: 12px;
+    padding: 1.5rem;
+    width: 100%;
+    max-width: 400px;
+    margin-bottom: 1rem;
+  }
+  .card h2 { font-size: 1rem; color: #aaa; margin-bottom: 1rem; }
+  label { display: block; font-size: 0.8rem; color: #888; margin-bottom: 0.3rem; }
+  input, select {
+    width: 100%;
+    padding: 0.6rem;
+    background: #1a1a2e;
+    border: 1px solid #333;
+    border-radius: 6px;
+    color: #e0e0e0;
+    font-size: 0.9rem;
+    margin-bottom: 0.8rem;
+  }
+  input:focus, select:focus { outline: none; border-color: #7af; }
+  .btn {
+    width: 100%;
+    padding: 0.7rem;
+    border: none;
+    border-radius: 8px;
+    font-size: 1rem;
+    cursor: pointer;
+    margin-bottom: 0.5rem;
+  }
+  .btn-primary { background: #2563eb; color: white; }
+  .btn-primary:hover { background: #1d4ed8; }
+  .btn-success { background: #16a34a; color: white; }
+  .btn-success:hover { background: #15803d; }
+  .btn-danger { background: #dc2626; color: white; }
+  .btn-danger:hover { background: #b91c1c; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .status {
+    text-align: center;
+    padding: 0.5rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    margin-bottom: 1rem;
+  }
+  .status-disconnected { background: #3f1414; color: #f87171; }
+  .status-connecting { background: #3f3f14; color: #fbbf24; }
+  .status-connected { background: #143f14; color: #4ade80; }
+  .status-incall { background: #14143f; color: #7af; }
+  .dialpad {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+  .dialpad button {
+    padding: 0.8rem;
+    font-size: 1.2rem;
+    background: #1a1a2e;
+    border: 1px solid #333;
+    border-radius: 8px;
+    color: #e0e0e0;
+    cursor: pointer;
+  }
+  .dialpad button:hover { background: #2a2a3f; }
+  #dial-display {
+    text-align: center;
+    font-size: 1.5rem;
+    padding: 0.5rem;
+    margin-bottom: 1rem;
+    min-height: 2.5rem;
+    color: #7af;
+  }
+  .signal-info {
+    font-size: 0.8rem;
+    color: #888;
+    text-align: center;
+    margin-top: 0.5rem;
+  }
+  audio { display: none; }
+</style>
+</head>
+<body>
+
+<h1>7AYchain WebRTC Dialer</h1>
+<p class="subtitle">Browser-based SIP calling for carrier devnet testing</p>
+
+<!-- Login -->
+<div class="card" id="login-card">
+  <h2>SIP Credentials</h2>
+  <label>WSS Server</label>
+  <input id="wss-uri" type="text" placeholder="wss://192.168.1.x:8089/ws">
+  <label>SIP Username</label>
+  <input id="sip-user" type="text" placeholder="alice7001">
+  <label>SIP Password</label>
+  <input id="sip-pass" type="password" placeholder="7ay-alice-7001">
+  <label>SIP Domain</label>
+  <input id="sip-domain" type="text" placeholder="127.0.0.1">
+  <button class="btn btn-primary" id="btn-connect">Connect</button>
+  <div class="signal-info">
+    Auto-fill: <a href="#" id="auto-provision" style="color:#7af">Load from provisioning API</a>
+  </div>
+</div>
+
+<!-- Dialer -->
+<div class="card" id="dialer-card" style="display:none">
+  <div class="status status-disconnected" id="status-bar">Disconnected</div>
+  <div id="dial-display"></div>
+  <div class="dialpad">
+    <button onclick="dialPress('1')">1</button>
+    <button onclick="dialPress('2')">2</button>
+    <button onclick="dialPress('3')">3</button>
+    <button onclick="dialPress('4')">4</button>
+    <button onclick="dialPress('5')">5</button>
+    <button onclick="dialPress('6')">6</button>
+    <button onclick="dialPress('7')">7</button>
+    <button onclick="dialPress('8')">8</button>
+    <button onclick="dialPress('9')">9</button>
+    <button onclick="dialPress('*')">*</button>
+    <button onclick="dialPress('0')">0</button>
+    <button onclick="dialPress('#')">#</button>
+  </div>
+  <input id="dial-input" type="text" placeholder="Enter number or extension">
+  <button class="btn btn-success" id="btn-call">Call</button>
+  <button class="btn btn-danger" id="btn-hangup" style="display:none">Hang Up</button>
+  <button class="btn btn-danger" id="btn-disconnect">Disconnect</button>
+</div>
+
+<audio id="remote-audio" autoplay></audio>
+
+<script>
+  let ua = null;
+  let currentSession = null;
+
+  const statusBar = document.getElementById('status-bar');
+  const dialDisplay = document.getElementById('dial-display');
+  const dialInput = document.getElementById('dial-input');
+
+  function setStatus(text, cls) {
+    statusBar.textContent = text;
+    statusBar.className = 'status ' + cls;
+  }
+
+  function dialPress(digit) {
+    dialInput.value += digit;
+    dialDisplay.textContent = dialInput.value;
+    if (currentSession) {
+      currentSession.sendDTMF(digit);
+    }
+  }
+
+  document.getElementById('auto-provision').addEventListener('click', async (e) => {
+    e.preventDefault();
+    const user = prompt('Enter SIP username to auto-provision:');
+    if (!user) return;
+    try {
+      const host = window.location.hostname || 'localhost';
+      const resp = await fetch('http://' + host + ':8090/api/v1/webrtc-config/' + user);
+      if (!resp.ok) throw new Error('Not found');
+      const cfg = await resp.json();
+      document.getElementById('wss-uri').value = cfg.ws_uri;
+      document.getElementById('sip-user').value = cfg.sip_username;
+      document.getElementById('sip-pass').value = cfg.sip_password;
+      const sipUri = cfg.sip_uri || '';
+      const domain = sipUri.split('@')[1] || '127.0.0.1';
+      document.getElementById('sip-domain').value = domain;
+    } catch (err) {
+      alert('Could not load provisioning: ' + err.message);
+    }
+  });
+
+  document.getElementById('btn-connect').addEventListener('click', () => {
+    const wssUri = document.getElementById('wss-uri').value.trim();
+    const sipUser = document.getElementById('sip-user').value.trim();
+    const sipPass = document.getElementById('sip-pass').value.trim();
+    const sipDomain = document.getElementById('sip-domain').value.trim() || '127.0.0.1';
+
+    if (!wssUri || !sipUser || !sipPass) {
+      alert('Please fill in all fields');
+      return;
+    }
+
+    const socket = new JsSIP.WebSocketInterface(wssUri);
+    const config = {
+      sockets: [socket],
+      uri: 'sip:' + sipUser + '@' + sipDomain,
+      password: sipPass,
+      display_name: sipUser,
+      register: true,
+    };
+
+    ua = new JsSIP.UA(config);
+
+    ua.on('connecting', () => setStatus('Connecting...', 'status-connecting'));
+    ua.on('connected', () => setStatus('Connected', 'status-connected'));
+    ua.on('disconnected', () => setStatus('Disconnected', 'status-disconnected'));
+    ua.on('registered', () => setStatus('Registered as ' + sipUser, 'status-connected'));
+    ua.on('registrationFailed', (e) => {
+      setStatus('Registration failed: ' + (e.cause || 'unknown'), 'status-disconnected');
+    });
+
+    ua.on('newRTCSession', (data) => {
+      const session = data.session;
+      if (session.direction === 'incoming') {
+        if (confirm('Incoming call from ' + session.remote_identity.uri.user)) {
+          session.answer({
+            mediaConstraints: { audio: true, video: false },
+          });
+          handleSession(session);
+        } else {
+          session.terminate();
+        }
+      }
+    });
+
+    ua.start();
+
+    document.getElementById('login-card').style.display = 'none';
+    document.getElementById('dialer-card').style.display = 'block';
+  });
+
+  function handleSession(session) {
+    currentSession = session;
+    document.getElementById('btn-call').style.display = 'none';
+    document.getElementById('btn-hangup').style.display = 'block';
+    setStatus('In call...', 'status-incall');
+
+    session.on('ended', () => {
+      currentSession = null;
+      document.getElementById('btn-call').style.display = 'block';
+      document.getElementById('btn-hangup').style.display = 'none';
+      setStatus('Call ended', 'status-connected');
+    });
+
+    session.on('failed', (e) => {
+      currentSession = null;
+      document.getElementById('btn-call').style.display = 'block';
+      document.getElementById('btn-hangup').style.display = 'none';
+      setStatus('Call failed: ' + (e.cause || 'unknown'), 'status-connected');
+    });
+
+    session.connection.addEventListener('addstream', (e) => {
+      document.getElementById('remote-audio').srcObject = e.stream;
+    });
+
+    // Modern track-based approach
+    session.connection.addEventListener('track', (e) => {
+      document.getElementById('remote-audio').srcObject = e.streams[0];
+    });
+  }
+
+  document.getElementById('btn-call').addEventListener('click', () => {
+    if (!ua) return;
+    const target = dialInput.value.trim();
+    if (!target) return;
+
+    const sipDomain = document.getElementById('sip-domain').value.trim() || '127.0.0.1';
+    const targetUri = target.includes('@') ? 'sip:' + target : 'sip:' + target + '@' + sipDomain;
+
+    const session = ua.call(targetUri, {
+      mediaConstraints: { audio: true, video: false },
+      rtcOfferConstraints: { offerToReceiveAudio: true, offerToReceiveVideo: false },
+    });
+    handleSession(session);
+  });
+
+  document.getElementById('btn-hangup').addEventListener('click', () => {
+    if (currentSession) currentSession.terminate();
+  });
+
+  document.getElementById('btn-disconnect').addEventListener('click', () => {
+    if (ua) {
+      ua.stop();
+      ua = null;
+    }
+    document.getElementById('login-card').style.display = 'block';
+    document.getElementById('dialer-card').style.display = 'none';
+    setStatus('Disconnected', 'status-disconnected');
+  });
+
+  // Pre-fill WSS URI with current host
+  (function() {
+    const host = window.location.hostname || 'localhost';
+    document.getElementById('wss-uri').value = 'wss://' + host + ':8089/ws';
+    document.getElementById('sip-domain').value = host;
+  })();
+</script>
+</body>
+</html>

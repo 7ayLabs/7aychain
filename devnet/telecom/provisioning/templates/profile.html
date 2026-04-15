@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>$title</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 2rem;
+      font-family: "Inter", "Helvetica Neue", sans-serif;
+      background: #09111f;
+      color: #ecf2ff;
+    }
+    .panel {
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) minmax(220px, 280px);
+      gap: 1.5rem;
+      padding: 1.25rem;
+      border-radius: 18px;
+      background: #111827;
+      border: 1px solid #243041;
+    }
+    pre {
+      white-space: pre-wrap;
+      word-break: break-word;
+      padding: 0.75rem;
+      border-radius: 12px;
+      background: #0b1324;
+      border: 1px solid #243041;
+    }
+    img {
+      width: 240px;
+      height: 240px;
+      background: white;
+      border-radius: 18px;
+      padding: 0.5rem;
+    }
+    a { color: #7dd3fc; }
+    .status { color: #38bdf8; font-weight: 700; }
+    @media (max-width: 760px) {
+      body { padding: 1rem; }
+      .panel { grid-template-columns: 1fr; }
+      img { width: 100%; max-width: 260px; height: auto; }
+    }
+  </style>
+</head>
+<body>
+  <p><a href="/">Back to index</a></p>
+  <h1>$title</h1>
+  <div class="panel">
+    <div>
+      <p><strong>Status:</strong> <span class="status">$status</span></p>
+      <p><strong>Dial Number:</strong> $dial_number</p>
+      <p><strong>SM-DP+:</strong> $smdp_plus</p>
+      <p><strong>Activation Code:</strong> $activation_code</p>
+      <p><strong>LPA Payload:</strong></p>
+      <pre>$lpa_payload</pre>
+      <p><a href="$qr_url">QR asset</a> | <a href="$activation_url">Activation package</a></p>
+    </div>
+    <div>
+      <img src="$qr_url" alt="QR for $title" />
+    </div>
+  </div>
+</body>
+</html>

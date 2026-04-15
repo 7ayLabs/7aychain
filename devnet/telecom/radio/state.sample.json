@@ -1,0 +1,51 @@
+{
+  "generated_at": "2026-04-15T00:00:00Z",
+  "regions": [
+    {
+      "region_id": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "name": "North Lab",
+      "present_nodes": 3,
+      "required_nodes": 2,
+      "signal_state": "Available",
+      "coverage_score": 87,
+      "signal_bars": 4,
+      "witnessed_by": [
+        "validator-a",
+        "validator-b",
+        "validator-c"
+      ],
+      "last_presence_epoch": 1
+    },
+    {
+      "region_id": "0x2222222222222222222222222222222222222222222222222222222222222222",
+      "name": "Central Lab",
+      "present_nodes": 2,
+      "required_nodes": 2,
+      "signal_state": "Available",
+      "coverage_score": 76,
+      "signal_bars": 3,
+      "witnessed_by": [
+        "validator-a",
+        "validator-d"
+      ],
+      "last_presence_epoch": 1
+    },
+    {
+      "region_id": "0x3333333333333333333333333333333333333333333333333333333333333333",
+      "name": "South Lab",
+      "present_nodes": 1,
+      "required_nodes": 3,
+      "signal_state": "Weak",
+      "coverage_score": 34,
+      "signal_bars": 1,
+      "witnessed_by": [
+        "validator-e"
+      ],
+      "last_presence_epoch": 1
+    }
+  ],
+  "notes": [
+    "Coverage is a chain-backed devnet approximation.",
+    "Presence and service-node membership are treated as the input signal."
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "service_name": "7AY IMS Devnet",
+  "realm": "ims.7aychain.local",
+  "sip_domain": "127.0.0.1",
+  "sip_port": 5062,
+  "registration_ttl_seconds": 3600,
+  "routing_policy": "regional",
+  "notes": [
+    "Devnet-only IMS/SIP scaffold.",
+    "Use this for local service testing, not native carrier provisioning."
+  ]
+}

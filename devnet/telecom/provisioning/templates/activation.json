@@ -1,0 +1,26 @@
+{
+  "mock": true,
+  "status": "$status",
+  "generated_at": "$generated_at",
+  "profile": {
+    "number_id": "$number_id",
+    "dial_number": "$dial_number",
+    "display_name": "$display_name",
+    "status": "$profile_status",
+    "provisioning_state": "$provisioning_state",
+    "provisioning_receipt": "$provisioning_receipt",
+    "smdp_plus": "$smdp_plus",
+    "activation_code": "$activation_code",
+    "confirmation_code": "$confirmation_code",
+    "lpa_payload": "$lpa_payload"
+  },
+  "links": {
+    "index": "$index_url",
+    "profile": "$profile_url",
+    "qr": "$qr_url"
+  },
+  "notes": [
+    "This is a mock SM-DP+ scaffold for devnet testing only.",
+    "It exposes the generated LPA payload and status metadata, but it does not provision a real eSIM."
+  ]
+}

@@ -1,0 +1,25 @@
+; Trunk dialplan template for 7AY carrier devnet.
+; Variables filled by carrier_softphone_bridge.py --trunk-config.
+
+; Outbound: internal subscribers dial real PSTN numbers
+[seveny-pstn-out]
+; NANP 10-digit (e.g. 2125551234)
+exten => _NXXNXXXXXX,1,NoOp(7AY PSTN outbound: ${EXTEN})
+ same => n,Dial(PJSIP/${EXTEN}@trunk-endpoint,60)
+ same => n,Hangup()
+
+; NANP 1+10-digit (e.g. 12125551234)
+exten => _1NXXNXXXXXX,1,NoOp(7AY PSTN outbound: ${EXTEN})
+ same => n,Dial(PJSIP/${EXTEN}@trunk-endpoint,60)
+ same => n,Hangup()
+
+; Full E.164 with + stripped (e.g. 12125551234 from +12125551234)
+exten => _X.,1,NoOp(7AY PSTN outbound E.164: ${EXTEN})
+ same => n,Dial(PJSIP/${EXTEN}@trunk-endpoint,60)
+ same => n,Hangup()
+
+; Inbound: real PSTN calls routed to on-chain subscribers
+[seveny-pstn-in]
+; DID routing rules are appended dynamically by carrier_softphone_bridge.py
+; based on catalog pstn_did -> subscriber mapping.
+{{DID_ROUTES}}

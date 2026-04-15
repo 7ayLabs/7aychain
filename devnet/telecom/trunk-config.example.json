@@ -1,0 +1,13 @@
+{
+  "provider": "generic",
+  "registrar": "sip.provider.example",
+  "username": "your-sip-username",
+  "password": "your-sip-password",
+  "transport": "udp",
+  "outbound_proxy": "",
+  "context_in": "seveny-pstn-in",
+  "context_out": "seveny-pstn-out",
+  "dids": [
+    {"e164": "+15551234567", "number_id": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+  ]
+}

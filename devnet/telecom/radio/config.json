@@ -1,0 +1,26 @@
+{
+  "coverage_thresholds": {
+    "available": 2,
+    "strong": 4,
+    "weak": 1
+  },
+  "presence_window_blocks": 32,
+  "regions": [
+    {
+      "min_present_nodes": 2,
+      "name": "North Lab",
+      "region_id": "0x1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    {
+      "min_present_nodes": 2,
+      "name": "Central Lab",
+      "region_id": "0x2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    {
+      "min_present_nodes": 3,
+      "name": "South Lab",
+      "region_id": "0x3333333333333333333333333333333333333333333333333333333333333333"
+    }
+  ],
+  "service_name": "7AY Radio Presence Plane"
+}

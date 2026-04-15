@@ -1,0 +1,29 @@
+{
+  "generated_at": "2026-04-15T00:00:00Z",
+  "registrations": [
+    {
+      "public_identity": "sip:alice@ims.7aychain.local",
+      "imsi": "001011234567890",
+      "msisdn": "+15550007001",
+      "display_name": "Alice 7AY",
+      "region_id": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "status": "Registered",
+      "contact_uri": "sip:alice@192.168.100.10:5060",
+      "expires_in_seconds": 3170
+    }
+  ],
+  "sessions": [
+    {
+      "call_id": "ims-call-7001",
+      "from": "sip:alice@ims.7aychain.local",
+      "to": "sip:bob@ims.7aychain.local",
+      "state": "Established",
+      "media": "audio",
+      "path": [
+        "ims-edge",
+        "regional-anchor",
+        "softphone"
+      ]
+    }
+  ]
+}
