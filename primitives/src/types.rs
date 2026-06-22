@@ -5,8 +5,6 @@ use scale_info::TypeInfo;
 use sp_core::H256;
 use sp_runtime::RuntimeDebug;
 
-use crate::traits::EpochBound;
-
 // =============================================================================
 // Identity Types
 // =============================================================================
@@ -272,14 +270,6 @@ impl<BlockNumber> PresenceRecord<BlockNumber> {
     }
 }
 
-impl<BlockNumber> EpochBound for PresenceRecord<BlockNumber> {
-    type EpochId = EpochId;
-
-    fn epoch(&self) -> Self::EpochId {
-        self.epoch
-    }
-}
-
 // =============================================================================
 // Validator Types
 // =============================================================================
@@ -434,14 +424,6 @@ pub struct Vote {
     pub epoch: EpochId,
     pub block_ref: BlockRef,
     pub approve: bool,
-}
-
-impl EpochBound for Vote {
-    type EpochId = EpochId;
-
-    fn epoch(&self) -> Self::EpochId {
-        self.epoch
-    }
 }
 
 #[cfg(test)]

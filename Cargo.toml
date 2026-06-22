@@ -14,13 +14,9 @@ members = [
     "pallets/validator",
     "pallets/dispute",
     "pallets/governance",
-    "pallets/semantic",
-    "pallets/boomerang",
-    "pallets/autonomous",
-    "pallets/octopus",
     "pallets/device",
+    "pallets/carrier",
     "pallets/vault",
-    "pallets/zk",
     "pallets/storage",
     "pallets/lifecycle",
     "pallets/triangulation",
@@ -31,6 +27,7 @@ members = [
 ]
 
 [workspace.package]
+publish = false
 version = "0.9.2"
 authors = ["7ayLabs <dev@7aylabs.com>"]
 edition = "2021"
@@ -52,13 +49,9 @@ pallet-epoch = { path = "pallets/epoch", default-features = false }
 pallet-validator = { path = "pallets/validator", default-features = false }
 pallet-dispute = { path = "pallets/dispute", default-features = false }
 pallet-governance = { path = "pallets/governance", default-features = false }
-pallet-semantic = { path = "pallets/semantic", default-features = false }
-pallet-boomerang = { path = "pallets/boomerang", default-features = false }
-pallet-autonomous = { path = "pallets/autonomous", default-features = false }
-pallet-octopus = { path = "pallets/octopus", default-features = false }
 pallet-device = { path = "pallets/device", default-features = false }
+pallet-carrier = { path = "pallets/carrier", default-features = false }
 pallet-vault = { path = "pallets/vault", default-features = false }
-pallet-zk = { path = "pallets/zk", default-features = false }
 pallet-storage = { path = "pallets/storage", default-features = false }
 pallet-lifecycle = { path = "pallets/lifecycle", default-features = false }
 pallet-triangulation = { path = "pallets/triangulation", default-features = false }
@@ -105,17 +98,6 @@ frame-benchmarking = { version = "45.0.0", default-features = false }
 blake2 = { version = "0.10", default-features = false }
 sha2 = { version = "0.10", default-features = false }
 
-# ZK Proofs (arkworks, all no_std compatible)
-ark-groth16 = { version = "0.5.0", default-features = false }
-ark-bn254 = { version = "0.5.0", default-features = false, features = ["curve"] }
-ark-serialize = { version = "0.5.0", default-features = false, features = ["derive"] }
-ark-ff = { version = "0.5.0", default-features = false }
-ark-ec = { version = "0.5.0", default-features = false }
-ark-std = { version = "0.5.0", default-features = false }
-ark-snark = { version = "0.5.0", default-features = false }
-ark-relations = { version = "0.5.0", default-features = false }
-ark-r1cs-std = { version = "0.5.0", default-features = false }
-ark-crypto-primitives = { version = "0.5.0", default-features = false, features = ["snark"] }
 
 # =============================================================================
 # Development & Testing

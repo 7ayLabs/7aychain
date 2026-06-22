@@ -30,10 +30,9 @@ pub use crypto::{
 
 // Re-export traits with explicit names
 pub use traits::{
-    AggregateSignature, AlwaysActiveEpoch, AlwaysValidValidator, ChainBound, Commitment,
-    ConstantTimeEq, CryptoHash, DomainSeparatedHash, EpochActiveChecker, EpochBound, EpochProvider,
-    Invariant, MerkleTree, SecretSharing, Signature, StateTransition, ValidatorChecker,
-    ValidatorProvider, ZkProof,
+    ActorActivityChecker, AlwaysActiveEpoch, AlwaysValidValidator, CarrierRewardHandler,
+    ConstantTimeEq, DeviceEligibilityChecker, EpochActiveChecker, EpochProvider, NoOpCarrierReward,
+    PresenceVerifier, ValidatorChecker, ValidatorProvider,
 };
 
 pub use fusion::{

@@ -1,134 +1,12 @@
-//! Protocol trait abstractions for cryptographic operations and state management.
+//! Protocol trait abstractions for the carrier vertical slice.
+//!
+//! Only traits actively used by the carrier flow (lifecycle, device,
+//! presence, epoch, validator, carrier) are kept here. Speculative
+//! trait abstractions were removed during the v0.9.7 scope reduction.
 
-use alloc::vec::Vec;
-use parity_scale_codec::{Decode, Encode};
 use sp_core::H256;
 
-use crate::types::{EpochId, ValidatorId};
-
-/// Cryptographic hash computation.
-pub trait CryptoHash {
-    fn crypto_hash(&self) -> H256;
-}
-
-/// Domain-separated hashing to prevent cross-protocol collisions.
-pub trait DomainSeparatedHash {
-    const DOMAIN: &'static [u8];
-    fn domain_hash(&self) -> H256;
-}
-
-/// Cryptographic commitment with hiding and binding properties.
-pub trait Commitment: Sized + Encode + Decode + Clone {
-    type Value: Encode;
-    type Randomness: Encode;
-    type Opening: Encode + Decode;
-
-    fn commit(value: &Self::Value, randomness: &Self::Randomness) -> Self;
-    fn verify(&self, value: &Self::Value, opening: &Self::Opening) -> bool;
-    fn as_bytes(&self) -> &[u8];
-}
-
-/// Merkle tree for O(log n) membership proofs.
-pub trait MerkleTree {
-    type Leaf: Encode;
-    type Proof: Encode + Decode;
-
-    fn root(&self) -> H256;
-    fn prove(&self, index: usize) -> Option<Self::Proof>;
-    fn verify_proof(root: &H256, leaf: &Self::Leaf, proof: &Self::Proof) -> bool;
-}
-
-/// Zero-knowledge proof system interface.
-pub trait ZkProof {
-    type Statement: Encode + Decode;
-    type Witness;
-    type Proof: Encode + Decode;
-
-    fn prove(statement: &Self::Statement, witness: &Self::Witness) -> Option<Self::Proof>;
-    fn verify(statement: &Self::Statement, proof: &Self::Proof) -> bool;
-}
-
-/// Threshold secret sharing (t-of-n).
-pub trait SecretSharing {
-    type Secret;
-    type Share: Encode + Decode + Clone;
-    type Index: Encode + Decode + Copy;
-
-    fn split(
-        secret: &Self::Secret,
-        threshold: u32,
-        total: u32,
-    ) -> Option<Vec<(Self::Index, Self::Share)>>;
-    fn reconstruct(shares: &[(Self::Index, Self::Share)]) -> Option<Self::Secret>;
-    fn verify_share(index: &Self::Index, share: &Self::Share, commitment: &H256) -> bool;
-}
-
-/// Verifiable state transition.
-pub trait StateTransition {
-    type State: Encode + Decode + Clone;
-    type Action: Encode + Decode;
-    type Proof: Encode + Decode;
-
-    fn apply(state: &Self::State, action: &Self::Action) -> Option<Self::State>;
-    fn prove(pre: &Self::State, action: &Self::Action, post: &Self::State) -> Option<Self::Proof>;
-    fn verify(
-        pre_root: &H256,
-        post_root: &H256,
-        action: &Self::Action,
-        proof: &Self::Proof,
-    ) -> bool;
-}
-
-/// Digital signature scheme.
-pub trait Signature {
-    type PublicKey: Encode + Decode + Clone;
-    type SecretKey;
-    type Sig: Encode + Decode + Clone;
-
-    fn sign(sk: &Self::SecretKey, msg: &[u8]) -> Self::Sig;
-    fn verify(pk: &Self::PublicKey, msg: &[u8], sig: &Self::Sig) -> bool;
-}
-
-/// Aggregate signature for batch verification.
-pub trait AggregateSignature: Signature {
-    type AggregateSig: Encode + Decode;
-
-    fn aggregate(signatures: &[Self::Sig]) -> Option<Self::AggregateSig>;
-    fn verify_aggregate(pks: &[Self::PublicKey], msgs: &[&[u8]], agg: &Self::AggregateSig) -> bool;
-}
-
-/// Chain binding for replay protection.
-pub trait ChainBound {
-    fn bind(&self, chain_id: u64, block_hash: H256, block_num: u64) -> H256;
-    fn verify_binding(
-        &self,
-        binding: &H256,
-        chain_id: u64,
-        block_hash: H256,
-        block_num: u64,
-    ) -> bool;
-}
-
-/// Epoch-bound data validation.
-pub trait EpochBound {
-    type EpochId: Copy + PartialEq;
-
-    fn epoch(&self) -> Self::EpochId;
-    fn valid_in(&self, epoch: Self::EpochId) -> bool {
-        self.epoch() == epoch
-    }
-}
-
-/// Invariant checking.
-pub trait Invariant {
-    type ViolationId;
-
-    fn check(&self) -> Option<Self::ViolationId>;
-
-    fn is_valid(&self) -> bool {
-        self.check().is_none()
-    }
-}
+use crate::types::{ActorId, EpochId, ValidatorId};
 
 /// Checks if an epoch is currently active.
 /// Used by pallets that need cross-pallet epoch state without direct dependency.
@@ -173,6 +51,67 @@ pub trait EpochProvider {
 /// pallet without maintaining shadow storage.
 pub trait ValidatorProvider {
     fn is_validator_active(validator_id: ValidatorId) -> bool;
+}
+
+/// Cross-pallet validator stake provider.
+///
+/// Allows pallets to query the current effective validator stake without
+/// depending directly on the validator pallet's balance type.
+pub trait ValidatorStakeProvider {
+    fn validator_stake(validator_id: ValidatorId) -> u128;
+}
+
+/// Checks whether an actor lifecycle is currently active.
+pub trait ActorActivityChecker {
+    fn is_actor_active(actor_id: ActorId) -> bool;
+}
+
+/// Checks whether a device is active and controlled by the given actor.
+pub trait DeviceEligibilityChecker {
+    fn is_device_active_for_actor(actor_id: ActorId, device_id: u64) -> bool;
+}
+
+/// Checks whether Proof of Presence consensus has verified service eligibility
+/// for the given actor and epoch.
+pub trait PresenceVerifier {
+    fn is_presence_verified(actor_id: ActorId, epoch_id: EpochId) -> bool;
+}
+
+/// Checks whether a carrier service node has verified position presence in
+/// the given epoch.
+pub trait ServiceNodePresenceVerifier<AccountId> {
+    fn is_service_node_present(controller: &AccountId, epoch_id: EpochId) -> bool;
+}
+
+/// Reward handler for carrier service witnessing.
+///
+/// Called by `pallet-carrier` when finalizing service requests to pay
+/// validators who attested carrier coverage. The `AccountId` is unused
+/// for the validator-keyed variant; rewards are dispatched by `ValidatorId`.
+pub trait CarrierRewardHandler<AccountId> {
+    fn reward_witness(validator: &crate::types::ValidatorId, amount: u128);
+}
+
+/// No-op reward handler — use in tests or when rewards are disabled.
+pub struct NoOpCarrierReward;
+impl<AccountId> CarrierRewardHandler<AccountId> for NoOpCarrierReward {
+    fn reward_witness(_validator: &crate::types::ValidatorId, _amount: u128) {}
+}
+
+/// Zero-stake provider for tests or runtimes without carrier service staking.
+pub struct ZeroValidatorStake;
+impl ValidatorStakeProvider for ZeroValidatorStake {
+    fn validator_stake(_validator_id: ValidatorId) -> u128 {
+        0
+    }
+}
+
+/// Always-present service node verifier for tests.
+pub struct AlwaysPresentServiceNode;
+impl<AccountId> ServiceNodePresenceVerifier<AccountId> for AlwaysPresentServiceNode {
+    fn is_service_node_present(_controller: &AccountId, _epoch_id: EpochId) -> bool {
+        true
+    }
 }
 
 /// Constant-time equality to prevent timing attacks.

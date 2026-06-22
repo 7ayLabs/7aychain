@@ -7,7 +7,7 @@ use sha2::Digest;
 use sp_core::{blake2_256, H256};
 use sp_runtime::RuntimeDebug;
 
-use crate::traits::{ConstantTimeEq, CryptoHash, DomainSeparatedHash};
+use crate::traits::ConstantTimeEq;
 
 // Domain separators for hash functions
 pub const DOMAIN_PRESENCE: &[u8] = b"7ay:presence:v1";
@@ -439,20 +439,6 @@ pub fn eval_polynomial(coeffs: &[[u8; 32]], x: u8) -> [u8; 32] {
     }
 
     result
-}
-
-impl CryptoHash for PresenceCommitment {
-    fn crypto_hash(&self) -> H256 {
-        self.0
-    }
-}
-
-impl DomainSeparatedHash for PresenceCommitment {
-    const DOMAIN: &'static [u8] = DOMAIN_COMMITMENT;
-
-    fn domain_hash(&self) -> H256 {
-        hash_with_domain(Self::DOMAIN, self.0.as_bytes())
-    }
 }
 
 pub const DOMAIN_ACTOR: &[u8] = b"7ay:actor:v1";
