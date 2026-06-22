@@ -227,6 +227,97 @@ pub enum RpcDeviceStatus {
     Offline,
 }
 
+/// Carrier service status returned by `carrier_numberStatus`.
+#[derive(
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    MaxEncodedLen,
+    TypeInfo,
+    RuntimeDebug,
+)]
+#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+pub struct RpcCarrierStatus {
+    /// Number commitment identifier.
+    pub number_id: H256,
+    /// Subscriber actor identity.
+    pub owner: H256,
+    /// Current device binding, when service is active.
+    pub device_id: Option<u64>,
+    /// Serving region identifier.
+    pub region_id: H256,
+    /// Current service status.
+    pub status: RpcCarrierNumberStatus,
+    /// Epoch that authorized the current device binding.
+    pub activation_epoch: Option<u64>,
+    /// Block when service was first activated.
+    pub activated_at: Option<u32>,
+    /// Service lease end block for the active subscriber binding.
+    pub service_lease_until: Option<u32>,
+    /// Pending service request epoch, if any.
+    pub pending_epoch: Option<u64>,
+    /// Average signal quality score (0-100), when aggregated.
+    pub avg_signal_score: Option<u8>,
+    /// Number of signal quality samples.
+    pub signal_sample_count: Option<u32>,
+    /// Witness count for the current pending request or latest finalized lease.
+    pub witness_count: Option<u32>,
+    /// Current provisioning lifecycle state.
+    pub provisioning_state: RpcCarrierProvisioningState,
+    /// Opaque provisioning receipt written back by the trusted bridge.
+    pub provisioning_receipt: Option<H256>,
+    /// Subscriber profile commitment bound to the active device.
+    pub sim_profile_commitment: Option<H256>,
+}
+
+/// Carrier number status enum for RPC responses.
+#[derive(
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    MaxEncodedLen,
+    TypeInfo,
+    RuntimeDebug,
+)]
+#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+pub enum RpcCarrierNumberStatus {
+    Reserved,
+    ActivationPending,
+    Activated,
+    Suspended,
+    RecoveryPending,
+    Recovered,
+    Revoked,
+}
+
+/// Carrier provisioning lifecycle state for bridge-aware line activation.
+#[derive(
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    parity_scale_codec::DecodeWithMemTracking,
+    MaxEncodedLen,
+    TypeInfo,
+    RuntimeDebug,
+)]
+#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+pub enum RpcCarrierProvisioningState {
+    None,
+    Pending,
+    Provisioned,
+    Failed,
+}
+
 // =============================================================================
 // Runtime API Trait Declarations
 // =============================================================================
@@ -259,5 +350,11 @@ sp_api::decl_runtime_apis! {
         /// The `device_id` is the H256 hash of the device public key.
         /// Returns `None` if the device is not registered.
         fn device_health(device_id: H256) -> Option<RpcDeviceHealth>;
+    }
+
+    /// Carrier subsystem queries for native-number service state.
+    pub trait CarrierApi {
+        /// Returns carrier status for the given number commitment.
+        fn carrier_number_status(number_id: H256) -> Option<RpcCarrierStatus>;
     }
 }

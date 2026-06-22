@@ -1,8 +1,9 @@
 //! Cross-pallet integration tests for the 7aychain runtime.
 //!
-//! These tests wire together multiple pallets (Epoch, Validator, Presence)
-//! using their real trait implementations rather than mocks, verifying that
-//! cross-pallet interactions enforce the protocol invariants correctly.
+//! These tests wire together multiple pallets (Epoch, Validator, Presence,
+//! Lifecycle, Device, Carrier) using their real trait implementations rather
+//! than mocks, verifying that cross-pallet interactions enforce the protocol
+//! invariants correctly.
 //!
 //! Covered invariants:
 //!   - INV1:  No duplicate presence per (actor, epoch)
@@ -23,8 +24,12 @@ use frame_support::{
     traits::{ConstU32, ConstU64, Hooks},
 };
 use frame_system as system;
+use pallet_device::{AttestationType, DeviceId, DeviceType};
 use parity_scale_codec::Encode;
-use seveny_primitives::types::{ActorId, EpochId, EpochState, PresenceState, ValidatorId};
+use seveny_primitives::{
+    fusion::Position,
+    types::{ActorId, EpochId, EpochState, PresenceState, ValidatorId},
+};
 use sp_core::H256;
 use sp_runtime::{
     traits::{BlakeTwo256, IdentityLookup},
@@ -44,6 +49,9 @@ frame_support::construct_runtime!(
         Epoch: pallet_epoch,
         Validator: pallet_validator,
         Presence: pallet_presence,
+        Device: pallet_device,
+        Carrier: pallet_carrier,
+        Lifecycle: pallet_lifecycle,
     }
 );
 
@@ -97,6 +105,7 @@ parameter_types! {
     pub const MinEpochDuration: u64 = 4;
     pub const MaxEpochDuration: u64 = 1000;
     pub const GracePeriod: u64 = 5;
+    pub const AllowUnverifiedVrfSubmissions: bool = false;
 }
 
 impl pallet_epoch::Config for Test {
@@ -105,6 +114,7 @@ impl pallet_epoch::Config for Test {
     type MinEpochDuration = MinEpochDuration;
     type MaxEpochDuration = MaxEpochDuration;
     type GracePeriod = GracePeriod;
+    type AllowUnverifiedVrfSubmissions = AllowUnverifiedVrfSubmissions;
 }
 
 // -- Validator config --
@@ -151,6 +161,139 @@ impl pallet_presence::Config for Test {
     type PositionToleranceMeters = PositionToleranceMeters;
     type EpochProvider = Epoch;
     type ValidatorProvider = Validator;
+}
+
+// -- Device config --
+
+parameter_types! {
+    pub const MaxDevicesPerActor: u32 = 10;
+    pub const AttestationValidityBlocks: u64 = 1000;
+    pub const InitialTrustScore: u8 = 50;
+    pub const DeviceHeartbeatTimeoutBlocks: u64 = 10;
+    pub const DeviceMaxConsecutiveMisses: u32 = 3;
+    pub const DeviceHealthScoreDecay: u8 = 10;
+    pub const DeviceHealthScoreRecovery: u8 = 5;
+}
+
+impl pallet_device::Config for Test {
+    type WeightInfo = ();
+    type MaxDevicesPerActor = MaxDevicesPerActor;
+    type AttestationValidityBlocks = AttestationValidityBlocks;
+    type InitialTrustScore = InitialTrustScore;
+    type HeartbeatTimeoutBlocks = DeviceHeartbeatTimeoutBlocks;
+    type MaxConsecutiveMisses = DeviceMaxConsecutiveMisses;
+    type HealthScoreDecay = DeviceHealthScoreDecay;
+    type HealthScoreRecovery = DeviceHealthScoreRecovery;
+}
+
+// -- Lifecycle config --
+
+parameter_types! {
+    pub const KeyDestructionTimeoutBlocks: u64 = 100;
+    pub const MinDestructionAttestations: u32 = 3;
+    pub const RotationCooldownBlocks: u64 = 50;
+    pub const RotationTimeoutBlocks: u64 = 200;
+}
+
+impl pallet_lifecycle::Config for Test {
+    type WeightInfo = ();
+    type KeyDestructionTimeoutBlocks = KeyDestructionTimeoutBlocks;
+    type MinDestructionAttestations = MinDestructionAttestations;
+    type RotationCooldownBlocks = RotationCooldownBlocks;
+    type RotationTimeoutBlocks = RotationTimeoutBlocks;
+}
+
+// -- Carrier config --
+
+parameter_types! {
+    pub const MaxNumbersPerActor: u32 = 3;
+    pub const MaxCarrierWitnessesPerRequest: u32 = 32;
+    pub const CarrierWitnessThreshold: u32 = 2;
+    pub const CarrierServiceLeaseBlocks: u64 = 600;
+    pub const CarrierWitnessReward: u128 = 100_000_000_000;
+    pub const MaxCarrierRegionsPerServiceNode: u32 = 8;
+    pub const MinCarrierServiceStake: u128 = 1_000;
+    pub const MinRegionalCarrierNodes: u32 = 2;
+    pub const StrongRegionalCarrierNodes: u32 = 4;
+    pub const CarrierServiceNodeSlashThreshold: u32 = 2;
+    pub const CarrierBridgeAccount: u64 = 42;
+}
+
+pub struct TestActorChecker;
+impl seveny_primitives::traits::ActorActivityChecker for TestActorChecker {
+    fn is_actor_active(actor_id: ActorId) -> bool {
+        pallet_lifecycle::Pallet::<Test>::is_actor_active(actor_id)
+    }
+}
+
+pub struct TestDeviceChecker;
+impl seveny_primitives::traits::DeviceEligibilityChecker for TestDeviceChecker {
+    fn is_device_active_for_actor(actor_id: ActorId, device_id: u64) -> bool {
+        let device = DeviceId::new(device_id);
+        pallet_device::Pallet::<Test>::is_device_active(device)
+            && pallet_device::Pallet::<Test>::get_actor_devices(actor_id)
+                .into_iter()
+                .any(|candidate| candidate == device)
+    }
+}
+
+pub struct TestPresenceVerifier;
+impl seveny_primitives::traits::PresenceVerifier for TestPresenceVerifier {
+    fn is_presence_verified(actor_id: ActorId, epoch_id: EpochId) -> bool {
+        let Some(record) = pallet_presence::Presences::<Test>::get(epoch_id, actor_id) else {
+            return false;
+        };
+
+        let state_ok = matches!(
+            record.state,
+            PresenceState::Validated | PresenceState::Finalized
+        );
+        let position_ok = pallet_presence::PositionClaims::<Test>::get(epoch_id, actor_id)
+            .is_some_and(|claim| claim.verified);
+
+        state_ok && position_ok
+    }
+}
+
+pub struct TestValidatorStakeProvider;
+impl seveny_primitives::traits::ValidatorStakeProvider for TestValidatorStakeProvider {
+    fn validator_stake(validator_id: ValidatorId) -> u128 {
+        pallet_validator::Pallet::<Test>::validator_stake(validator_id) as u128
+    }
+}
+
+pub struct TestServiceNodePresenceVerifier;
+impl seveny_primitives::traits::ServiceNodePresenceVerifier<u64>
+    for TestServiceNodePresenceVerifier
+{
+    fn is_service_node_present(controller: &u64, epoch_id: EpochId) -> bool {
+        let actor_id = account_to_actor(*controller);
+        pallet_presence::PositionClaims::<Test>::get(epoch_id, actor_id)
+            .is_some_and(|claim| claim.verified)
+    }
+}
+
+impl pallet_carrier::Config for Test {
+    type WeightInfo = ();
+    type EpochProvider = Epoch;
+    type ValidatorProvider = Validator;
+    type ValidatorStakeProvider = TestValidatorStakeProvider;
+    type ActorChecker = TestActorChecker;
+    type DeviceChecker = TestDeviceChecker;
+    type PresenceVerifier = TestPresenceVerifier;
+    type ServiceNodePresenceVerifier = TestServiceNodePresenceVerifier;
+    type RewardHandler = seveny_primitives::traits::NoOpCarrierReward;
+    type MaxNumbersPerActor = MaxNumbersPerActor;
+    type MaxWitnessesPerRequest = MaxCarrierWitnessesPerRequest;
+    type WitnessThreshold = CarrierWitnessThreshold;
+    type ServiceLeaseBlocks = CarrierServiceLeaseBlocks;
+    type WitnessRewardAmount = CarrierWitnessReward;
+    type CarrierBridgeAccount = CarrierBridgeAccount;
+    type MaxRegionsPerServiceNode = MaxCarrierRegionsPerServiceNode;
+    type MinServiceStake = MinCarrierServiceStake;
+    type MinRegionalServiceNodes = MinRegionalCarrierNodes;
+    type StrongRegionalServiceNodes = StrongRegionalCarrierNodes;
+    type ServiceNodeSlashThreshold = CarrierServiceNodeSlashThreshold;
 }
 
 // =========================================================================
@@ -205,6 +348,24 @@ fn new_test_ext() -> sp_io::TestExternalities {
     .assimilate_storage(&mut t)
     .expect("presence genesis build failed");
 
+    pallet_device::GenesisConfig::<Test> {
+        _phantom: Default::default(),
+    }
+    .assimilate_storage(&mut t)
+    .expect("device genesis build failed");
+
+    pallet_lifecycle::GenesisConfig::<Test> {
+        _phantom: Default::default(),
+    }
+    .assimilate_storage(&mut t)
+    .expect("lifecycle genesis build failed");
+
+    pallet_carrier::GenesisConfig::<Test> {
+        _phantom: Default::default(),
+    }
+    .assimilate_storage(&mut t)
+    .expect("carrier genesis build failed");
+
     let mut ext = sp_io::TestExternalities::new(t);
     ext.execute_with(|| System::set_block_number(1));
     ext
@@ -241,6 +402,24 @@ fn new_test_ext_no_validators() -> sp_io::TestExternalities {
     .assimilate_storage(&mut t)
     .expect("presence genesis build failed");
 
+    pallet_device::GenesisConfig::<Test> {
+        _phantom: Default::default(),
+    }
+    .assimilate_storage(&mut t)
+    .expect("device genesis build failed");
+
+    pallet_lifecycle::GenesisConfig::<Test> {
+        _phantom: Default::default(),
+    }
+    .assimilate_storage(&mut t)
+    .expect("lifecycle genesis build failed");
+
+    pallet_carrier::GenesisConfig::<Test> {
+        _phantom: Default::default(),
+    }
+    .assimilate_storage(&mut t)
+    .expect("carrier genesis build failed");
+
     let mut ext = sp_io::TestExternalities::new(t);
     ext.execute_with(|| System::set_block_number(1));
     ext
@@ -253,6 +432,8 @@ fn run_to_block(n: u64) {
         let next = System::block_number() + 1;
         System::set_block_number(next);
         Epoch::on_initialize(next);
+        Device::on_initialize(next);
+        Lifecycle::on_initialize(next);
     }
 }
 
@@ -264,6 +445,158 @@ fn account_to_actor(account: u64) -> ActorId {
 /// Derive a ValidatorId from a test account number (matches pallet internals).
 fn account_to_validator(account: u64) -> ValidatorId {
     seveny_primitives::crypto::derive_validator_id(&account.encode())
+}
+
+fn register_and_activate_actor(account: u64) -> ActorId {
+    let actor = account_to_actor(account);
+    assert_ok!(Lifecycle::register_actor(
+        RuntimeOrigin::signed(account),
+        H256::repeat_byte(account as u8)
+    ));
+    assert_ok!(Lifecycle::activate_actor(RuntimeOrigin::root(), actor));
+    actor
+}
+
+fn register_and_activate_device(account: u64, public_key_hash: H256) -> u64 {
+    assert_ok!(Device::register_device(
+        RuntimeOrigin::signed(account),
+        DeviceType::Mobile,
+        public_key_hash,
+        AttestationType::HardwareBacked
+    ));
+    let device_id = pallet_device::DeviceCount::<Test>::get().saturating_sub(1);
+    assert_ok!(Device::activate_device(
+        RuntimeOrigin::signed(account),
+        DeviceId::new(device_id)
+    ));
+    device_id
+}
+
+fn set_validator_positions() {
+    assert_ok!(Presence::set_validator_position(
+        RuntimeOrigin::signed(1),
+        account_to_validator(1),
+        Position::new(0, 0, 0)
+    ));
+    assert_ok!(Presence::set_validator_position(
+        RuntimeOrigin::signed(2),
+        account_to_validator(2),
+        Position::new(300, 0, 0)
+    ));
+    assert_ok!(Presence::set_validator_position(
+        RuntimeOrigin::signed(3),
+        account_to_validator(3),
+        Position::new(0, 300, 0)
+    ));
+    assert_ok!(Presence::set_validator_position(
+        RuntimeOrigin::signed(4),
+        account_to_validator(4),
+        Position::new(300, 300, 0)
+    ));
+}
+
+fn prove_service_node_presence(
+    validator_account: u64,
+    epoch: EpochId,
+    position: Position,
+) -> ActorId {
+    let actor = account_to_actor(validator_account);
+
+    assert_ok!(Presence::declare_presence(
+        RuntimeOrigin::signed(validator_account),
+        epoch
+    ));
+    assert_ok!(Presence::claim_position(
+        RuntimeOrigin::signed(validator_account),
+        epoch,
+        position
+    ));
+
+    let witnesses: &[u64] = match validator_account {
+        1 => &[2, 3, 4],
+        2 => &[1, 3, 4],
+        3 => &[1, 2, 4],
+        _ => &[1, 2, 3],
+    };
+    for witness in witnesses {
+        assert_ok!(Presence::submit_witness_attestation(
+            RuntimeOrigin::signed(*witness),
+            actor,
+            epoch,
+            3,
+            true
+        ));
+    }
+
+    assert_ok!(Presence::verify_position(
+        RuntimeOrigin::signed(1),
+        actor,
+        epoch
+    ));
+
+    actor
+}
+
+fn register_service_node(account: u64, region_id: H256) {
+    let regions =
+        frame_support::BoundedVec::<H256, MaxCarrierRegionsPerServiceNode>::try_from(vec![
+            region_id,
+        ])
+        .expect("bounded regions");
+
+    assert_ok!(Carrier::register_service_node(
+        RuntimeOrigin::signed(account),
+        regions
+    ));
+}
+
+fn prove_verified_presence(actor_account: u64, epoch: EpochId, position: Position) -> ActorId {
+    let actor = account_to_actor(actor_account);
+
+    assert_ok!(Presence::declare_presence(
+        RuntimeOrigin::signed(actor_account),
+        epoch
+    ));
+    assert_ok!(Presence::claim_position(
+        RuntimeOrigin::signed(actor_account),
+        epoch,
+        position
+    ));
+
+    for validator in [1u64, 2, 3] {
+        assert_ok!(Presence::submit_witness_attestation(
+            RuntimeOrigin::signed(validator),
+            actor,
+            epoch,
+            3,
+            true
+        ));
+    }
+
+    assert_ok!(Presence::verify_position(
+        RuntimeOrigin::signed(1),
+        actor,
+        epoch
+    ));
+    assert_ok!(Presence::vote_presence(
+        RuntimeOrigin::signed(1),
+        actor,
+        epoch,
+        true
+    ));
+    assert_ok!(Presence::vote_presence(
+        RuntimeOrigin::signed(2),
+        actor,
+        epoch,
+        true
+    ));
+    assert_ok!(Presence::finalize_presence(
+        RuntimeOrigin::signed(actor_account),
+        actor,
+        epoch
+    ));
+
+    actor
 }
 
 // =========================================================================
@@ -360,6 +693,427 @@ fn validator_can_finalize_presence_for_another_actor() {
 
         let record = Presence::presences(epoch, actor).unwrap();
         assert_eq!(record.state, PresenceState::Finalized);
+    });
+}
+
+#[test]
+fn carrier_activation_flow_across_identity_device_presence_and_carrier() {
+    new_test_ext().execute_with(|| {
+        let epoch = EpochId::new(1);
+        let actor = register_and_activate_actor(7);
+        let device_id = register_and_activate_device(7, H256::repeat_byte(70));
+
+        set_validator_positions();
+        let proven_actor = prove_verified_presence(7, epoch, Position::new(100, 100, 0));
+        assert_eq!(proven_actor, actor);
+
+        let position_claim =
+            pallet_presence::PositionClaims::<Test>::get(epoch, actor).expect("claim exists");
+        assert!(position_claim.verified);
+
+        let number_id = H256::repeat_byte(120);
+        let region_id = H256::repeat_byte(42);
+        let sim_profile_commitment = H256::repeat_byte(11);
+
+        prove_service_node_presence(1, epoch, Position::new(0, 0, 0));
+        prove_service_node_presence(2, epoch, Position::new(300, 0, 0));
+        register_service_node(1, region_id);
+        register_service_node(2, region_id);
+
+        assert_ok!(Carrier::reserve_number(
+            RuntimeOrigin::signed(7),
+            number_id,
+            region_id
+        ));
+        assert_ok!(Carrier::request_activation(
+            RuntimeOrigin::signed(7),
+            number_id,
+            device_id,
+            epoch,
+            sim_profile_commitment
+        ));
+        assert_ok!(Carrier::submit_service_witness(
+            RuntimeOrigin::signed(1),
+            number_id,
+            epoch,
+            region_id,
+            91
+        ));
+        assert_ok!(Carrier::submit_service_witness(
+            RuntimeOrigin::signed(2),
+            number_id,
+            epoch,
+            region_id,
+            87
+        ));
+        assert_ok!(Carrier::finalize_service_request(
+            RuntimeOrigin::signed(7),
+            number_id,
+            epoch
+        ));
+
+        let binding = Carrier::numbers(number_id).expect("carrier binding exists");
+        assert_eq!(binding.owner, actor);
+        assert_eq!(binding.current_device_id, Some(device_id));
+        assert_eq!(binding.status, pallet_carrier::NumberStatus::Activated);
+        assert_eq!(binding.region_id, region_id);
+        assert_eq!(binding.activation_epoch, Some(epoch));
+        assert_eq!(binding.sim_profile_commitment, Some(sim_profile_commitment));
+        assert_eq!(
+            binding.provisioning_state,
+            pallet_carrier::ProvisioningState::Pending
+        );
+        assert!(binding.service_lease_until.is_some());
+        assert_eq!(Carrier::device_numbers(device_id), Some(number_id));
+        assert!(Carrier::service_requests(epoch, number_id).is_none());
+    });
+}
+
+#[test]
+fn carrier_recovery_rebinds_the_number_to_a_replacement_device() {
+    new_test_ext().execute_with(|| {
+        let epoch = EpochId::new(1);
+        let actor = register_and_activate_actor(7);
+        let original_device = register_and_activate_device(7, H256::repeat_byte(71));
+
+        set_validator_positions();
+        let proven_actor = prove_verified_presence(7, epoch, Position::new(150, 150, 0));
+        assert_eq!(proven_actor, actor);
+
+        let number_id = H256::repeat_byte(121);
+        let region_id = H256::repeat_byte(43);
+
+        prove_service_node_presence(1, epoch, Position::new(0, 0, 0));
+        prove_service_node_presence(2, epoch, Position::new(300, 0, 0));
+        register_service_node(1, region_id);
+        register_service_node(2, region_id);
+
+        assert_ok!(Carrier::reserve_number(
+            RuntimeOrigin::signed(7),
+            number_id,
+            region_id
+        ));
+        assert_ok!(Carrier::request_activation(
+            RuntimeOrigin::signed(7),
+            number_id,
+            original_device,
+            epoch,
+            H256::repeat_byte(12)
+        ));
+        assert_ok!(Carrier::submit_service_witness(
+            RuntimeOrigin::signed(1),
+            number_id,
+            epoch,
+            region_id,
+            92
+        ));
+        assert_ok!(Carrier::submit_service_witness(
+            RuntimeOrigin::signed(2),
+            number_id,
+            epoch,
+            region_id,
+            88
+        ));
+        assert_ok!(Carrier::finalize_service_request(
+            RuntimeOrigin::signed(7),
+            number_id,
+            epoch
+        ));
+
+        let replacement_device = register_and_activate_device(7, H256::repeat_byte(72));
+        assert_ok!(Carrier::request_recovery(
+            RuntimeOrigin::signed(7),
+            number_id,
+            replacement_device,
+            epoch,
+            H256::repeat_byte(13)
+        ));
+        assert_ok!(Carrier::submit_service_witness(
+            RuntimeOrigin::signed(1),
+            number_id,
+            epoch,
+            region_id,
+            95
+        ));
+        assert_ok!(Carrier::submit_service_witness(
+            RuntimeOrigin::signed(2),
+            number_id,
+            epoch,
+            region_id,
+            89
+        ));
+        assert_ok!(Carrier::finalize_service_request(
+            RuntimeOrigin::signed(2),
+            number_id,
+            epoch
+        ));
+
+        let binding = Carrier::numbers(number_id).expect("carrier binding exists");
+        assert_eq!(binding.owner, actor);
+        assert_eq!(binding.current_device_id, Some(replacement_device));
+        assert_eq!(binding.status, pallet_carrier::NumberStatus::Recovered);
+        assert_eq!(binding.activation_epoch, Some(epoch));
+        assert_eq!(
+            binding.provisioning_state,
+            pallet_carrier::ProvisioningState::Pending
+        );
+        assert_eq!(Carrier::device_numbers(replacement_device), Some(number_id));
+        assert!(Carrier::device_numbers(original_device).is_none());
+    });
+}
+
+#[test]
+fn carrier_bridge_can_record_provisioning_receipts() {
+    new_test_ext().execute_with(|| {
+        let epoch = EpochId::new(1);
+        let actor = register_and_activate_actor(7);
+        let device_id = register_and_activate_device(7, H256::repeat_byte(73));
+
+        set_validator_positions();
+        let proven_actor = prove_verified_presence(7, epoch, Position::new(160, 160, 0));
+        assert_eq!(proven_actor, actor);
+
+        let number_id = H256::repeat_byte(122);
+        let region_id = H256::repeat_byte(44);
+
+        prove_service_node_presence(1, epoch, Position::new(0, 0, 0));
+        prove_service_node_presence(2, epoch, Position::new(300, 0, 0));
+        register_service_node(1, region_id);
+        register_service_node(2, region_id);
+
+        assert_ok!(Carrier::reserve_number(
+            RuntimeOrigin::signed(7),
+            number_id,
+            region_id
+        ));
+        assert_ok!(Carrier::request_activation(
+            RuntimeOrigin::signed(7),
+            number_id,
+            device_id,
+            epoch,
+            H256::repeat_byte(14)
+        ));
+        assert_ok!(Carrier::submit_service_witness(
+            RuntimeOrigin::signed(1),
+            number_id,
+            epoch,
+            region_id,
+            92
+        ));
+        assert_ok!(Carrier::submit_service_witness(
+            RuntimeOrigin::signed(2),
+            number_id,
+            epoch,
+            region_id,
+            88
+        ));
+        assert_ok!(Carrier::finalize_service_request(
+            RuntimeOrigin::signed(7),
+            number_id,
+            epoch
+        ));
+
+        assert_noop!(
+            Carrier::record_provisioning_result(
+                RuntimeOrigin::signed(7),
+                number_id,
+                H256::repeat_byte(15),
+                true
+            ),
+            pallet_carrier::Error::<Test>::ProvisioningUpdateNotAllowed
+        );
+
+        assert_ok!(Carrier::record_provisioning_result(
+            RuntimeOrigin::signed(42),
+            number_id,
+            H256::repeat_byte(16),
+            true
+        ));
+
+        let binding = Carrier::numbers(number_id).expect("carrier binding exists");
+        assert_eq!(
+            binding.provisioning_state,
+            pallet_carrier::ProvisioningState::Provisioned
+        );
+        assert_eq!(binding.provisioning_receipt, Some(H256::repeat_byte(16)));
+    });
+}
+
+#[test]
+fn carrier_activation_requires_regional_service_node_coverage() {
+    new_test_ext().execute_with(|| {
+        let epoch = EpochId::new(1);
+        let actor = register_and_activate_actor(7);
+        let device_id = register_and_activate_device(7, H256::repeat_byte(74));
+
+        set_validator_positions();
+        let proven_actor = prove_verified_presence(7, epoch, Position::new(180, 180, 0));
+        assert_eq!(proven_actor, actor);
+
+        let number_id = H256::repeat_byte(123);
+        let region_id = H256::repeat_byte(45);
+
+        prove_service_node_presence(1, epoch, Position::new(0, 0, 0));
+        register_service_node(1, region_id);
+
+        assert_ok!(Carrier::reserve_number(
+            RuntimeOrigin::signed(7),
+            number_id,
+            region_id
+        ));
+        assert_noop!(
+            Carrier::request_activation(
+                RuntimeOrigin::signed(7),
+                number_id,
+                device_id,
+                epoch,
+                H256::repeat_byte(17)
+            ),
+            pallet_carrier::Error::<Test>::InsufficientRegionalCoverage
+        );
+
+        prove_service_node_presence(2, epoch, Position::new(300, 0, 0));
+        register_service_node(2, region_id);
+
+        assert_ok!(Carrier::request_activation(
+            RuntimeOrigin::signed(7),
+            number_id,
+            device_id,
+            epoch,
+            H256::repeat_byte(17)
+        ));
+    });
+}
+
+#[test]
+fn carrier_failure_reports_suspend_service_nodes_after_threshold() {
+    new_test_ext().execute_with(|| {
+        let epoch = EpochId::new(1);
+        let actor = register_and_activate_actor(7);
+        let device_id = register_and_activate_device(7, H256::repeat_byte(75));
+
+        set_validator_positions();
+        let proven_actor = prove_verified_presence(7, epoch, Position::new(200, 200, 0));
+        assert_eq!(proven_actor, actor);
+
+        let number_id = H256::repeat_byte(124);
+        let region_id = H256::repeat_byte(46);
+
+        prove_service_node_presence(1, epoch, Position::new(0, 0, 0));
+        prove_service_node_presence(2, epoch, Position::new(300, 0, 0));
+        register_service_node(1, region_id);
+        register_service_node(2, region_id);
+
+        assert_ok!(Carrier::reserve_number(
+            RuntimeOrigin::signed(7),
+            number_id,
+            region_id
+        ));
+        assert_ok!(Carrier::request_activation(
+            RuntimeOrigin::signed(7),
+            number_id,
+            device_id,
+            epoch,
+            H256::repeat_byte(18)
+        ));
+        assert_ok!(Carrier::submit_service_witness(
+            RuntimeOrigin::signed(1),
+            number_id,
+            epoch,
+            region_id,
+            91
+        ));
+        assert_ok!(Carrier::submit_service_witness(
+            RuntimeOrigin::signed(2),
+            number_id,
+            epoch,
+            region_id,
+            89
+        ));
+        assert_ok!(Carrier::finalize_service_request(
+            RuntimeOrigin::signed(7),
+            number_id,
+            epoch
+        ));
+
+        let validator_one = account_to_validator(1);
+        let validator_two = account_to_validator(2);
+
+        assert_ok!(Carrier::report_service_failure(
+            RuntimeOrigin::signed(7),
+            number_id,
+            validator_one
+        ));
+        assert_noop!(
+            Carrier::report_service_failure(RuntimeOrigin::signed(7), number_id, validator_one),
+            pallet_carrier::Error::<Test>::DuplicateFailureReport
+        );
+
+        let second_number = H256::repeat_byte(125);
+        let second_device = register_and_activate_device(7, H256::repeat_byte(76));
+        assert_ok!(Carrier::reserve_number(
+            RuntimeOrigin::signed(7),
+            second_number,
+            region_id
+        ));
+        assert_ok!(Carrier::request_activation(
+            RuntimeOrigin::signed(7),
+            second_number,
+            second_device,
+            epoch,
+            H256::repeat_byte(19)
+        ));
+        assert_ok!(Carrier::submit_service_witness(
+            RuntimeOrigin::signed(1),
+            second_number,
+            epoch,
+            region_id,
+            88
+        ));
+        assert_ok!(Carrier::submit_service_witness(
+            RuntimeOrigin::signed(2),
+            second_number,
+            epoch,
+            region_id,
+            87
+        ));
+        assert_ok!(Carrier::finalize_service_request(
+            RuntimeOrigin::signed(7),
+            second_number,
+            epoch
+        ));
+        assert_ok!(Carrier::report_service_failure(
+            RuntimeOrigin::signed(7),
+            second_number,
+            validator_one
+        ));
+
+        let profile = Carrier::service_nodes(validator_one).expect("service node exists");
+        assert_eq!(profile.status, pallet_carrier::ServiceNodeStatus::Suspended);
+        assert_eq!(profile.slash_points, 2);
+
+        let coverage = Carrier::region_coverage(epoch, region_id).expect("coverage exists");
+        assert_eq!(coverage.eligible_node_count, 1);
+        assert_eq!(coverage.status, pallet_carrier::CoverageStatus::Weak);
+
+        let third_number = H256::repeat_byte(126);
+        let third_device = register_and_activate_device(7, H256::repeat_byte(77));
+        assert_ok!(Carrier::reserve_number(
+            RuntimeOrigin::signed(7),
+            third_number,
+            region_id
+        ));
+        assert_noop!(
+            Carrier::request_activation(
+                RuntimeOrigin::signed(7),
+                third_number,
+                third_device,
+                epoch,
+                H256::repeat_byte(20)
+            ),
+            pallet_carrier::Error::<Test>::InsufficientRegionalCoverage
+        );
+        assert!(Carrier::service_nodes(validator_two).is_some());
     });
 }
 

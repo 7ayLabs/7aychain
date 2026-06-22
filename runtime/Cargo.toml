@@ -53,13 +53,9 @@ pallet-epoch = { workspace = true }
 pallet-validator = { workspace = true }
 pallet-dispute = { workspace = true }
 pallet-governance = { workspace = true }
-pallet-semantic = { workspace = true }
-pallet-boomerang = { workspace = true }
-pallet-autonomous = { workspace = true }
-pallet-octopus = { workspace = true }
 pallet-device = { workspace = true }
+pallet-carrier = { workspace = true }
 pallet-vault = { workspace = true }
-pallet-zk = { workspace = true, features = ["groth16"] }
 pallet-storage = { workspace = true }
 pallet-lifecycle = { workspace = true }
 pallet-triangulation = { workspace = true }
@@ -109,14 +105,9 @@ std = [
     "pallet-validator/std",
     "pallet-dispute/std",
     "pallet-governance/std",
-    "pallet-semantic/std",
-    "pallet-boomerang/std",
-    "pallet-autonomous/std",
-    "pallet-octopus/std",
     "pallet-device/std",
+    "pallet-carrier/std",
     "pallet-vault/std",
-    "pallet-zk/std",
-    "pallet-zk/groth16",
     "pallet-storage/std",
     "pallet-lifecycle/std",
     "pallet-triangulation/std",
@@ -139,13 +130,9 @@ runtime-benchmarks = [
     "pallet-validator/runtime-benchmarks",
     "pallet-dispute/runtime-benchmarks",
     "pallet-governance/runtime-benchmarks",
-    "pallet-semantic/runtime-benchmarks",
-    "pallet-boomerang/runtime-benchmarks",
-    "pallet-autonomous/runtime-benchmarks",
-    "pallet-octopus/runtime-benchmarks",
     "pallet-device/runtime-benchmarks",
+    "pallet-carrier/runtime-benchmarks",
     "pallet-vault/runtime-benchmarks",
-    "pallet-zk/runtime-benchmarks",
     "pallet-storage/runtime-benchmarks",
     "pallet-lifecycle/runtime-benchmarks",
     "pallet-triangulation/runtime-benchmarks",
@@ -162,4 +149,16 @@ try-runtime = [
     "pallet-sudo/try-runtime",
     "pallet-timestamp/try-runtime",
     "pallet-transaction-payment/try-runtime",
+    "pallet-presence/try-runtime",
+    "pallet-epoch/try-runtime",
+    "pallet-validator/try-runtime",
+    "pallet-dispute/try-runtime",
+    "pallet-governance/try-runtime",
+    "pallet-device/try-runtime",
+    "pallet-carrier/try-runtime",
+    "pallet-vault/try-runtime",
+    "pallet-storage/try-runtime",
+    "pallet-lifecycle/try-runtime",
+    "pallet-triangulation/try-runtime",
+    "pallet-device-scanner/try-runtime",
 ]

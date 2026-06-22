@@ -10,8 +10,9 @@ mod integration_tests;
 include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 
 use seveny_runtime_api::{
-    RpcDeviceHealth, RpcDeviceStatus, RpcEpochInfo, RpcEpochState, RpcPresenceRecord,
-    RpcPresenceState, RpcValidatorInfo, RpcValidatorStatus,
+    RpcCarrierNumberStatus, RpcCarrierProvisioningState, RpcCarrierStatus, RpcDeviceHealth,
+    RpcDeviceStatus, RpcEpochInfo, RpcEpochState, RpcPresenceRecord, RpcPresenceState,
+    RpcValidatorInfo, RpcValidatorStatus,
 };
 use sp_api::impl_runtime_apis;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
@@ -43,6 +44,7 @@ use frame_system::limits::{BlockLength, BlockWeights};
 pub use pallet_balances::Call as BalancesCall;
 pub use pallet_timestamp::Call as TimestampCall;
 use pallet_transaction_payment::{ConstFeeMultiplier, FungibleAdapter, Multiplier};
+use parity_scale_codec::Encode;
 pub use sp_runtime::{Perbill, Permill};
 
 pub type BlockNumber = u32;
@@ -74,7 +76,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     spec_name: Cow::Borrowed("seveny"),
     impl_name: Cow::Borrowed("seveny-node"),
     authoring_version: 1,
-    spec_version: 113,
+    spec_version: 116,
     impl_version: 1,
     apis: RUNTIME_API_VERSIONS,
     transaction_version: 1,
@@ -109,13 +111,9 @@ impl Contains<RuntimeCall> for SafeCallFilter {
                 | RuntimeCall::Validator(..)
                 | RuntimeCall::Dispute(..)
                 | RuntimeCall::Governance(..)
-                | RuntimeCall::Semantic(..)
-                | RuntimeCall::Boomerang(..)
-                | RuntimeCall::Autonomous(..)
-                | RuntimeCall::Octopus(..)
                 | RuntimeCall::Device(..)
+                | RuntimeCall::Carrier(..)
                 | RuntimeCall::Vault(..)
-                | RuntimeCall::Zk(..)
                 | RuntimeCall::Storage(..)
                 | RuntimeCall::Lifecycle(..)
                 | RuntimeCall::Triangulation(..)
@@ -268,7 +266,7 @@ parameter_types! {
     pub const RevealWindow: BlockNumber = 4;
     // Position-Based Triangulation
     pub const MinWitnessesForVerification: u32 = 3;
-    pub const PositionToleranceMeters: u32 = 100;
+    pub const PositionToleranceMeters: u32 = 100_000;
 }
 
 impl pallet_presence::Config for Runtime {
@@ -361,84 +359,6 @@ impl pallet_governance::Config for Runtime {
 }
 
 parameter_types! {
-    pub const MaxRelationshipsPerActor: u32 = 50;
-    pub const MaxDiscoveryResults: u32 = 100;
-    pub const DiscoveryRateLimitBlocks: BlockNumber = 10;
-    pub const RelationshipExpiryBlocks: BlockNumber = 10000;
-    pub const MaxTrustLevel: u8 = 100;
-}
-
-impl pallet_semantic::Config for Runtime {
-    type WeightInfo = ();
-    type MaxRelationshipsPerActor = MaxRelationshipsPerActor;
-    type MaxDiscoveryResults = MaxDiscoveryResults;
-    type DiscoveryRateLimitBlocks = DiscoveryRateLimitBlocks;
-    type RelationshipExpiryBlocks = RelationshipExpiryBlocks;
-    type MaxTrustLevel = MaxTrustLevel;
-}
-
-parameter_types! {
-    pub const BoomerangTimeoutBlocks: BlockNumber = 10;
-    pub const MaxExtensionBlocks: BlockNumber = 100;
-    pub const MaxHopsPerPath: u32 = 10;
-    pub const MaxActivePaths: u32 = 100;
-}
-
-impl pallet_boomerang::Config for Runtime {
-    type WeightInfo = ();
-    type BoomerangTimeoutBlocks = BoomerangTimeoutBlocks;
-    type MaxExtensionBlocks = MaxExtensionBlocks;
-    type MaxHopsPerPath = MaxHopsPerPath;
-    type MaxActivePaths = MaxActivePaths;
-}
-
-parameter_types! {
-    pub const PatternThreshold: u32 = 3;
-    pub const MaxBehaviorsPerActor: u32 = 50;
-    pub const MaxPatterns: u32 = 100;
-    pub const BehaviorExpiryBlocks: BlockNumber = 10000;
-    pub const ScoreIncreasePerMatch: u8 = 5;
-    pub const MaxActorsPerPattern: u32 = 500;
-}
-
-impl pallet_autonomous::Config for Runtime {
-    type WeightInfo = ();
-    type PatternThreshold = PatternThreshold;
-    type MaxBehaviorsPerActor = MaxBehaviorsPerActor;
-    type MaxPatterns = MaxPatterns;
-    type BehaviorExpiryBlocks = BehaviorExpiryBlocks;
-    type ScoreIncreasePerMatch = ScoreIncreasePerMatch;
-    type MaxActorsPerPattern = MaxActorsPerPattern;
-}
-
-parameter_types! {
-    pub const ActivationThreshold: Perbill = Perbill::from_percent(45);
-    pub const DeactivationThreshold: Perbill = Perbill::from_percent(20);
-    pub const DeactivationDurationBlocks: BlockNumber = 100;
-    pub const MaxSubnodesPerCluster: u32 = 8;
-    pub const MinSubnodes: u32 = 2;
-    pub const ScalingCooldownBlocks: BlockNumber = 50;
-    pub const HeartbeatTimeoutBlocks: BlockNumber = 10;
-    pub const MaxConsecutiveMisses: u8 = 3;
-    pub const HealthScoreDecay: u8 = 10;
-    pub const HealthScoreRecovery: u8 = 5;
-}
-
-impl pallet_octopus::Config for Runtime {
-    type WeightInfo = ();
-    type ActivationThreshold = ActivationThreshold;
-    type DeactivationThreshold = DeactivationThreshold;
-    type DeactivationDurationBlocks = DeactivationDurationBlocks;
-    type MaxSubnodesPerCluster = MaxSubnodesPerCluster;
-    type MinSubnodes = MinSubnodes;
-    type ScalingCooldownBlocks = ScalingCooldownBlocks;
-    type HeartbeatTimeoutBlocks = HeartbeatTimeoutBlocks;
-    type MaxConsecutiveMisses = MaxConsecutiveMisses;
-    type HealthScoreDecay = HealthScoreDecay;
-    type HealthScoreRecovery = HealthScoreRecovery;
-}
-
-parameter_types! {
     pub const MaxDevicesPerActor: u32 = 10;
     pub const AttestationValidityBlocks: BlockNumber = 1000;
     pub const InitialTrustScore: u8 = 50;
@@ -460,6 +380,122 @@ impl pallet_device::Config for Runtime {
 }
 
 parameter_types! {
+    pub const MaxNumbersPerActor: u32 = 3;
+    pub const MaxCarrierWitnessesPerRequest: u32 = 32;
+    pub const CarrierWitnessThreshold: u32 = 2;
+    pub const CarrierServiceLeaseBlocks: BlockNumber = 600;
+    pub const CarrierWitnessReward: u128 = 100_000_000_000;
+    pub const MaxCarrierRegionsPerServiceNode: u32 = 8;
+    pub const MinCarrierServiceStake: u128 = 10_000;
+    pub const MinRegionalCarrierNodes: u32 = 2;
+    pub const StrongRegionalCarrierNodes: u32 = 4;
+    pub const CarrierServiceNodeSlashThreshold: u32 = 3;
+    pub CarrierBridgeAccount: AccountId = AccountId::from([
+        0xd4, 0x35, 0x93, 0xc7, 0x15, 0xfd, 0xd3, 0x1c,
+        0x61, 0x14, 0x1a, 0xbd, 0x04, 0xa9, 0x9f, 0xd6,
+        0x82, 0x2c, 0x85, 0x58, 0x85, 0x4c, 0xcd, 0xe3,
+        0x9a, 0x56, 0x84, 0xe7, 0xa5, 0x6d, 0xa2, 0x7d,
+    ]);
+}
+
+pub struct RuntimeActorChecker;
+impl seveny_primitives::traits::ActorActivityChecker for RuntimeActorChecker {
+    fn is_actor_active(actor_id: seveny_primitives::types::ActorId) -> bool {
+        pallet_lifecycle::Pallet::<Runtime>::is_actor_active(actor_id)
+    }
+}
+
+pub struct RuntimeDeviceChecker;
+impl seveny_primitives::traits::DeviceEligibilityChecker for RuntimeDeviceChecker {
+    fn is_device_active_for_actor(
+        actor_id: seveny_primitives::types::ActorId,
+        device_id: u64,
+    ) -> bool {
+        let device = pallet_device::DeviceId::new(device_id);
+        pallet_device::Pallet::<Runtime>::is_device_active(device)
+            && pallet_device::Pallet::<Runtime>::get_actor_devices(actor_id)
+                .into_iter()
+                .any(|candidate| candidate == device)
+    }
+}
+
+pub struct RuntimePresenceVerifier;
+impl seveny_primitives::traits::PresenceVerifier for RuntimePresenceVerifier {
+    fn is_presence_verified(
+        actor_id: seveny_primitives::types::ActorId,
+        epoch_id: seveny_primitives::types::EpochId,
+    ) -> bool {
+        let Some(record) = pallet_presence::Presences::<Runtime>::get(epoch_id, actor_id) else {
+            return false;
+        };
+
+        let state_ok = matches!(
+            record.state,
+            seveny_primitives::types::PresenceState::Validated
+                | seveny_primitives::types::PresenceState::Finalized
+        );
+        let position_ok = pallet_presence::PositionClaims::<Runtime>::get(epoch_id, actor_id)
+            .is_some_and(|claim| claim.verified);
+
+        state_ok && position_ok
+    }
+}
+
+pub struct RuntimeValidatorStakeProvider;
+impl seveny_primitives::traits::ValidatorStakeProvider for RuntimeValidatorStakeProvider {
+    fn validator_stake(validator_id: seveny_primitives::types::ValidatorId) -> u128 {
+        use sp_runtime::traits::SaturatedConversion;
+
+        pallet_validator::Pallet::<Runtime>::validator_stake(validator_id).saturated_into::<u128>()
+    }
+}
+
+pub struct RuntimeServiceNodePresenceVerifier;
+impl seveny_primitives::traits::ServiceNodePresenceVerifier<AccountId>
+    for RuntimeServiceNodePresenceVerifier
+{
+    fn is_service_node_present(
+        controller: &AccountId,
+        epoch_id: seveny_primitives::types::EpochId,
+    ) -> bool {
+        let actor_id = seveny_primitives::crypto::derive_actor_id(&controller.encode());
+        pallet_presence::PositionClaims::<Runtime>::get(epoch_id, actor_id)
+            .is_some_and(|claim| claim.verified)
+    }
+}
+
+pub struct RuntimeCarrierRewardHandler;
+impl seveny_primitives::traits::CarrierRewardHandler<AccountId> for RuntimeCarrierRewardHandler {
+    fn reward_witness(_validator: &seveny_primitives::types::ValidatorId, _amount: u128) {
+        // Devnet: rewards tracked on-chain via ValidatorWitnessCount.
+        // Production: wire to pallet_balances::deposit_creating or treasury.
+    }
+}
+
+impl pallet_carrier::Config for Runtime {
+    type WeightInfo = ();
+    type EpochProvider = Epoch;
+    type ValidatorProvider = Validator;
+    type ValidatorStakeProvider = RuntimeValidatorStakeProvider;
+    type ActorChecker = RuntimeActorChecker;
+    type DeviceChecker = RuntimeDeviceChecker;
+    type PresenceVerifier = RuntimePresenceVerifier;
+    type ServiceNodePresenceVerifier = RuntimeServiceNodePresenceVerifier;
+    type RewardHandler = RuntimeCarrierRewardHandler;
+    type MaxNumbersPerActor = MaxNumbersPerActor;
+    type MaxWitnessesPerRequest = MaxCarrierWitnessesPerRequest;
+    type WitnessThreshold = CarrierWitnessThreshold;
+    type ServiceLeaseBlocks = CarrierServiceLeaseBlocks;
+    type WitnessRewardAmount = CarrierWitnessReward;
+    type CarrierBridgeAccount = CarrierBridgeAccount;
+    type MaxRegionsPerServiceNode = MaxCarrierRegionsPerServiceNode;
+    type MinServiceStake = MinCarrierServiceStake;
+    type MinRegionalServiceNodes = MinRegionalCarrierNodes;
+    type StrongRegionalServiceNodes = StrongRegionalCarrierNodes;
+    type ServiceNodeSlashThreshold = CarrierServiceNodeSlashThreshold;
+}
+
+parameter_types! {
     pub const MinThreshold: u32 = 2;
     pub const MinRingSize: u32 = 3;
     pub const MaxRingSize: u32 = 10;
@@ -478,19 +514,6 @@ impl pallet_vault::Config for Runtime {
     type MaxVaultsPerActor = MaxVaultsPerActor;
     type MaxFilesPerVault = ConstU32<64>;
     type UnlockPeriodBlocks = ConstU32<300>;
-}
-
-parameter_types! {
-    pub const MaxProofSize: u32 = 2048;
-    pub const MaxVerificationsPerBlock: u32 = 100;
-}
-
-impl pallet_zk::Config for Runtime {
-    type WeightInfo = ();
-    type Verifier = pallet_zk::Groth16Verifier;
-    type MaxProofSize = MaxProofSize;
-    type MaxVerificationsPerBlock = MaxVerificationsPerBlock;
-    type MaxCircuits = ConstU32<256>;
 }
 
 parameter_types! {
@@ -568,30 +591,26 @@ impl pallet_device_scanner::Config for Runtime {
 
 construct_runtime!(
     pub enum Runtime {
-        System: frame_system,
-        Timestamp: pallet_timestamp,
-        Aura: pallet_aura,
-        Grandpa: pallet_grandpa,
-        Balances: pallet_balances,
-        TransactionPayment: pallet_transaction_payment,
-        Sudo: pallet_sudo,
+        System: frame_system = 0,
+        Timestamp: pallet_timestamp = 1,
+        Aura: pallet_aura = 2,
+        Grandpa: pallet_grandpa = 3,
+        Balances: pallet_balances = 4,
+        TransactionPayment: pallet_transaction_payment = 5,
+        Sudo: pallet_sudo = 6,
 
-        Presence: pallet_presence,
-        Epoch: pallet_epoch,
-        Validator: pallet_validator,
-        Dispute: pallet_dispute,
-        Governance: pallet_governance,
-        Semantic: pallet_semantic,
-        Boomerang: pallet_boomerang,
-        Autonomous: pallet_autonomous,
-        Octopus: pallet_octopus,
-        Device: pallet_device,
-        Vault: pallet_vault,
-        Zk: pallet_zk,
-        Storage: pallet_storage,
-        Lifecycle: pallet_lifecycle,
-        Triangulation: pallet_triangulation,
-        DeviceScanner: pallet_device_scanner,
+        Presence: pallet_presence = 10,
+        Epoch: pallet_epoch = 11,
+        Validator: pallet_validator = 12,
+        Dispute: pallet_dispute = 13,
+        Governance: pallet_governance = 14,
+        Device: pallet_device = 19,
+        Carrier: pallet_carrier = 20,
+        Vault: pallet_vault = 21,
+        Storage: pallet_storage = 23,
+        Lifecycle: pallet_lifecycle = 24,
+        Triangulation: pallet_triangulation = 25,
+        DeviceScanner: pallet_device_scanner = 26,
     }
 );
 
@@ -636,13 +655,9 @@ mod benches {
         [pallet_validator, Validator]
         [pallet_dispute, Dispute]
         [pallet_governance, Governance]
-        [pallet_semantic, Semantic]
-        [pallet_boomerang, Boomerang]
-        [pallet_autonomous, Autonomous]
-        [pallet_octopus, Octopus]
         [pallet_device, Device]
+        [pallet_carrier, Carrier]
         [pallet_vault, Vault]
-        [pallet_zk, Zk]
         [pallet_storage, Storage]
         [pallet_lifecycle, Lifecycle]
         [pallet_triangulation, Triangulation]
@@ -982,6 +997,70 @@ impl_runtime_apis! {
                 consecutive_misses,
                 last_heartbeat_seq: last_seq,
                 is_online,
+            })
+        }
+    }
+
+    impl seveny_runtime_api::CarrierApi<Block> for Runtime {
+        fn carrier_number_status(number_id: H256) -> Option<RpcCarrierStatus> {
+            let binding = pallet_carrier::Numbers::<Runtime>::get(number_id)?;
+            let owner = binding.owner.0;
+            let status = match binding.status {
+                pallet_carrier::NumberStatus::Reserved => RpcCarrierNumberStatus::Reserved,
+                pallet_carrier::NumberStatus::ActivationPending => {
+                    RpcCarrierNumberStatus::ActivationPending
+                }
+                pallet_carrier::NumberStatus::Activated => RpcCarrierNumberStatus::Activated,
+                pallet_carrier::NumberStatus::Suspended => RpcCarrierNumberStatus::Suspended,
+                pallet_carrier::NumberStatus::RecoveryPending => {
+                    RpcCarrierNumberStatus::RecoveryPending
+                }
+                pallet_carrier::NumberStatus::Recovered => RpcCarrierNumberStatus::Recovered,
+                pallet_carrier::NumberStatus::Revoked => RpcCarrierNumberStatus::Revoked,
+            };
+
+            let provisioning_state = match binding.provisioning_state {
+                pallet_carrier::ProvisioningState::None => RpcCarrierProvisioningState::None,
+                pallet_carrier::ProvisioningState::Pending => {
+                    RpcCarrierProvisioningState::Pending
+                }
+                pallet_carrier::ProvisioningState::Provisioned => {
+                    RpcCarrierProvisioningState::Provisioned
+                }
+                pallet_carrier::ProvisioningState::Failed => RpcCarrierProvisioningState::Failed,
+            };
+
+            let pending_epoch =
+                pallet_carrier::CurrentRequestEpoch::<Runtime>::get(number_id).map(|epoch| epoch.inner());
+            let witness_count = pending_epoch
+                .map(|epoch| {
+                    pallet_carrier::ServiceWitnessCount::<Runtime>::get(
+                        seveny_primitives::types::EpochId::new(epoch),
+                        number_id,
+                    )
+                })
+                .filter(|count| *count > 0);
+
+            let signal = pallet_carrier::SignalQuality::<Runtime>::get(number_id);
+            let avg_signal_score = signal.as_ref().map(|s| s.avg_score);
+            let signal_sample_count = signal.as_ref().map(|s| s.sample_count);
+
+            Some(RpcCarrierStatus {
+                number_id,
+                owner,
+                device_id: binding.current_device_id,
+                region_id: binding.region_id,
+                status,
+                activation_epoch: binding.activation_epoch.map(|epoch| epoch.inner()),
+                activated_at: binding.activated_at,
+                service_lease_until: binding.service_lease_until,
+                pending_epoch,
+                avg_signal_score,
+                signal_sample_count,
+                witness_count: witness_count.or(signal_sample_count),
+                provisioning_state,
+                provisioning_receipt: binding.provisioning_receipt,
+                sim_profile_commitment: binding.sim_profile_commitment,
             })
         }
     }
