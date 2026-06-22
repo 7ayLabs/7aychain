@@ -1,9 +1,11 @@
-# Single-node devnet with instant seal.
-# Blocks are produced ONLY when extrinsics are submitted.
+# Single-node devnet with continuous Aura sealing.
+# Produces a block every ~7s so you can watch chain progress in Polkadot.js Apps.
+# Carrier-signal beta is enabled in mock mode so signal samples appear in logs.
 #
 # Usage:
 #   docker compose -f docker-compose.dev.yml up -d --build
-#   python3 scripts/laud-cli.py          # connect, press b, then explore
+#   docker logs -f seveny-dev                  # watch node + carrier-signal output
+#   open https://polkadot.js.org/apps/?rpc=ws://127.0.0.1:9944  # or local apps container
 #
 # To reset chain state:
 #   docker compose -f docker-compose.dev.yml down -v
@@ -26,7 +28,7 @@ services:
       - dev-data:/node/data
     command:
       - "--dev"
-      - "--sealing=instant"
+      - "--sealing=aura"
       - "--base-path=/node/data"
       - "--rpc-cors=all"
       - "--rpc-external"
@@ -38,6 +40,23 @@ services:
       - "--scanner-pos-z=0"
       - "--scan-interval=6"
       - "--mock-seed=42"
+      # Carrier-signal beta (each node observes its own carrier)
+      - "--carrier-signal-mode=mock"
+      - "--carrier-id=7AY-Dev"
+      - "--carrier-network-type=LTE"
+      - "--carrier-signal-interval=5"
+      - "--carrier-mock-seed=7"
+    restart: unless-stopped
+
+  polkadotjs:
+    image: jacogr/polkadot-js-apps:latest
+    container_name: seveny-dev-pjs
+    ports:
+      - "127.0.0.1:8080:80"
+    environment:
+      WS_URL: ws://127.0.0.1:9944
+    depends_on:
+      - node
     restart: unless-stopped
 
 volumes:
