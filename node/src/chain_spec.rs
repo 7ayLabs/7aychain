@@ -1,9 +1,18 @@
 use sc_service::ChainType;
+use serde_json::json;
 use seveny_runtime::{AccountId, Signature, WASM_BINARY};
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_consensus_grandpa::AuthorityId as GrandpaId;
 use sp_core::{sr25519, Pair, Public};
 use sp_runtime::traits::{IdentifyAccount, Verify};
+
+fn seveny_properties() -> sc_service::Properties {
+    let mut props = sc_service::Properties::new();
+    props.insert("tokenSymbol".into(), json!("7AY"));
+    props.insert("tokenDecimals".into(), json!(12));
+    props.insert("ss58Format".into(), json!(42));
+    props
+}
 
 pub type ChainSpec = sc_service::GenericChainSpec;
 
@@ -34,6 +43,7 @@ pub fn development_config() -> Result<ChainSpec, String> {
     .with_name("7aychain Development")
     .with_id("seveny_dev")
     .with_chain_type(ChainType::Development)
+    .with_properties(seveny_properties())
     .with_genesis_config_patch(testnet_genesis(
         vec![authority_keys_from_seed("Alice")],
         get_account_id_from_seed::<sr25519::Public>("Alice"),
@@ -64,6 +74,7 @@ pub fn local_testnet_config() -> Result<ChainSpec, String> {
     .with_name("7aychain Local Testnet")
     .with_id("seveny_local")
     .with_chain_type(ChainType::Local)
+    .with_properties(seveny_properties())
     .with_genesis_config_patch(testnet_genesis(
         vec![
             authority_keys_from_seed("Alice"),
@@ -101,6 +112,7 @@ pub fn mainnet_config() -> Result<ChainSpec, String> {
     .with_name("7aychain Mainnet")
     .with_id("seveny_mainnet")
     .with_chain_type(ChainType::Live)
+    .with_properties(seveny_properties())
     .with_genesis_config_patch(mainnet_genesis())
     .with_protocol_id("seveny")
     .build())

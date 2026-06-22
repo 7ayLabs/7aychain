@@ -5,6 +5,7 @@
 
 //! 7aychain Node - Substrate-based Proof of Presence Protocol
 
+mod carrier_signal;
 mod chain_spec;
 mod cli;
 mod command;

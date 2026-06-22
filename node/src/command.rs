@@ -1,9 +1,11 @@
 use crate::{
+    carrier_signal::{CarrierSignalConfig, CarrierSignalMode},
     chain_spec,
     cli::{Cli, Subcommand},
     scanner::{Position, ScannerConfig, ScannerMode},
     service::{self, SealingMode},
 };
+use sp_core::H256;
 use clap::Parser;
 use sc_cli::SubstrateCli;
 use sc_service::PartialComponents;
@@ -126,6 +128,17 @@ pub fn run() -> sc_cli::Result<()> {
             runner.sync_run(|config| cmd.run::<Block>(&config))
         }
         None => {
+            fn parse_region_h256(input: &str) -> Result<H256, String> {
+                let trimmed = input.strip_prefix("0x").unwrap_or(input);
+                if trimmed.len() != 64 {
+                    return Err(format!("expected 32 bytes hex, got {} chars", trimmed.len()));
+                }
+                let mut bytes = [0u8; 32];
+                hex::decode_to_slice(trimmed, &mut bytes)
+                    .map_err(|e| format!("invalid hex: {e}"))?;
+                Ok(H256(bytes))
+            }
+
             let scanner_mode = cli
                 .run
                 .scanner_mode
@@ -148,10 +161,43 @@ pub fn run() -> sc_cli::Result<()> {
 
             let sealing = cli.run.sealing.parse::<SealingMode>().unwrap_or_default();
 
+            let carrier_signal_mode = cli
+                .run
+                .carrier_signal_mode
+                .parse::<CarrierSignalMode>()
+                .unwrap_or_default();
+            let carrier_region_id = parse_region_h256(&cli.run.carrier_region)
+                .unwrap_or_else(|err| {
+                    log::warn!("--carrier-region invalid ({err}); using default 0x1111...");
+                    H256::repeat_byte(0x11)
+                });
+            let status_file = if cli.run.carrier_signal_status_file.is_empty() {
+                None
+            } else {
+                Some(std::path::PathBuf::from(
+                    cli.run.carrier_signal_status_file.clone(),
+                ))
+            };
+            let carrier_signal_config = CarrierSignalConfig {
+                mode: carrier_signal_mode,
+                interval_secs: cli.run.carrier_signal_interval,
+                input_file: cli.run.carrier_signal_file.clone(),
+                status_file,
+                carrier_id: cli.run.carrier_id.clone(),
+                region_id: carrier_region_id,
+                network_type: cli.run.carrier_network_type.clone(),
+                mock_seed: cli.run.carrier_mock_seed,
+            };
+
             let runner = cli.create_runner(&cli.run.base)?;
             runner.run_node_until_exit(|config| async move {
-                service::new_full(config, Some(scanner_config), sealing)
-                    .map_err(sc_cli::Error::Service)
+                service::new_full(
+                    config,
+                    Some(scanner_config),
+                    sealing,
+                    Some(carrier_signal_config),
+                )
+                .map_err(sc_cli::Error::Service)
             })
         }
     }

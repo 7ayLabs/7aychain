@@ -11,6 +11,9 @@ use seveny_runtime::{self, opaque::Block, RuntimeApi};
 use sp_consensus_aura::sr25519::AuthorityPair as AuraPair;
 use std::sync::Arc;
 
+use crate::carrier_signal::{
+    start_carrier_signal_task, CarrierSignalConfig, CarrierSignalHandle,
+};
 use crate::scanner::{
     create_scan_results_handle, start_scanner_task, DeviceScanInherentDataProvider,
     ScanResultsHandle, ScannerConfig,
@@ -223,6 +226,7 @@ pub fn new_full(
     config: Configuration,
     scanner_config: Option<ScannerConfig>,
     sealing: SealingMode,
+    carrier_signal_config: Option<CarrierSignalConfig>,
 ) -> Result<TaskManager, ServiceError> {
     let instant_seal = sealing == SealingMode::Instant;
 
@@ -243,6 +247,9 @@ pub fn new_full(
 
     // Create scan results handle for device scanner
     let scan_results: ScanResultsHandle = create_scan_results_handle();
+
+    // Carrier signal: each node reports its own carrier observation.
+    let carrier_signal_handle = CarrierSignalHandle::new();
 
     let mut net_config = sc_network::config::FullNetworkConfiguration::<
         Block,
@@ -323,11 +330,13 @@ pub fn new_full(
     let rpc_extensions_builder = {
         let client = client.clone();
         let pool = transaction_pool.clone();
+        let carrier_signal = carrier_signal_handle.clone();
 
         Box::new(move |_| {
             let deps = crate::rpc::FullDeps {
                 client: client.clone(),
                 pool: pool.clone(),
+                carrier_signal: carrier_signal.clone(),
             };
             crate::rpc::create_full(deps).map_err(Into::into)
         })
@@ -348,6 +357,12 @@ pub fn new_full(
         telemetry: telemetry.as_mut(),
         tracing_execute_block: None,
     })?;
+
+    // Carrier-signal task runs for every node (authority or not) so that
+    // any operator running a node can report its own carrier observation.
+    if let Some(cs_cfg) = carrier_signal_config {
+        start_carrier_signal_task(&task_manager, cs_cfg, carrier_signal_handle.clone());
+    }
 
     if role.is_authority() {
         let scanner_cfg = scanner_config.unwrap_or_default();

@@ -16,12 +16,14 @@ use jsonrpsee::{core::RpcResult, proc_macros::rpc, types::ErrorObjectOwned, RpcM
 use sc_transaction_pool_api::TransactionPool;
 use seveny_runtime::{opaque::Block, AccountId, Balance, Nonce};
 use seveny_runtime_api::{
-    DeviceApi, EpochApi, PresenceApi, RpcDeviceHealth, RpcEpochInfo, RpcPresenceRecord,
-    RpcValidatorInfo, ValidatorApi,
+    CarrierApi, DeviceApi, EpochApi, PresenceApi, RpcCarrierStatus, RpcDeviceHealth, RpcEpochInfo,
+    RpcPresenceRecord, RpcValidatorInfo, ValidatorApi,
 };
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::{Error as BlockChainError, HeaderBackend, HeaderMetadata};
 use sp_core::H256;
+
+use crate::carrier_signal::{CarrierSignalHandle, CarrierSignalSample};
 
 // =============================================================================
 // Error helpers
@@ -171,6 +173,47 @@ pub trait DeviceRpc {
     fn health(&self, device_id: H256) -> RpcResult<Option<RpcDeviceHealth>>;
 }
 
+// =============================================================================
+// Carrier RPC
+// =============================================================================
+
+#[rpc(client, server)]
+pub trait CarrierRpc {
+    /// Returns carrier state for a number commitment.
+    ///
+    /// Parameters:
+    /// - `number_id`: H256 hex string identifying the number commitment
+    ///
+    /// Returns `null` if the number is not registered.
+    #[method(name = "carrier_numberStatus")]
+    fn number_status(&self, number_id: H256) -> RpcResult<Option<RpcCarrierStatus>>;
+}
+
+pub struct CarrierRpcImpl<C> {
+    client: Arc<C>,
+}
+
+impl<C> CarrierRpcImpl<C> {
+    pub fn new(client: Arc<C>) -> Self {
+        Self { client }
+    }
+}
+
+impl<C> CarrierRpcServer for CarrierRpcImpl<C>
+where
+    C: ProvideRuntimeApi<Block> + HeaderBackend<Block> + 'static,
+    C: Send + Sync,
+    C::Api: seveny_runtime_api::CarrierApi<Block>,
+{
+    fn number_status(&self, number_id: H256) -> RpcResult<Option<RpcCarrierStatus>> {
+        let best = self.client.info().best_hash;
+        self.client
+            .runtime_api()
+            .carrier_number_status(best, number_id)
+            .map_err(|e| runtime_err(e))
+    }
+}
+
 pub struct DeviceRpcImpl<C> {
     client: Arc<C>,
 }
@@ -197,12 +240,42 @@ where
 }
 
 // =============================================================================
+// Carrier Signal RPC (node-local, not a runtime API)
+// =============================================================================
+
+#[rpc(client, server)]
+pub trait CarrierSignalRpc {
+    /// Returns the most recent carrier-signal sample observed by this node.
+    /// Returns `null` if no sample is available (mode disabled or source
+    /// has not yet produced data).
+    #[method(name = "seveny_currentCarrierSignal")]
+    fn current(&self) -> RpcResult<Option<CarrierSignalSample>>;
+}
+
+pub struct CarrierSignalRpcImpl {
+    handle: CarrierSignalHandle,
+}
+
+impl CarrierSignalRpcImpl {
+    pub fn new(handle: CarrierSignalHandle) -> Self {
+        Self { handle }
+    }
+}
+
+impl CarrierSignalRpcServer for CarrierSignalRpcImpl {
+    fn current(&self) -> RpcResult<Option<CarrierSignalSample>> {
+        Ok(self.handle.read())
+    }
+}
+
+// =============================================================================
 // Full RPC builder
 // =============================================================================
 
 pub struct FullDeps<C, P> {
     pub client: Arc<C>,
     pub pool: Arc<P>,
+    pub carrier_signal: CarrierSignalHandle,
 }
 
 pub fn create_full<C, P>(
@@ -219,13 +292,18 @@ where
     C::Api: seveny_runtime_api::EpochApi<Block>,
     C::Api: seveny_runtime_api::ValidatorApi<Block>,
     C::Api: seveny_runtime_api::DeviceApi<Block>,
+    C::Api: seveny_runtime_api::CarrierApi<Block>,
     P: TransactionPool + 'static,
 {
     use pallet_transaction_payment_rpc::{TransactionPayment, TransactionPaymentApiServer};
     use substrate_frame_rpc_system::{System, SystemApiServer};
 
     let mut module = RpcModule::new(());
-    let FullDeps { client, pool } = deps;
+    let FullDeps {
+        client,
+        pool,
+        carrier_signal,
+    } = deps;
 
     // Standard Substrate RPCs
     module.merge(System::new(client.clone(), pool).into_rpc())?;
@@ -235,7 +313,11 @@ where
     module.merge(PresenceRpcImpl::new(client.clone()).into_rpc())?;
     module.merge(EpochRpcImpl::new(client.clone()).into_rpc())?;
     module.merge(ValidatorRpcImpl::new(client.clone()).into_rpc())?;
-    module.merge(DeviceRpcImpl::new(client).into_rpc())?;
+    module.merge(DeviceRpcImpl::new(client.clone()).into_rpc())?;
+    module.merge(CarrierRpcImpl::new(client).into_rpc())?;
+
+    // Carrier signal (node-local)
+    module.merge(CarrierSignalRpcImpl::new(carrier_signal).into_rpc())?;
 
     Ok(module)
 }
