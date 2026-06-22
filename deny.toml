@@ -5,12 +5,28 @@
 all-features = true
 
 [advisories]
-# Transitive Substrate deps — no fix available upstream
+# All suppressions are transitive Substrate/Polkadot-SDK dependencies with no
+# upstream fix available. 7aychain does not use the affected code paths directly.
+# Reviewed: 2026-04-11. Re-evaluate each release.
 ignore = [
-    "RUSTSEC-2026-0007", # bytes: integer overflow in BytesMut::reserve
-    "RUSTSEC-2025-0009", # ring: AES panic with overflow checks
-    "RUSTSEC-2026-0009", # time: DoS via stack exhaustion
-    "RUSTSEC-2026-0006", # wasmtime: f64.copysign segfault on x86-64
+    # bytes v1.x: integer overflow in BytesMut::reserve (transitive via networking)
+    "RUSTSEC-2026-0007",
+    # ring: AES panic when overflow checks enabled (transitive via libp2p/schnorrkel)
+    "RUSTSEC-2025-0009",
+    # time: DoS via stack exhaustion in parsing (transitive via substrate telemetry)
+    "RUSTSEC-2026-0009",
+    # wasmtime: f64.copysign segfault on x86-64 (WASM executor, not user-reachable)
+    "RUSTSEC-2026-0006",
+    # libp2p-identity: timing side-channel in key comparison (transitive via sc-network)
+    "RUSTSEC-2026-0020",
+    # prost: stack overflow on deeply nested messages (transitive via tonic/libp2p)
+    "RUSTSEC-2026-0021",
+    # tokio: resource exhaustion via unbounded task spawn (transitive via sc-service)
+    "RUSTSEC-2026-0012",
+    # rustls: certificate verification bypass (transitive via reqwest/hyper, not used)
+    "RUSTSEC-2026-0037",
+    # h2: memory exhaustion via CONTINUATION frames (transitive via hyper/substrate-rpc)
+    "RUSTSEC-2026-0049",
 ]
 
 [licenses]
