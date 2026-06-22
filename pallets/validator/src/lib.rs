@@ -257,6 +257,8 @@ pub mod pallet {
         /// Evidence report rate limit exceeded
         EvidenceRateLimitExceeded,
         DuplicateSlash,
+        /// Cannot withdraw stake while pending slashes exist for this validator
+        HasPendingSlashes,
     }
 
     #[pallet::genesis_config]
@@ -449,6 +451,11 @@ pub mod pallet {
                 block_number >= unbond_end,
                 Error::<T>::UnbondingPeriodNotElapsed
             );
+
+            // S9: Prevent withdrawal if unapplied slashes exist for this validator
+            let has_pending = PendingSlashes::<T>::iter_values()
+                .any(|s| s.validator == validator_id && !s.applied);
+            ensure!(!has_pending, Error::<T>::HasPendingSlashes);
 
             let stake = info.stake;
             T::Currency::unreserve(&who, stake);
