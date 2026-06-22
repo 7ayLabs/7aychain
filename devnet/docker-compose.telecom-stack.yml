@@ -5,11 +5,11 @@ services:
     image: andrius/asterisk:18
     container_name: seveny-asterisk
     ports:
-      - "127.0.0.1:5060:5060/udp"
-      - "127.0.0.1:5060:5060/tcp"
-      - "127.0.0.1:5061:5061/tcp"
-      - "127.0.0.1:8089:8089/tcp"
-      - "127.0.0.1:10000-10020:10000-10020/udp"
+      - "${TELECOM_BIND_IP:-0.0.0.0}:5060:5060/udp"
+      - "${TELECOM_BIND_IP:-0.0.0.0}:5060:5060/tcp"
+      - "${TELECOM_BIND_IP:-0.0.0.0}:5061:5061/tcp"
+      - "${TELECOM_BIND_IP:-0.0.0.0}:8089:8089/tcp"
+      - "${TELECOM_BIND_IP:-0.0.0.0}:10000-10020:10000-10020/udp"
     volumes:
       - ./telecom/asterisk/pjsip.base.conf:/etc/asterisk/pjsip.conf:ro
       - ./telecom/asterisk/extensions.base.conf:/etc/asterisk/extensions.conf:ro
@@ -22,13 +22,13 @@ services:
     restart: unless-stopped
 
   kamailio:
-    image: kamailio/kamailio:5.8
+    image: kamailio/kamailio:latest
     container_name: seveny-kamailio
     depends_on:
       - asterisk
     ports:
-      - "127.0.0.1:5062:5060/udp"
-      - "127.0.0.1:5062:5060/tcp"
+      - "${TELECOM_BIND_IP:-0.0.0.0}:5062:5060/udp"
+      - "${TELECOM_BIND_IP:-0.0.0.0}:5062:5060/tcp"
     volumes:
       - ./telecom/ims/kamailio.cfg:/etc/kamailio/kamailio.cfg:ro
       - ./telecom/ims/dispatcher.list:/etc/kamailio/dispatcher.list:ro

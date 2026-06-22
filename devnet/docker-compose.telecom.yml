@@ -1,0 +1,24 @@
+name: seveny-telecom
+
+services:
+  asterisk:
+    image: andrius/asterisk:18
+    container_name: seveny-asterisk
+    ports:
+      - "127.0.0.1:5060:5060/udp"
+      - "127.0.0.1:5060:5060/tcp"
+      - "127.0.0.1:5061:5061/tcp"
+      - "127.0.0.1:8088:8088"
+      - "127.0.0.1:8089:8089/tcp"
+      - "127.0.0.1:8090:8090"
+      - "127.0.0.1:10000-10020:10000-10020/udp"
+    volumes:
+      - ./telecom/asterisk/pjsip.base.conf:/etc/asterisk/pjsip.conf:ro
+      - ./telecom/asterisk/extensions.base.conf:/etc/asterisk/extensions.conf:ro
+      - ./telecom/generated/pjsip.generated.conf:/etc/asterisk/pjsip.generated.conf:ro
+      - ./telecom/generated/extensions.generated.conf:/etc/asterisk/extensions.generated.conf:ro
+      - ./telecom/asterisk/ari.conf:/etc/asterisk/ari.conf:ro
+      - ./telecom/asterisk/http.conf:/etc/asterisk/http.conf:ro
+      - ./telecom/certs:/etc/asterisk/certs:ro
+      - ./telecom/webrtc:/var/lib/asterisk/static-http/webrtc:ro
+    restart: unless-stopped

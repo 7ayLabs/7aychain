@@ -110,6 +110,13 @@ class LaudCLI:
         'set_validator_position': 'Setting position',
         'create_vault': 'Creating document safe',
         'register_device': 'Registering device',
+        'reserve_number': 'Reserving number',
+        'request_activation': 'Opening activation request',
+        'request_recovery': 'Opening recovery request',
+        'submit_service_witness': 'Submitting carrier witness',
+        'finalize_service_request': 'Finalizing phone service',
+        'suspend_number': 'Suspending phone service',
+        'revoke_number': 'Revoking number',
     }
 
     # Normal-mode error messages (user-friendly)
@@ -211,6 +218,42 @@ class LaudCLI:
             'This person is already a member.',
         'MaxVaultsReached':
             'Maximum safes reached for this account.',
+        'ActorNotActive':
+            'Your identity must be active first.',
+        'NumberAlreadyReserved':
+            'That number handle is already reserved.',
+        'NumberNotFound':
+            'That number handle does not exist.',
+        'NotNumberOwner':
+            'Only the number owner can do this.',
+        'MaxNumbersReached':
+            'This identity already holds the maximum number of lines.',
+        'DeviceNotEligible':
+            'The chosen device is not active for this identity.',
+        'PresenceNotVerified':
+            'Complete proof-of-presence and position verification first.',
+        'ServiceRequestAlreadyExists':
+            'A service request is already pending for that number in this epoch.',
+        'ServiceRequestNotFound':
+            'No carrier service request was found for that number and epoch.',
+        'DuplicateWitness':
+            'This validator already witnessed that service request.',
+        'WitnessThresholdNotMet':
+            'Not enough carrier witnesses have attested yet.',
+        'InvalidSignalScore':
+            'Signal score must be greater than zero.',
+        'RegionMismatch':
+            'Witness region does not match the number request.',
+        'InvalidNumberStatus':
+            'This number is not in the right state for that action.',
+        'DeviceAlreadyBound':
+            'That device is already serving another number.',
+        'UnauthorizedFinalize':
+            'Only the number owner or an active validator can finalize this request.',
+        'NumberRevoked':
+            'This number has already been revoked.',
+        'NumberSuspended':
+            'This number is currently suspended.',
     }
 
     # Friendly breadcrumb names for navigation stack
@@ -221,6 +264,7 @@ class LaudCLI:
         'dispute': 'Challenges',
         'vault': 'Document Safe',
         'device': 'Devices',
+        'carrier': 'Phone Service',
         'semantic': 'Trust',
         'governance': 'Permissions',
         'pbt': 'Location',
@@ -651,7 +695,10 @@ class LaudCLI:
 
     _STATE_COLORS = {
         'Finalized': C.G, 'Validated': C.G,
+        'Activated': C.G, 'Recovered': C.G,
         'Declared': C.Y, 'Active': C.Y, 'Scheduled': C.Y,
+        'Reserved': C.Y, 'Requested': C.Y, 'Witnessed': C.Y,
+        'RecoveryPending': C.Y,
         'Slashed': C.RED, 'Suspended': C.RED, 'Revoked': C.RED,
         'Closed': C.DIM,
     }
@@ -2108,9 +2155,9 @@ class LaudCLI:
             'ferdie':  {"x": -25000, "y": -43301, "z": 0},
         }
         # Steps: schedule + start + quorum + N*(register + activate + position)
-        # + N*(claim) + N*3*(attest) + N*(verify)  [PBT flow]
+        # + N*(declare + claim) + N*3*(attest) + N*(verify)  [PBT flow]
         n = len(positions)
-        total = 3 + n * 3 + n + n * 3 + n
+        total = 3 + n * 3 + n * 2 + n * 3 + n
         step = 0
 
         # Step 1: Get current block for scheduling
@@ -2205,6 +2252,13 @@ class LaudCLI:
             for name in names:
                 step += 1
                 self._progress(step, total,
+                               f"Declare presence {C.W}{name}{C.R}")
+                self._submit("Presence", "declare_presence",
+                             {"epoch": 1},
+                             name, _skip_confirm=True)
+
+                step += 1
+                self._progress(step, total,
                                f"Position claim {C.W}{name}{C.R}")
                 aid = self._actor_id(name)
                 self._submit("Presence", "claim_position",
@@ -2255,6 +2309,9 @@ class LaudCLI:
                    f"({claim['x']}, {claim['y']}, {claim['z']})")
         self._info("  = centroid of bob, charlie, dave "
                    "(equal-weight triangulation)")
+        self._info("Declaring Alice's presence...")
+        self._submit("Presence", "declare_presence",
+                     {"epoch": epoch}, "alice")
         self._submit("Presence", "claim_position",
                      {"epoch": epoch, "position": claim}, "alice")
 
@@ -2344,6 +2401,247 @@ class LaudCLI:
                       "attester": None}, a)
 
     # ------------------------------------------------------------------
+    # Custom handlers: Carrier
+    # ------------------------------------------------------------------
+
+    def _carrier_request_activation(self):
+        number_id = self._prompt_h256("Number ID")
+        device_id = self._prompt_int("Device ID", 0)
+        epoch = self._prompt_epoch("Epoch")
+        sim_profile_commitment = self._prompt_h256("SIM profile commitment")
+        signer = self._prompt_account()
+        self._submit(
+            "Carrier",
+            "request_activation",
+            {
+                "number_id": number_id,
+                "device_id": device_id,
+                "epoch": epoch,
+                "sim_profile_commitment": sim_profile_commitment,
+            },
+            signer,
+        )
+
+    def _carrier_request_recovery(self):
+        number_id = self._prompt_h256("Number ID")
+        replacement_device_id = self._prompt_int("Replacement device ID", 1)
+        epoch = self._prompt_epoch("Epoch")
+        replacement_sim_profile_commitment = self._prompt_h256(
+            "Replacement SIM profile commitment")
+        signer = self._prompt_account()
+        self._submit(
+            "Carrier",
+            "request_recovery",
+            {
+                "number_id": number_id,
+                "replacement_device_id": replacement_device_id,
+                "epoch": epoch,
+                "replacement_sim_profile_commitment":
+                    replacement_sim_profile_commitment,
+            },
+            signer,
+        )
+
+    def _carrier_submit_witness(self):
+        number_id = self._prompt_h256("Number ID")
+        epoch = self._prompt_epoch("Epoch")
+        region_id = self._prompt_h256("Region ID")
+        signal_score = self._prompt_int("Signal score (1-100)", 80)
+        signer = self._prompt_account("Validator account")
+        self._submit(
+            "Carrier",
+            "submit_service_witness",
+            {
+                "number_id": number_id,
+                "epoch": epoch,
+                "region_id": region_id,
+                "signal_score": signal_score,
+            },
+            signer,
+        )
+
+    def _carrier_finalize(self):
+        number_id = self._prompt_h256("Number ID")
+        epoch = self._prompt_epoch("Epoch")
+        signer = self._prompt_account()
+        self._submit(
+            "Carrier",
+            "finalize_service_request",
+            {"number_id": number_id, "epoch": epoch},
+            signer,
+        )
+
+    def _carrier_status(self):
+        number_id = self._prompt_h256("Number ID")
+        rpc_status = self._carrier_rpc_status(number_id)
+        if rpc_status:
+            self._val("Number", number_id)
+            for key in (
+                    "owner", "device_id", "region_id", "status",
+                    "activation_epoch", "request_epoch", "lease_until",
+                    "activated_at", "witness_count", "signal_score",
+                    "provisioning_state", "provisioning_receipt",
+                    "sim_profile_commitment"):
+                if key in rpc_status and rpc_status[key] is not None:
+                    self._val(key.replace("_", " ").title(), rpc_status[key])
+            return
+
+        record = self._safe_query("Carrier", "Numbers", [number_id])
+        if not record or not record.value:
+            self._err("Number not found")
+            return
+
+        self._val("Number", number_id)
+        self._val("Binding", record.value)
+
+        epoch_q = self._safe_query("Carrier", "CurrentRequestEpoch", [number_id])
+        epoch_value = epoch_q.value if epoch_q else None
+        if epoch_value is not None:
+            self._val("Current request epoch", epoch_value)
+            req = self._safe_query(
+                "Carrier", "ServiceRequests", [epoch_value, number_id])
+            if req and req.value:
+                self._val("Current request", req.value)
+
+    def _carrier_actor_numbers(self):
+        actor = self._prompt_actor("Identity")
+        try:
+            entries = list(self.substrate.query_map("Carrier", "ActorNumbers", [actor]))
+        except Exception as e:
+            self._err(f"Carrier.ActorNumbers: {e}")
+            return
+
+        if not entries:
+            self._info("No numbers reserved for that identity.")
+            return
+
+        rows = []
+        for entry in entries:
+            number_id = entry[0].value if entry and entry[0] else "?"
+            status = "?"
+            binding = self._safe_query("Carrier", "Numbers", [number_id])
+            if binding and binding.value:
+                status = binding.value.get("status", "?")
+            rows.append((number_id, status))
+        self._grid(["Number ID", "Status"], rows)
+
+    def _carrier_current_request(self):
+        number_id = self._prompt_h256("Number ID")
+        epoch_q = self._safe_query("Carrier", "CurrentRequestEpoch", [number_id])
+        epoch_value = epoch_q.value if epoch_q else None
+        if epoch_value is None:
+            self._info("No active carrier request for that number.")
+            return
+
+        request = self._safe_query("Carrier", "ServiceRequests", [epoch_value, number_id])
+        self._val("Current request epoch", epoch_value)
+        if request and request.value:
+            self._val("Request", request.value)
+            witness_count = self._safe_query(
+                "Carrier", "ServiceWitnessCount", [epoch_value, number_id])
+            if witness_count and witness_count.value is not None:
+                self._val("Witness count", witness_count.value)
+        else:
+            self._err("Active request epoch is set, but request details were not found.")
+
+    def _carrier_signal_quality(self):
+        number_id = self._prompt_h256("Number ID")
+        rpc_status = self._carrier_rpc_status(number_id)
+        quality = self._safe_query("Carrier", "SignalQuality", [number_id])
+        self._val("Number", number_id)
+        if quality and quality.value:
+            for key in (
+                    "avg_score", "min_score", "max_score",
+                    "sample_count", "last_updated"):
+                value = quality.value.get(key)
+                if value is not None:
+                    self._val(key.replace("_", " ").title(), value)
+        elif rpc_status and rpc_status.get("signal_score") is not None:
+            self._val("Avg Score", rpc_status.get("signal_score"))
+            self._val("Sample Count", rpc_status.get("witness_count"))
+        else:
+            self._info("No signal quality has been aggregated for that number yet.")
+
+        if rpc_status and rpc_status.get("provisioning_state") is not None:
+            self._val("Provisioning State", rpc_status.get("provisioning_state"))
+
+    def _carrier_witness_leaderboard(self):
+        try:
+            entries = list(self.substrate.query_map("Carrier", "ValidatorWitnessCount"))
+        except Exception as e:
+            self._err(f"Carrier.ValidatorWitnessCount: {e}")
+            return
+
+        rows = []
+        for entry in entries:
+            validator_id = entry[0].value if entry and entry[0] else "?"
+            count = entry[1].value if len(entry) > 1 and entry[1] else 0
+            if count:
+                rows.append((validator_id, count))
+
+        if not rows:
+            self._info("No carrier witness activity yet.")
+            return
+
+        rows.sort(key=lambda item: item[1], reverse=True)
+        self._grid(["Validator ID", "Witness Count"], rows)
+
+    def _carrier_my_witness_count(self):
+        account = self._prompt_account("Validator account")
+        validator_id = self._validator_id(account)
+        count = self._safe_query("Carrier", "ValidatorWitnessCount", [validator_id])
+        self._val("Validator", validator_id)
+        self._val("Witness count", count.value if count else 0)
+
+    def _carrier_provisioning_url(self):
+        import os
+
+        port = os.environ.get("PROVISIONING_PORT", "8090")
+        url = f"http://127.0.0.1:{port}/api/v1/subscribers"
+        self._val("Provisioning API", url)
+        self._val("Health", f"http://127.0.0.1:{port}/api/v1/health")
+
+    def _carrier_rpc_status(self, number_id):
+        if not self._ensure():
+            return None
+        try:
+            result = self.substrate.rpc_request("carrier_numberStatus", [number_id])
+            payload = result.get("result") if isinstance(result, dict) else None
+            if not payload:
+                return None
+
+            status = payload.get("status")
+            if isinstance(status, dict):
+                status = next(iter(status.keys()), status)
+
+            return {
+                "owner": payload.get("owner"),
+                "device_id": payload.get("device_id", payload.get("deviceId")),
+                "region_id": payload.get("region_id", payload.get("regionId")),
+                "status": status,
+                "activation_epoch": payload.get(
+                    "activation_epoch", payload.get("activationEpoch")),
+                "request_epoch": payload.get(
+                    "request_epoch", payload.get("requestEpoch")),
+                "lease_until": payload.get(
+                    "service_lease_until", payload.get("serviceLeaseUntil")),
+                "activated_at": payload.get(
+                    "activated_at", payload.get("activatedAt")),
+                "witness_count": payload.get(
+                    "witness_count", payload.get("witnessCount")),
+                "signal_score": payload.get(
+                    "avg_signal_score", payload.get("avgSignalScore")),
+                "provisioning_state": payload.get(
+                    "provisioning_state", payload.get("provisioningState")),
+                "provisioning_receipt": payload.get(
+                    "provisioning_receipt", payload.get("provisioningReceipt")),
+                "sim_profile_commitment": payload.get(
+                    "sim_profile_commitment", payload.get("simProfileCommitment")),
+            }
+        except Exception:
+            return None
+
+    # ------------------------------------------------------------------
     # Custom handlers: Lifecycle
     # ------------------------------------------------------------------
 
@@ -2381,163 +2679,6 @@ class LaudCLI:
         self._submit("Governance", "delegate_capability",
                      {"capability_id": cid, "delegatee": dele,
                       "permissions": p, "expires_at": None}, a)
-
-    # ------------------------------------------------------------------
-    # Custom handlers: Semantic
-    # ------------------------------------------------------------------
-
-    def _semantic_create(self):
-        to = self._prompt_actor("To actor")
-        rtype = self._prompt("Relationship type", "Trust")
-        trust = self._prompt_int("Trust (0-100)", 50)
-        bidir = self._prompt_bool("Bidirectional?")
-        a = self._prompt_account()
-        self._submit("Semantic", "create_relationship",
-                     {"to_actor": to, "relationship_type": rtype,
-                      "trust_level": trust, "expires_at": None,
-                      "bidirectional": bidir}, a)
-
-    # ------------------------------------------------------------------
-    # Custom handlers: ZK
-    # ------------------------------------------------------------------
-
-    def _zk_share_proof(self):
-        cm = self._prompt_h256("Commitment hash")
-        pr = self._prompt("Proof hex", "00" * 32)
-        a = self._prompt_account()
-        self._submit("Zk", "verify_share_proof",
-                     {"statement": {"commitment_hash": cm},
-                      "proof": "0x" + pr}, a)
-
-    def _zk_presence_proof(self):
-        actor = self._prompt_actor("Actor")
-        e = self._prompt_epoch()
-        pr = self._prompt("Proof hex", "00" * 32)
-        a = self._prompt_account()
-        self._submit("Zk", "verify_presence_proof",
-                     {"statement": {"actor": actor, "epoch": e},
-                      "proof": "0x" + pr}, a)
-
-    def _zk_access_proof(self):
-        actor = self._prompt_actor("Actor")
-        res = self._prompt_h256("Resource ID")
-        pr = self._prompt("Proof hex", "00" * 32)
-        a = self._prompt_account()
-        self._submit("Zk", "verify_access_proof",
-                     {"statement": {"actor": actor, "resource": res},
-                      "proof": "0x" + pr}, a)
-
-    def _zk_register_circuit(self):
-        cid = self._prompt_h256("Circuit ID")
-        pt = self._prompt_enum("Type:", ["Groth16", "PlonK", "Halo2"])
-        vk = self._prompt("VK hex", "00" * 32)
-        self._submit("Zk", "register_circuit",
-                     {"circuit_id": cid, "proof_type": pt,
-                      "vk": "0x" + vk}, sudo=True)
-
-    def _zk_verify_snark(self):
-        cid = self._prompt_h256("Circuit ID")
-        pr = self._prompt("Proof hex", "00" * 64)
-        a = self._prompt_account()
-        self._submit("Zk", "verify_snark",
-                     {"circuit_id": cid, "proof": "0x" + pr,
-                      "inputs": []}, a)
-
-    def _zk_trusted_verifier(self):
-        act = self._prompt_enum(
-            "Action:", ["add_trusted_verifier", "remove_trusted_verifier"])
-        v = self._prompt_actor("Verifier")
-        self._submit("Zk", act, {"verifier": v}, sudo=True)
-
-    # ------------------------------------------------------------------
-    # Custom handlers: Octopus
-    # ------------------------------------------------------------------
-
-    def _octopus_create_cluster(self):
-        a = self._prompt_account()
-        owner = self._prompt_actor("Owner")
-        self._submit("Octopus", "create_cluster",
-                     {"owner": owner}, a)
-
-    def _octopus_register_subnode(self):
-        a = self._prompt_account()
-        cid = self._prompt_int("Cluster ID", 0)
-        op = self._prompt_actor("Operator")
-        self._submit("Octopus", "register_subnode",
-                     {"cluster_id": cid, "operator": op}, a)
-
-    def _octopus_activate_subnode(self):
-        a = self._prompt_account()
-        self._submit("Octopus", "activate_subnode",
-                     {"subnode_id": self._prompt_int("Subnode ID", 0)}, a)
-
-    def _octopus_start_deactivation(self):
-        a = self._prompt_account()
-        self._submit("Octopus", "start_deactivation",
-                     {"subnode_id": self._prompt_int("Subnode ID", 0)}, a)
-
-    def _octopus_update_throughput(self):
-        a = self._prompt_account()
-        cid = self._prompt_int("Cluster ID", 0)
-        tp = self._prompt_int("Throughput score", 450000000)
-        self._submit("Octopus", "update_throughput",
-                     {"cluster_id": cid, "throughput": tp}, a)
-
-    def _octopus_evaluate_scaling(self):
-        a = self._prompt_account()
-        self._submit("Octopus", "evaluate_scaling",
-                     {"cluster_id": self._prompt_int("Cluster ID", 0)}, a)
-
-    def _octopus_update_subnode_throughput(self):
-        a = self._prompt_account()
-        sid = self._prompt_int("Subnode ID", 0)
-        tp = self._prompt_int("Throughput score", 500000000)
-        pr = self._prompt_int("Processed", 100)
-        self._submit("Octopus", "update_subnode_throughput",
-                     {"subnode_id": sid, "throughput": tp,
-                      "processed": pr}, a)
-
-    def _octopus_record_heartbeat(self):
-        a = self._prompt_account()
-        self._submit("Octopus", "record_heartbeat",
-                     {"subnode_id": self._prompt_int("Subnode ID", 0)}, a)
-
-    def _octopus_device_observation(self):
-        a = self._prompt_account()
-        sid = self._prompt_int("Subnode ID", 0)
-        dc = self._prompt_int("Device count", 5)
-        cm = self._prompt_h256("Commitment hash")
-        self._submit("Octopus", "record_device_observation",
-                     {"subnode_id": sid, "device_count": dc,
-                      "commitment": cm}, a)
-
-    def _octopus_position_confirmation(self):
-        a = self._prompt_account()
-        sid = self._prompt_int("Subnode ID", 0)
-        x = self._prompt_int("X", 0)
-        y = self._prompt_int("Y", 0)
-        z = self._prompt_int("Z", 0)
-        self._submit("Octopus", "record_position_confirmation",
-                     {"subnode_id": sid, "position_x": x,
-                      "position_y": y, "position_z": z}, a)
-
-    def _octopus_heartbeat_device_proof(self):
-        a = self._prompt_account()
-        sid = self._prompt_int("Subnode ID", 0)
-        dc = self._prompt_int("Device count", 5)
-        cm = self._prompt_h256("Commitment")
-        self._submit("Octopus", "heartbeat_with_device_proof",
-                     {"subnode_id": sid, "device_count": dc,
-                      "commitment": cm}, a)
-
-    def _octopus_set_fusion_weights(self):
-        a = self._prompt_account()
-        hw = self._prompt_int("Heartbeat weight", 40)
-        dw = self._prompt_int("Device weight", 40)
-        pw = self._prompt_int("Position weight", 20)
-        self._submit("Octopus", "set_fusion_weights",
-                     {"heartbeat_weight": hw, "device_weight": dw,
-                      "position_weight": pw}, a)
 
     # ------------------------------------------------------------------
     # Custom handlers: Chain Status

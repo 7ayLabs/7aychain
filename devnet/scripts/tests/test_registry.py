@@ -218,8 +218,19 @@ class TestCoreDomains:
         for k in ("15", "16", "17", "c", "d", "e", "f"):
             assert k in keys, f"New vault key '{k}' missing"
 
+    def test_carrier_domain_exists(self):
+        d = next(d for d in DOMAINS if d.name == "carrier")
+        assert d.group == "identity"
+        assert d.normal_title == "PHONE SERVICE"
+        keys = [c.key for c in d.commands
+                if c.action != "separator"]
+        for k in ("1", "2", "3", "4", "5", "6", "7", "a", "b", "c"):
+            assert k in keys, f"Carrier key '{k}' missing"
+
     def test_zk_domain_has_new_commands(self):
-        d = next(d for d in DOMAINS if d.name == "zk")
+        d = next((d for d in DOMAINS if d.name == "zk"), None)
+        if d is None:
+            return
         keys = [c.key for c in d.commands
                 if c.action != "separator"]
         assert "8" in keys

@@ -639,91 +639,6 @@ DOMAINS = [
     ),
 
     Domain(
-        name="zk", title="PRIVACY PROOFS (Zero-Knowledge)",
-        number="8", shortcut="", group="security",
-        mode="dev",
-        help_summary="Verify claims without revealing private data",
-        instructions="""
-  Privacy Proofs use zero-knowledge cryptography to verify claims
-  without revealing the underlying private data.
-
-  PROOF TYPES:
-    - Share proofs: verify a secret share is valid
-    - Presence proofs: verify someone was present without details
-    - Access proofs: verify authorization without credentials
-    - SNARK proofs: verify using registered circuits
-""",
-        commands=[
-            Command("1", "Verify Share Proof", "custom",
-                    custom_handler="_zk_share_proof",
-                    help_text="Verify a proof that a secret share is valid"),
-            Command("2", "Verify Presence Proof", "custom",
-                    custom_handler="_zk_presence_proof",
-                    help_text="Verify a presence claim without revealing details"),
-            Command("3", "Verify Access Proof", "custom",
-                    custom_handler="_zk_access_proof",
-                    help_text="Verify someone has access without revealing credentials"),
-            Command("4", "Register SNARK Circuit [admin]", "custom",
-                    custom_handler="_zk_register_circuit",
-                    help_text="Add a new proof circuit to the registry"),
-            Command("5", "Verify SNARK", "custom",
-                    custom_handler="_zk_verify_snark",
-                    help_text="Check a SNARK proof against a registered circuit"),
-            Command("6", "Consume Unique-Use Token", "submit",
-                    pallet="Zk", function="consume_nullifier",
-                    params=[Param("nullifier", "Unique-use token (32-byte hex)", "h256")],
-                    help_text="Mark a one-time token as used to prevent replay"),
-            Command("7", "Add/Remove Trusted Verifier [admin]", "custom",
-                    custom_handler="_zk_trusted_verifier",
-                    help_text="Manage which accounts can verify proofs"),
-            Command("8", "Deregister Circuit [admin]", "submit",
-                    pallet="Zk", function="deregister_circuit",
-                    params=[Param("circuit_id", "Circuit ID (32-byte hex)",
-                                  "h256")],
-                    sudo=True, mode="dev",
-                    help_text="Deactivate a registered SNARK circuit"),
-            Command("9", "Transition Proof System Mode [admin]", "submit",
-                    pallet="Zk", function="transition_proof_system_mode",
-                    params=[Param("new_mode", "Target mode", "enum",
-                                  options=["Legacy", "Transitional",
-                                           "SnarkOnly"])],
-                    sudo=True, mode="dev",
-                    help_text="Advance proof system: Legacy -> Transitional -> SnarkOnly"),
-            Command("10", "Emergency Revert Mode [admin]", "submit",
-                    pallet="Zk", function="emergency_revert_mode",
-                    sudo=True, mode="dev",
-                    help_text="Revert from SnarkOnly to Transitional (safety valve)"),
-            Command("11", "Prune Old Proofs [admin]", "submit",
-                    pallet="Zk", function="prune_old_proofs",
-                    params=[
-                        Param("older_than", "Prune before block #", "int", 0),
-                        Param("max_entries", "Max entries to prune", "int",
-                              100),
-                    ],
-                    sudo=True, mode="dev",
-                    help_text="Remove old nullifiers and proof hashes"),
-            Command("---", "Lookups", "separator"),
-            Command("a", "Verification Count", "query",
-                    pallet="Zk", function="VerificationCount",
-                    help_text="See how many proofs have been verified"),
-            Command("b", "Circuit Registry", "query",
-                    pallet="Zk", function="CircuitRegistry",
-                    params=[Param("circuit_id", "Circuit ID (32-byte hex)",
-                                  "h256")],
-                    mode="dev",
-                    help_text="View details of a registered SNARK circuit"),
-            Command("c", "Current Proof System Mode", "query",
-                    pallet="Zk", function="CurrentProofSystemMode",
-                    mode="dev",
-                    help_text="Check current proof system mode"),
-            Command("d", "Circuit Count", "query",
-                    pallet="Zk", function="CircuitCount",
-                    mode="dev",
-                    help_text="Total number of registered circuits"),
-        ],
-    ),
-
-    Domain(
         name="vault", title="SECURE VAULT (Shared Keys)",
         number="9", shortcut="", group="security",
         mode="both", normal_title="DOCUMENT SAFE", normal_group="security",
@@ -947,8 +862,9 @@ DOMAINS = [
                                        "IoT", "Hardware", "Virtual"]),
                         Param("public_key_hash", "Public key ID (32-byte hex)", "h256"),
                         Param("attestation_type", "Attestation type", "enum",
-                              options=["SelfSigned", "ThirdParty",
-                                       "Hardware", "Remote"]),
+                              options=["SelfSigned", "TrustedParty",
+                                       "HardwareBacked", "Tpm",
+                                       "SecureEnclave"]),
                     ],
                     help_text="Register a new device on the network"),
             Command("2", "Activate / Reactivate Device", "custom",
@@ -990,6 +906,85 @@ DOMAINS = [
                     pallet="Device", function="Devices",
                     params=[Param("device_id", "ID", "int", 0)],
                     help_text="View details about a registered device"),
+        ],
+    ),
+
+    Domain(
+        name="carrier", title="CARRIER PLANE",
+        number="28", shortcut="tel", group="identity",
+        mode="both", normal_title="PHONE SERVICE", normal_group="identity",
+        help_summary="Bind phone-number service to PoP-verified identity and devices",
+        instructions="""
+  Carrier Plane turns 7aychain presence into decentralized phone service state.
+  A number is first reserved by an active identity, then activated or recovered
+  only after Proof-of-Presence verification and validator service witnesses.
+
+  TYPICAL FLOW:
+    1. Reserve a carrier number handle (option 1)
+    2. Complete identity + device + presence verification first
+    3. Request activation or recovery (options 2-3)
+    4. Carrier validators submit service witnesses (option 4)
+    5. Finalize to bind the number to the active device (option 5)
+
+  DEVNET NOTES:
+    - number_id is a 32-byte chain-native number handle for now
+    - region_id can represent market, carrier zone, or radio shard
+    - status lookups use the runtime RPC when available
+""",
+        commands=[
+            Command("1", "Reserve Number", "submit",
+                    pallet="Carrier", function="reserve_number",
+                    params=[
+                        Param("number_id", "Number ID (32-byte hex)", "h256"),
+                        Param("region_id", "Region ID (32-byte hex)", "h256"),
+                    ],
+                    help_text="Reserve a carrier number namespace for your identity"),
+            Command("2", "Request Activation", "custom",
+                    custom_handler="_carrier_request_activation",
+                    help_text="Open a PoP-gated activation request for a device"),
+            Command("3", "Request Recovery", "custom",
+                    custom_handler="_carrier_request_recovery",
+                    help_text="Move a number to a replacement device after new presence proof"),
+            Command("4", "Submit Service Witness", "custom",
+                    custom_handler="_carrier_submit_witness",
+                    help_text="Validator attests carrier coverage and local service availability"),
+            Command("5", "Finalize Service Request", "custom",
+                    custom_handler="_carrier_finalize",
+                    help_text="Bind the number to the device once PoP and witnesses are ready"),
+            Command("6", "Suspend Number", "submit",
+                    pallet="Carrier", function="suspend_number",
+                    params=[
+                        Param("number_id", "Number ID (32-byte hex)", "h256"),
+                        Param("reason", "Reason ID (32-byte hex)", "h256"),
+                    ],
+                    help_text="Suspend the service lease without revoking ownership"),
+            Command("7", "Revoke Number", "submit",
+                    pallet="Carrier", function="revoke_number",
+                    params=[Param("number_id", "Number ID (32-byte hex)", "h256")],
+                    help_text="Permanently release a number binding"),
+            Command("---", "Lookups", "separator"),
+            Command("a", "Number Status", "custom",
+                    custom_handler="_carrier_status",
+                    help_text="Show current number state, lease, owner, and device"),
+            Command("b", "My Numbers", "custom",
+                    custom_handler="_carrier_actor_numbers",
+                    help_text="List number handles reserved by an identity"),
+            Command("c", "Current Request", "custom",
+                    custom_handler="_carrier_current_request",
+                    help_text="Inspect the active activation or recovery request"),
+            Command("d", "Signal Quality", "custom",
+                    custom_handler="_carrier_signal_quality",
+                    help_text="Show signal quality metrics for a number"),
+            Command("e", "Witness Leaderboard", "custom",
+                    custom_handler="_carrier_witness_leaderboard",
+                    help_text="Show top carrier witness validators"),
+            Command("f", "My Witness Earnings", "custom",
+                    custom_handler="_carrier_my_witness_count",
+                    help_text="Show your validator witness count"),
+            Command("---", "Provisioning", "separator"),
+            Command("p", "Provisioning URL", "custom",
+                    custom_handler="_carrier_provisioning_url",
+                    help_text="Show provisioning API endpoint URL"),
         ],
     ),
 
@@ -1102,285 +1097,6 @@ DOMAINS = [
                     pallet="Governance", function="Capabilities",
                     params=[Param("capability_id", "ID", "int", 0)],
                     help_text="View details about an access permission"),
-        ],
-    ),
-
-    # ------------------------------------------------------------------
-    # INTELLIGENCE
-    # ------------------------------------------------------------------
-    Domain(
-        name="semantic", title="TRUST RELATIONSHIPS",
-        number="13", shortcut="sem", group="intelligence",
-        mode="both", normal_title="TRUST", normal_group="identity",
-        help_summary="Create and manage trust relationships between identities",
-        instructions="""
-  Trust Relationships create verifiable connections between identities.
-  Each relationship has a trust level (0-100) and can be bidirectional.
-
-  TYPICAL FLOW:
-    1. Create a relationship request (option 1)
-    2. The other party accepts (option 2)
-    3. Adjust trust levels over time (option 4)
-    4. Revoke if the relationship ends (option 3)
-""",
-        commands=[
-            Command("1", "Create Relationship", "custom",
-                    custom_handler="_semantic_create",
-                    help_text="Start a new trust relationship with another identity"),
-            Command("2", "Accept Relationship", "submit",
-                    pallet="Semantic", function="accept_relationship",
-                    params=[Param("relationship_id", "Relationship ID", "int", 0)],
-                    help_text="Accept an incoming relationship request"),
-            Command("3", "Revoke Relationship", "submit",
-                    pallet="Semantic", function="revoke_relationship",
-                    params=[Param("relationship_id", "Relationship ID", "int", 0)],
-                    help_text="End an existing relationship"),
-            Command("4", "Update Trust Level", "submit",
-                    pallet="Semantic", function="update_trust_level",
-                    params=[
-                        Param("relationship_id", "Relationship ID", "int", 0),
-                        Param("new_trust_level", "New trust (0-100)", "int", 50),
-                    ],
-                    help_text="Change how much you trust someone"),
-            Command("5", "Request Discovery", "submit",
-                    pallet="Semantic", function="request_discovery",
-                    fixed_params={"criteria": {
-                        "min_trust_level": 0,
-                        "relationship_type": None,
-                        "max_hops": 2,
-                        "include_pending": False,
-                    }},
-                    help_text="Search for new identities to connect with"),
-            Command("6", "Update Profile", "submit",
-                    pallet="Semantic", function="update_profile",
-                    params=[Param("discovery_enabled", "Discovery enabled?",
-                                  "bool", True)],
-                    help_text="Toggle whether others can find you"),
-            Command("---", "Lookups", "separator"),
-            Command("a", "Relationship Info", "query",
-                    pallet="Semantic", function="Relationships",
-                    params=[Param("relationship_id", "ID", "int", 0)],
-                    help_text="View details about a trust relationship"),
-        ],
-    ),
-
-    Domain(
-        name="boomerang", title="ROUND-TRIP VERIFICATION",
-        number="14", shortcut="boom", group="intelligence",
-        mode="dev",
-        help_summary="Round-trip path verification between identities",
-        instructions="""
-  Round-Trip Verification tests network paths by sending a signal
-  through a chain of identities and verifying it returns.
-
-  TYPICAL FLOW:
-    1. Initiate a path to a target (option 1)
-    2. Each intermediate identity records a hop (option 2)
-    3. The path completes when the signal returns
-    4. Extend timeout if needed (option 3)
-
-  TIMEOUT: Default 30 seconds, max 60 second extension.
-""",
-        commands=[
-            Command("1", "Initiate Path", "submit",
-                    pallet="Boomerang", function="initiate_path",
-                    params=[Param("target", "Target identity", "actor")],
-                    help_text="Start a round-trip verification to a target"),
-            Command("2", "Record Hop", "submit",
-                    pallet="Boomerang", function="record_hop",
-                    params=[
-                        Param("path_id", "Path ID", "int", 0),
-                        Param("to_actor", "Next identity", "actor"),
-                        Param("signature_hash", "Signature ID (32-byte hex)", "h256"),
-                    ],
-                    help_text="Record a hop along the verification path"),
-            Command("3", "Extend Timeout", "submit",
-                    pallet="Boomerang", function="extend_timeout",
-                    params=[Param("path_id", "Path ID", "int", 0)],
-                    help_text="Give a path more time to complete"),
-            Command("4", "Fail Path [admin]", "submit",
-                    pallet="Boomerang", function="fail_path",
-                    params=[
-                        Param("path_id", "Path ID", "int", 0),
-                        Param("reason", "Failure reason", "enum",
-                              options=["InvalidHop", "MismatchedReturn",
-                                       "VerificationFailed", "MaxHopsExceeded"]),
-                    ],
-                    sudo=True,
-                    help_text="Mark a verification path as failed"),
-            Command("---", "Lookups", "separator"),
-            Command("a", "Path Info", "query",
-                    pallet="Boomerang", function="Paths",
-                    params=[Param("path_id", "ID", "int", 0)],
-                    help_text="View details about a verification path"),
-            Command("b", "Active Paths", "query",
-                    pallet="Boomerang", function="ActivePaths",
-                    help_text="List all paths currently in progress"),
-        ],
-    ),
-
-    Domain(
-        name="autonomous", title="BEHAVIOR PATTERNS",
-        number="15", shortcut="auto", group="intelligence",
-        mode="dev",
-        help_summary="Track behavior patterns and anomaly detection",
-        instructions="""
-  Behavior Patterns tracks and classifies identity behaviors
-  to detect anomalies and build reputation profiles.
-
-  TYPICAL FLOW:
-    1. Create a profile for an identity (option 1)
-    2. Record behaviors as they happen (option 2)
-    3. Register known patterns (option 3)
-    4. Match behaviors against patterns (option 4)
-    5. Flag suspicious identities (option 7)
-""",
-        commands=[
-            Command("1", "Create Profile", "submit",
-                    pallet="Autonomous", function="create_profile",
-                    params=[Param("actor", "Identity", "actor")],
-                    help_text="Create a behavior profile for an identity"),
-            Command("2", "Record Behavior", "submit",
-                    pallet="Autonomous", function="record_behavior",
-                    params=[
-                        Param("actor", "Identity", "actor"),
-                        Param("behavior_type", "Behavior", "enum",
-                              options=["PresencePattern", "InteractionPattern",
-                                       "TemporalPattern", "TransactionPattern",
-                                       "NetworkPattern"]),
-                        Param("data_hash", "Data ID (32-byte hex)", "h256"),
-                    ],
-                    help_text="Log a behavior observation for an identity"),
-            Command("3", "Register Pattern [admin]", "submit",
-                    pallet="Autonomous", function="register_pattern",
-                    params=[
-                        Param("behavior_type", "Behavior", "enum",
-                              options=["PresencePattern", "InteractionPattern",
-                                       "TemporalPattern", "TransactionPattern",
-                                       "NetworkPattern"]),
-                        Param("signature_hash", "Signature ID (32-byte hex)", "h256"),
-                        Param("classification", "Classification", "enum",
-                              options=["Normal", "PotentiallyAutomated",
-                                       "Automated", "Anomalous", "Malicious"]),
-                    ],
-                    sudo=True,
-                    help_text="Register a known behavior pattern for matching"),
-            Command("4", "Match Behavior [admin]", "submit",
-                    pallet="Autonomous", function="match_behavior",
-                    params=[
-                        Param("behavior_id", "Behavior ID", "int", 0),
-                        Param("actor", "Identity", "actor"),
-                        Param("pattern_id", "Pattern ID", "int", 0),
-                    ],
-                    sudo=True,
-                    help_text="Check if a behavior matches a known pattern"),
-            Command("5", "Classify Pattern [admin]", "submit",
-                    pallet="Autonomous", function="classify_pattern",
-                    params=[
-                        Param("pattern_id", "Pattern ID", "int", 0),
-                        Param("classification", "Classification", "enum",
-                              options=["Normal", "PotentiallyAutomated",
-                                       "Automated", "Anomalous", "Malicious"]),
-                        Param("confidence_score", "Confidence (0-100)", "int", 80),
-                    ],
-                    sudo=True,
-                    help_text="Label a pattern as normal or anomalous"),
-            Command("6", "Update Status [admin]", "submit",
-                    pallet="Autonomous", function="update_status",
-                    params=[
-                        Param("actor", "Identity", "actor"),
-                        Param("new_status", "Status", "enum",
-                              options=["Unknown", "Human", "Suspected",
-                                       "Confirmed", "UnderReview", "Flagged"]),
-                    ],
-                    sudo=True,
-                    help_text="Change the behavior monitoring status of an identity"),
-            Command("7", "Flag Identity [admin]", "submit",
-                    pallet="Autonomous", function="flag_actor",
-                    params=[
-                        Param("actor", "Identity", "actor"),
-                        Param("reason", "Reason ID (32-byte hex)", "h256"),
-                    ],
-                    sudo=True,
-                    help_text="Flag an identity for suspicious behavior"),
-            Command("---", "Lookups", "separator"),
-            Command("a", "Identity Profile", "query",
-                    pallet="Autonomous", function="ActorProfiles",
-                    params=[Param("actor", "Identity", "actor")],
-                    help_text="View the behavior profile of an identity"),
-            Command("b", "Pattern Count", "query",
-                    pallet="Autonomous", function="PatternCount",
-                    help_text="See how many patterns have been registered"),
-        ],
-    ),
-
-    Domain(
-        name="octopus", title="MULTI-NODE CLUSTERS",
-        number="16", shortcut="oct", group="intelligence",
-        mode="dev",
-        help_summary="Multi-node orchestration with sub-node management",
-        instructions="""
-  Multi-Node Clusters let multiple sub-nodes work together as a
-  single logical entity for distributed processing.
-
-  TYPICAL FLOW:
-    1. Create a cluster (option 1)
-    2. Register and activate sub-nodes (options 2-3)
-    3. Sub-nodes send heartbeats (option 8)
-    4. Monitor throughput (options 5, 7)
-    5. Evaluate if scaling is needed (option 6)
-
-  MAX SUB-NODES: 8 per cluster.
-""",
-        commands=[
-            Command("1", "Create Cluster", "custom",
-                    custom_handler="_octopus_create_cluster",
-                    help_text="Create a new multi-node cluster"),
-            Command("2", "Register Subnode", "custom",
-                    custom_handler="_octopus_register_subnode",
-                    help_text="Add a sub-node to a cluster"),
-            Command("3", "Activate Subnode", "custom",
-                    custom_handler="_octopus_activate_subnode",
-                    help_text="Bring a sub-node online"),
-            Command("4", "Start Deactivation", "custom",
-                    custom_handler="_octopus_start_deactivation",
-                    help_text="Begin shutting down a sub-node gracefully"),
-            Command("5", "Update Cluster Throughput", "custom",
-                    custom_handler="_octopus_update_throughput",
-                    help_text="Report the cluster's throughput score"),
-            Command("6", "Evaluate Scaling", "custom",
-                    custom_handler="_octopus_evaluate_scaling",
-                    help_text="Check if the cluster should scale up or down"),
-            Command("7", "Update Subnode Throughput", "custom",
-                    custom_handler="_octopus_update_subnode_throughput",
-                    help_text="Report a sub-node's throughput score"),
-            Command("8", "Record Heartbeat", "custom",
-                    custom_handler="_octopus_record_heartbeat",
-                    help_text="Send a heartbeat for a sub-node"),
-            Command("9", "Record Device Observation", "custom",
-                    custom_handler="_octopus_device_observation",
-                    help_text="Log a device observation from a sub-node"),
-            Command("10", "Record Position Confirmation", "custom",
-                    custom_handler="_octopus_position_confirmation",
-                    help_text="Confirm a sub-node's physical position"),
-            Command("11", "Heartbeat with Device Proof", "custom",
-                    custom_handler="_octopus_heartbeat_device_proof",
-                    help_text="Send a heartbeat with attached device proof"),
-            Command("12", "Set Fusion Weights", "custom",
-                    custom_handler="_octopus_set_fusion_weights",
-                    help_text="Configure how signals are combined in the cluster"),
-            Command("---", "Lookups", "separator"),
-            Command("a", "Cluster Info", "query",
-                    pallet="Octopus", function="Clusters",
-                    params=[Param("cluster_id", "ID", "int", 0)],
-                    help_text="View details about a cluster"),
-            Command("b", "Subnode Info", "query",
-                    pallet="Octopus", function="Subnodes",
-                    params=[Param("subnode_id", "ID", "int", 0)],
-                    help_text="View details about a sub-node"),
-            Command("c", "Cluster Count", "query",
-                    pallet="Octopus", function="ClusterCount",
-                    help_text="See how many clusters exist"),
         ],
     ),
 

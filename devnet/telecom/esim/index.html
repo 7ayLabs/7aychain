@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>7AYchain eSIM Gallery</title>
+  <style>
+    :root {
+      --bg: #f4f1ea;
+      --panel: #fffaf0;
+      --ink: #1e2a26;
+      --muted: #5b6b66;
+      --accent: #0f766e;
+      --line: #d9d2c3;
+    }
+    body {
+      margin: 0;
+      padding: 2rem;
+      font-family: "IBM Plex Sans", "Helvetica Neue", sans-serif;
+      background: radial-gradient(circle at top, #fffaf3, var(--bg));
+      color: var(--ink);
+    }
+    h1 { margin-top: 0; }
+    .card {
+      display: grid;
+      grid-template-columns: minmax(0, 1.7fr) minmax(220px, 280px);
+      gap: 1.5rem;
+      margin: 1rem 0;
+      padding: 1.25rem;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 20px;
+    }
+    .provider { color: var(--accent); font-weight: 600; }
+    .qr { display: flex; align-items: center; justify-content: center; }
+    .qr img { width: 240px; height: 240px; background: white; padding: 0.5rem; border-radius: 18px; }
+    .qr-missing {
+      padding: 1rem;
+      border-radius: 16px;
+      border: 1px dashed var(--line);
+      color: var(--muted);
+      text-align: center;
+    }
+    pre {
+      white-space: pre-wrap;
+      word-break: break-all;
+      padding: 0.75rem;
+      border-radius: 12px;
+      background: #f3efe7;
+      border: 1px solid var(--line);
+    }
+    @media (max-width: 720px) {
+      body { padding: 1rem; }
+      .card { grid-template-columns: 1fr; }
+      .qr img { width: 100%; max-width: 260px; height: auto; }
+    }
+  </style>
+</head>
+<body>
+  <h1>7AYchain eSIM Gallery</h1>
+  <p>Scan these LPA-style devnet payloads from your phone. This generates enrollment artifacts, not real carrier radio service.</p>
+  
+            <article class="card">
+              <div class="meta">
+                <h2>Alice 7AY</h2>
+                <p class="provider">7AY Telecom Testnet</p>
+                <p><strong>Dial Number:</strong> 7001</p>
+                <p><strong>SM-DP+:</strong> 10.109.93.23:8091</p>
+                <p><strong>Activation Code:</strong> 7AY-ACT-7001-ALICE</p>
+                <p><strong>LPA Payload:</strong></p>
+                <pre>LPA:1$10.109.93.23:8091$7AY-ACT-7001-ALICE</pre>
+              </div>
+              <div class="qr"><img src="qrs/esim-aaaaaaaaaaaaaaaa.png" alt="QR for Alice 7AY" /></div>
+            </article>
+            
+</body>
+</html>

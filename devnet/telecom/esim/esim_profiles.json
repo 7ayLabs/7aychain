@@ -1,0 +1,31 @@
+{
+  "generated_at": 1776690967,
+  "summary": {
+    "profile_count": 1,
+    "qr_images_written": 1,
+    "qr_supported": true
+  },
+  "profiles": [
+    {
+      "number_id": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "dial_number": "7001",
+      "display_name": "Alice 7AY",
+      "owner": "0x66f89627df71903f0820d77eea3fedbfd0d95c52d41142385b4e77020a622073",
+      "device_id": 0,
+      "region_id": "0x9999999999999999999999999999999999999999999999999999999999999999",
+      "status": "Activated",
+      "activation_epoch": 1,
+      "provisioning_state": "Pending",
+      "provisioning_receipt": null,
+      "sip_username": "alice7001",
+      "provider_name": "7AY Telecom Testnet",
+      "profile_label": "Alice 7AY",
+      "smdp_plus": "10.109.93.23:8091",
+      "activation_code": "7AY-ACT-7001-ALICE",
+      "confirmation_code": "",
+      "lpa_payload": "LPA:1$10.109.93.23:8091$7AY-ACT-7001-ALICE",
+      "qr_filename": "esim-aaaaaaaaaaaaaaaa.png",
+      "qr_path": "qrs/esim-aaaaaaaaaaaaaaaa.png"
+    }
+  ]
+}

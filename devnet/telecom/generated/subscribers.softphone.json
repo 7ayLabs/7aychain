@@ -1,0 +1,26 @@
+{
+  "generated_at": 1776690967,
+  "summary": {
+    "softphone_subscriber_count": 1
+  },
+  "subscribers": [
+    {
+      "number_id": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "dial_number": "7001",
+      "display_name": "Alice 7AY",
+      "sip_username": "alice7001",
+      "sip_password": "7ay-alice-7001",
+      "sip_domain": "10.109.93.23",
+      "sip_port": 5060,
+      "transport": "udp",
+      "status": "Activated",
+      "activation_epoch": 1,
+      "owner": "0x66f89627df71903f0820d77eea3fedbfd0d95c52d41142385b4e77020a622073",
+      "device_id": 0,
+      "region_id": "0x9999999999999999999999999999999999999999999999999999999999999999",
+      "provisioning_state": "Pending",
+      "provisioning_receipt": null,
+      "pstn_did": null
+    }
+  ]
+}
